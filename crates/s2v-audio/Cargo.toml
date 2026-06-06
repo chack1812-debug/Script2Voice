@@ -1,0 +1,17 @@
+[package]
+name = "s2v-audio"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+s2v-core = { path = "../s2v-core" }
+anyhow.workspace = true
+thiserror.workspace = true
+hound = "3"
+rubato = "0.15"
+realfft = "3"
+rayon = "1"
+rand = "0.8"
+rand_distr = "0.4"
+ordered-float = "4"
+tracing.workspace = true

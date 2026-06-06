@@ -1,0 +1,18 @@
+[package]
+name = "s2v-engines"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+s2v-core = { path = "../s2v-core" }
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+tokio.workspace = true
+reqwest = { version = "0.12", features = ["json"] }
+async-trait = "0.1"
+tracing.workspace = true
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { version = "1", features = ["full"] }
