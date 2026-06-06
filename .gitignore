@@ -1,0 +1,25 @@
+# Rust
+/target/
+Cargo.lock
+
+# Beads
+.beads/dolt/
+
+# Superpowers (brainstorm sessions)
+.superpowers/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+
+# Output (generated files)
+output/
+audio/
+timeline/
+
+# Editor
+.vscode/
+*.swp
