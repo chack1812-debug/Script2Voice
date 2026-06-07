@@ -1,0 +1,144 @@
+use std::path::Path;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use s2v_core::{Cast, Config, ScriptParser};
+use s2v_engines::{Engine, EngineManager};
+use script2voice::Producer;
+
+/// テスト用スタブエンジン: 実際の TTS には接続せず、短いサイン波 WAV を書き出す。
+struct StubEngine;
+
+#[async_trait]
+impl Engine for StubEngine {
+    async fn activate(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn synthesize(&self, _text: &str, _cast: &Cast, output: &Path) -> anyhow::Result<()> {
+        if let Some(parent) = output.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 24000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(output, spec)?;
+        let n = (24000.0 * 0.3) as usize;
+        for i in 0..n {
+            let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 24000.0).sin();
+            writer.write_sample((v * 32767.0) as i16)?;
+        }
+        writer.finalize()?;
+        Ok(())
+    }
+}
+
+const SAMPLE_SCRIPT: &str = r#"
+@pause
+sentence 200
+cast 300
+paragraph 800
+
+@cast
+めたん:四国めたん:ノーマル,voicevox,pan=-30,distance=1.0,volume=1.0
+まい:まい:ノーマル,aivis,pan=30,distance=1.0,volume=1.0
+
+@scene 01_テスト
+@script
+めたん:こんにちは、まいさん。
+まい:こんにちは、めたんさん。
+#pause 300
+めたん:今日はいい天気ですね。
+"#;
+
+const SAMPLE_CONFIG: &str = r#"
+[voicevox]
+url = "http://127.0.0.1:50021"
+[aivis]
+url = "http://127.0.0.1:10101"
+[xtts]
+url = "http://localhost:8020"
+
+[audio]
+sample_rate = 24000
+microphone_spacing = 0.2
+sound_speed = 340.0
+air_absorption_coeff = 0.05
+room_size = 0.1
+reverb_wet = 0.3
+reference_dist = 1.0
+reference_gain_db = -5.0
+max_gain_db = -1.0
+mic_directivity = 0.5
+mic_angle = 45.0
+
+[audio.engine_volume_offsets]
+voicevox = 1.0
+aivis = 1.0
+xtts = 1.0
+
+[concurrency]
+voicevox = 2
+aivis = 2
+xtts = 2
+audio_process = 2
+
+[bgm]
+crossfade_s = 1.0
+se_fade_out_s = 0.05
+"#;
+
+#[tokio::test]
+async fn produces_full_output_set_from_sample_script() {
+    let _ = tracing_subscriber::fmt().with_test_writer().with_max_level(tracing::Level::INFO).try_init();
+
+    let dir = tempfile::tempdir().unwrap();
+    let project_dir = dir.path().join("project");
+
+    let config = Config::from_toml(SAMPLE_CONFIG).unwrap();
+
+    let mut parser = ScriptParser::new();
+    let scenes = parser.parse_str(SAMPLE_SCRIPT).unwrap();
+    assert!(!scenes.is_empty(), "サンプル台本が解析できること");
+
+    let mut engine_manager = EngineManager::new();
+    engine_manager.register("voicevox", Arc::new(StubEngine));
+    engine_manager.register("aivis", Arc::new(StubEngine));
+    engine_manager.register("xtts", Arc::new(StubEngine));
+    let engine_manager = Arc::new(engine_manager);
+
+    let producer = Producer::new(Arc::clone(&engine_manager), &config, &project_dir).unwrap();
+    producer.produce(&scenes).await.unwrap();
+
+    // SRT
+    let srt_path = project_dir.join("timeline/subtitles.srt");
+    assert!(srt_path.exists(), "SRT ファイルが生成されること");
+    let srt = std::fs::read_to_string(&srt_path).unwrap();
+    assert!(srt.contains("こんにちは、まいさん。"));
+    assert!(srt.contains("-->"));
+
+    // FCPXML
+    let fcpxml_path = project_dir.join("timeline/timeline.fcpxml");
+    assert!(fcpxml_path.exists(), "FCPXML ファイルが生成されること");
+    let fcpxml = std::fs::read_to_string(&fcpxml_path).unwrap();
+    assert!(fcpxml.contains("<fcpxml"));
+    assert!(fcpxml.contains("dialogue"));
+
+    // ミックス済み WAV
+    let mix_path = project_dir.join("full_dialogue.wav");
+    assert!(mix_path.exists(), "ミックス済み WAV が生成されること");
+    let reader = hound::WavReader::open(&mix_path).unwrap();
+    assert_eq!(reader.spec().channels, 2);
+    assert_eq!(reader.spec().sample_rate, 24000);
+
+    // 個別音声ファイル (DSP 処理済み, audio/ 以下)
+    let voice_files: Vec<_> = std::fs::read_dir(project_dir.join("audio"))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_string_lossy().starts_with("voice_"))
+        .collect();
+    assert_eq!(voice_files.len(), 3, "3件の speech アイテムが処理されること");
+}

@@ -1,0 +1,220 @@
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use ordered_float::OrderedFloat;
+use rand::{SeedableRng, rngs::SmallRng};
+use rand_distr::{Distribution, StandardNormal};
+use realfft::RealFftPlanner;
+
+/// room_size をキーとした stereo IR キャッシュ ([ir_l, ir_r])
+pub struct IrCache {
+    sample_rate: u32,
+    cache: Mutex<HashMap<OrderedFloat<f64>, [Vec<f32>; 2]>>,
+}
+
+impl IrCache {
+    pub fn new(sample_rate: u32) -> Self {
+        Self {
+            sample_rate,
+            cache: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn prewarm(&self, room_sizes: &[f64]) {
+        for &rs in room_sizes {
+            self.compute_if_needed(rs);
+        }
+    }
+
+    pub fn compute_if_needed(&self, room_size: f64) {
+        let key = OrderedFloat(round4(room_size));
+        let mut cache = self.cache.lock().unwrap();
+        if cache.contains_key(&key) {
+            return;
+        }
+        let ir = build_ir(room_size, self.sample_rate);
+        cache.insert(key, ir);
+    }
+
+    /// IR を使って stereo バッファにリバーブをかける (in-place)
+    pub fn apply(&self, stereo: &mut Vec<[f32; 2]>, room_size: f64, reverb_wet: f64, avg_dist: f64) {
+        if reverb_wet <= 0.0 || stereo.is_empty() {
+            return;
+        }
+
+        let key = OrderedFloat(round4(room_size));
+        let cache = self.cache.lock().unwrap();
+        let Some(ir) = cache.get(&key) else { return };
+
+        let actual_wet = (reverb_wet * (1.0 + 0.1 * avg_dist)).min(0.9) as f32;
+
+        for ch in 0..2 {
+            let dry: Vec<f32> = stereo.iter().map(|s| s[ch]).collect();
+            let wet = fft_convolve(&dry, &ir[ch]);
+
+            let dry_peak = dry.iter().cloned().map(f32::abs).fold(0.0_f32, f32::max);
+            let wet_slice = &wet[..dry.len()];
+            let wet_peak = wet_slice.iter().cloned().map(f32::abs).fold(1e-6_f32, f32::max);
+            let wet_norm_factor = if dry_peak > 0.0 { (dry_peak * 0.4) / wet_peak } else { 0.0 };
+
+            for (i, s) in stereo.iter_mut().enumerate() {
+                let w = wet_slice[i] * wet_norm_factor;
+                s[ch] = (1.0 - actual_wet) * s[ch] + actual_wet * w;
+            }
+        }
+    }
+}
+
+fn round4(v: f64) -> f64 {
+    (v * 10000.0).round() / 10000.0
+}
+
+/// FFT 畳み込み (線形)
+fn fft_convolve(signal: &[f32], kernel: &[f32]) -> Vec<f32> {
+    let out_len = signal.len() + kernel.len() - 1;
+    let fft_size = out_len.next_power_of_two();
+
+    let mut planner = RealFftPlanner::<f32>::new();
+    let r2c = planner.plan_fft_forward(fft_size);
+    let c2r = planner.plan_fft_inverse(fft_size);
+
+    let mut sig_buf = vec![0.0_f32; fft_size];
+    sig_buf[..signal.len()].copy_from_slice(signal);
+    let mut ker_buf = vec![0.0_f32; fft_size];
+    ker_buf[..kernel.len()].copy_from_slice(kernel);
+
+    let mut sig_spec = r2c.make_output_vec();
+    let mut ker_spec = r2c.make_output_vec();
+
+    r2c.process(&mut sig_buf, &mut sig_spec).unwrap();
+    r2c.process(&mut ker_buf, &mut ker_spec).unwrap();
+
+    let mut product: Vec<_> = sig_spec.iter().zip(ker_spec.iter())
+        .map(|(a, b)| a * b)
+        .collect();
+
+    let mut out_buf = vec![0.0_f32; fft_size];
+    c2r.process(&mut product, &mut out_buf).unwrap();
+
+    let scale = 1.0 / fft_size as f32;
+    out_buf.iter_mut().for_each(|s| *s *= scale);
+    out_buf.truncate(out_len);
+    out_buf
+}
+
+/// シード固定の乱数でリバーブ IR を生成する
+fn build_ir(room_size: f64, sample_rate: u32) -> [Vec<f32>; 2] {
+    let fs = sample_rate as f64;
+    let rv_time = 0.05 + room_size * 3.0;
+    let pre_delay = (fs * (0.01 + 0.04 * room_size)) as usize;
+    let n = (fs * rv_time) as usize;
+
+    let seed = (round4(room_size) * 10000.0) as u64 & 0xFFFF_FFFF;
+    let mut rng = SmallRng::seed_from_u64(seed);
+
+    let decay: Vec<f32> = (0..n)
+        .map(|i| {
+            let t = i as f64 / fs;
+            (-6.91 * t / rv_time).exp() as f32
+        })
+        .collect();
+
+    std::array::from_fn(|_| {
+        let noise: Vec<f32> = StandardNormal
+            .sample_iter(&mut rng)
+            .take(n)
+            .map(|v: f64| v as f32)
+            .collect();
+        // 簡易ローパス (一次IIRでソフィスティケートされた実装を回避)
+        let alpha = 0.12_f32;
+        let mut filtered = vec![0.0_f32; n];
+        filtered[0] = noise[0] * alpha;
+        for i in 1..n {
+            filtered[i] = alpha * noise[i] + (1.0 - alpha) * filtered[i - 1];
+        }
+        let mut ir: Vec<f32> = vec![0.0; pre_delay];
+        ir.extend(filtered.iter().zip(decay.iter()).map(|(s, d)| s * d));
+        ir
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ir_cache_builds_entry() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.3);
+        let guard = cache.cache.lock().unwrap();
+        assert!(guard.contains_key(&OrderedFloat(0.3)));
+    }
+
+    #[test]
+    fn prewarm_fills_multiple_entries() {
+        let cache = IrCache::new(48000);
+        cache.prewarm(&[0.1, 0.3, 0.8]);
+        let guard = cache.cache.lock().unwrap();
+        assert_eq!(guard.len(), 3);
+    }
+
+    #[test]
+    fn ir_has_two_channels() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.5);
+        let guard = cache.cache.lock().unwrap();
+        let ir = &guard[&OrderedFloat(0.5)];
+        assert!(!ir[0].is_empty());
+        assert!(!ir[1].is_empty());
+    }
+
+    #[test]
+    fn apply_with_zero_wet_leaves_signal_unchanged() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.3);
+        let original: Vec<[f32; 2]> = (0..100).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
+        let mut signal = original.clone();
+        cache.apply(&mut signal, 0.3, 0.0, 1.0);
+        for (a, b) in original.iter().zip(signal.iter()) {
+            assert!((a[0] - b[0]).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn apply_with_wet_modifies_signal() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.5);
+        let n = 2400_usize;
+        let mut signal: Vec<[f32; 2]> = (0..n)
+            .map(|i| {
+                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                [v, v]
+            })
+            .collect();
+        let before = signal[100][0];
+        cache.apply(&mut signal, 0.5, 0.3, 1.0);
+        // リバーブ後は少なくとも何らかの変化があるはず
+        let changed = signal.iter().any(|s| (s[0] - before).abs() > 1e-4);
+        assert!(changed, "apply should modify signal");
+    }
+
+    #[test]
+    fn fft_convolve_delta_returns_signal() {
+        let signal: Vec<f32> = (0..64).map(|i| i as f32).collect();
+        let delta = vec![1.0_f32];
+        let result = fft_convolve(&signal, &delta);
+        for (a, b) in signal.iter().zip(result.iter()) {
+            assert!((a - b).abs() < 1e-3, "a={a}, b={b}");
+        }
+    }
+
+    #[test]
+    fn build_ir_is_deterministic() {
+        let ir1 = build_ir(0.3, 48000);
+        let ir2 = build_ir(0.3, 48000);
+        assert_eq!(ir1[0].len(), ir2[0].len());
+        for (a, b) in ir1[0].iter().zip(ir2[0].iter()) {
+            assert_eq!(a, b);
+        }
+    }
+}

@@ -1,0 +1,41 @@
+# exe_path: 未起動時に自動起動する実行ファイルのパス（省略可）。
+# 設定すると、接続確認に失敗した場合に自動的に起動し、終了時に停止します。
+[voicevox]
+url = "http://127.0.0.1:50021"
+exe_path = "C:/Program Files/VOICEVOX/vv-engine/run.exe"
+
+[aivis]
+url = "http://127.0.0.1:10101"
+exe_path = "C:/Program Files/AivisSpeech/AivisSpeech-Engine/run.exe"
+
+[xtts]
+url = "http://localhost:8020"
+exe_path = "python -m xtts_api_server --port 8020 -v v2.0.2 -mf \"C:/Users/村上 孝伸/AppData/Local/tts/tts_models--multilingual--multi-dataset--xtts_v2\" -sf \"C:/Users/村上 孝伸/AppData/Local/tts/tts_models--multilingual--multi-dataset--xtts_v2\""
+
+[audio]
+sample_rate = 48000
+microphone_spacing = 0.2
+sound_speed = 340.0
+air_absorption_coeff = 0.05
+room_size = 0.1
+reverb_wet = 0.7
+reference_dist = 1.0
+reference_gain_db = -5.0
+max_gain_db = -1.0
+mic_directivity = 0.5
+mic_angle = 45.0
+
+[audio.engine_volume_offsets]
+voicevox = 1.2
+aivis = 0.9
+xtts = 1.0
+
+[concurrency]
+voicevox = 3
+aivis = 3
+xtts = 2
+audio_process = 0   # 0 = CPU コア数を自動使用
+
+[bgm]
+crossfade_s = 3.0
+se_fade_out_s = 0.05

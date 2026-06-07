@@ -1,0 +1,223 @@
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use s2v_core::Cast;
+
+#[async_trait]
+pub trait Engine: Send + Sync {
+    async fn activate(&self) -> anyhow::Result<()>;
+    async fn synthesize(&self, text: &str, cast: &Cast, output: &Path) -> anyhow::Result<()>;
+    fn is_cast_valid(&self, _cast: &Cast) -> bool {
+        true
+    }
+    /// activate() でプロセスを起動した場合、それを停止する。既定では何もしない。
+    fn terminate(&self) {}
+}
+
+pub struct EngineManager {
+    engines: std::collections::HashMap<String, Arc<dyn Engine>>,
+}
+
+impl EngineManager {
+    pub fn new() -> Self {
+        Self { engines: std::collections::HashMap::new() }
+    }
+
+    pub fn register(&mut self, name: impl Into<String>, engine: Arc<dyn Engine>) {
+        self.engines.insert(name.into(), engine);
+    }
+
+    pub fn get(&self, engine_type: &str) -> Option<Arc<dyn Engine>> {
+        self.engines.get(engine_type).cloned()
+    }
+
+    pub async fn activate_required(&self, types: &HashSet<String>) -> anyhow::Result<()> {
+        for name in types {
+            if let Some(engine) = self.engines.get(name.as_str()) {
+                engine.activate().await?;
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn synthesize(&self, text: &str, cast: &Cast, out: &Path) -> anyhow::Result<()> {
+        let engine = self
+            .engines
+            .get(cast.engine_type.as_str())
+            .ok_or_else(|| anyhow::anyhow!("engine '{}' not registered", cast.engine_type))?;
+        engine.synthesize(text, cast, out).await
+    }
+
+    /// 登録済みの全エンジンを停止する（activate() でプロセスを起動した場合のみ実際に停止する）。
+    pub fn shutdown_all(&self) {
+        for (name, engine) in &self.engines {
+            tracing::info!("[{name}] エンジンを停止します。");
+            engine.terminate();
+        }
+    }
+}
+
+impl Default for EngineManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    struct StubEngine {
+        activate_count: Arc<AtomicUsize>,
+        synthesize_count: Arc<AtomicUsize>,
+        terminate_count: Arc<AtomicUsize>,
+        should_fail: bool,
+    }
+
+    impl StubEngine {
+        fn new() -> Self {
+            Self {
+                activate_count: Arc::new(AtomicUsize::new(0)),
+                synthesize_count: Arc::new(AtomicUsize::new(0)),
+                terminate_count: Arc::new(AtomicUsize::new(0)),
+                should_fail: false,
+            }
+        }
+
+        fn failing() -> Self {
+            Self { should_fail: true, ..Self::new() }
+        }
+    }
+
+    #[async_trait]
+    impl Engine for StubEngine {
+        async fn activate(&self) -> anyhow::Result<()> {
+            self.activate_count.fetch_add(1, Ordering::SeqCst);
+            if self.should_fail {
+                anyhow::bail!("engine activation failed");
+            }
+            Ok(())
+        }
+
+        async fn synthesize(&self, _text: &str, _cast: &Cast, _output: &Path) -> anyhow::Result<()> {
+            self.synthesize_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+
+        fn terminate(&self) {
+            self.terminate_count.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn dummy_cast(engine: &str) -> Cast {
+        Cast {
+            name: "テスト".to_string(),
+            speaker_name: "ずんだもん".to_string(),
+            engine_type: engine.to_string(),
+            pan: 0.0,
+            distance: 1.0,
+            volume: 1.0,
+            params: HashMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_returns_none_for_unregistered_engine() {
+        let mgr = EngineManager::new();
+        assert!(mgr.get("voicevox").is_none());
+    }
+
+    #[tokio::test]
+    async fn register_and_get_engine() {
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", Arc::new(StubEngine::new()));
+        assert!(mgr.get("voicevox").is_some());
+    }
+
+    #[tokio::test]
+    async fn activate_required_calls_activate_for_matching_engines() {
+        let stub = Arc::new(StubEngine::new());
+        let count = Arc::clone(&stub.activate_count);
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", stub);
+
+        let types: HashSet<String> = ["voicevox".to_string()].into();
+        mgr.activate_required(&types).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn activate_required_skips_unregistered_engine() {
+        let mgr = EngineManager::new();
+        let types: HashSet<String> = ["xtts".to_string()].into();
+        // should not error even though engine isn't registered
+        mgr.activate_required(&types).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn activate_required_propagates_error() {
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", Arc::new(StubEngine::failing()));
+        let types: HashSet<String> = ["voicevox".to_string()].into();
+        assert!(mgr.activate_required(&types).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn synthesize_dispatches_to_correct_engine() {
+        let stub = Arc::new(StubEngine::new());
+        let count = Arc::clone(&stub.synthesize_count);
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", stub);
+
+        let cast = dummy_cast("voicevox");
+        mgr.synthesize("テスト", &cast, Path::new("out.wav")).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn synthesize_errors_for_unregistered_engine() {
+        let mgr = EngineManager::new();
+        let cast = dummy_cast("unknown");
+        let result = mgr.synthesize("テスト", &cast, Path::new("out.wav")).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn default_is_cast_valid_returns_true() {
+        let stub = StubEngine::new();
+        let cast = dummy_cast("voicevox");
+        assert!(stub.is_cast_valid(&cast));
+    }
+
+    #[test]
+    fn default_terminate_is_noop() {
+        struct NoopEngine;
+        #[async_trait]
+        impl Engine for NoopEngine {
+            async fn activate(&self) -> anyhow::Result<()> { Ok(()) }
+            async fn synthesize(&self, _: &str, _: &Cast, _: &Path) -> anyhow::Result<()> { Ok(()) }
+        }
+        // デフォルト実装が呼べてパニックしないことを確認する
+        NoopEngine.terminate();
+    }
+
+    #[test]
+    fn shutdown_all_terminates_every_registered_engine() {
+        let stub_a = Arc::new(StubEngine::new());
+        let stub_b = Arc::new(StubEngine::new());
+        let count_a = Arc::clone(&stub_a.terminate_count);
+        let count_b = Arc::clone(&stub_b.terminate_count);
+
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", stub_a);
+        mgr.register("aivis", stub_b);
+
+        mgr.shutdown_all();
+
+        assert_eq!(count_a.load(Ordering::SeqCst), 1);
+        assert_eq!(count_b.load(Ordering::SeqCst), 1);
+    }
+}

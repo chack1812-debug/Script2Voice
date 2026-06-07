@@ -1,0 +1,105 @@
+台本仕様
+
+1. 台本は、次のセクションを含む。
+	1. @scene
+	2. @pause
+	3. @asset
+ 	4. @cast
+ 	5. @script
+
+2. 各セクションの機能
+	1. @scene 台本の場面開始を宣言する。
+		1. 場面の先頭で宣言する。
+		2. @scene *** として場面の名前を***と付けることができる。
+		3. 音響場の設定を行う。room_size=** (0.0～1.0 小さいほど狭い)､ reverb_wet=** (0.0～1.0 残響音のミックス量)
+		4. 場面には、@asset、@cast、@scriptの各セクションを必ず含む。
+		
+	2. @pause 文間、話者間、段落間に設ける無音時間を設定する。
+		sentens ****:	文間に****msの無音を挿入する。
+		cast ****:	話者交替時に****msの無音を挿入する。
+		paragraph ****:	段落間に****msの無音を挿入する。
+	
+	3. @asset BGM、SEの音源集のフォルダを指定する。
+		1. bgm_dir = 絶対パス
+			BGMの音源が保存されたフォルダを絶対パスで指定する。
+			PATH名には、空白文字を含むことが出来る。
+		2. se_dir = 絶対パス
+			SEの音源が保存されたフォルダを絶対パスで指定する。
+			PATH名には、空白文字を含むことが出来る。
+	4. @cast 登場人物の役、話者名、音声合成エンジン、言語、各種パラメータを設定する。
+		書式	役名:話者名:style,音声合成エンジン名、使用言語,各種パラメータ
+		役名	@script内での役
+		話者名	役名を担当する話者の名称
+		style	話者の発声スタイル(VOICEVOX,AivisSpeechのみに存在、XTTSは"default"とする)
+		音声合成エンジン名	VOICEVOX,AivisSpeech,Conqui TTSを想定するが、将来追加する可能性がある。
+			Conqui TTS = xtts, VOICEVOX = voicevox, AivisSpeech = aivis とする。
+		使用言語	話者の発声する言語(XTTSのみ使用する。XTTSのモデルは多言語多言語モデルを使用する。VOICEVOX,AivisSpeechは強制的に日本語とする。
+			書式 language = ** 
+			** en(英語) ja(日本語) 他 
+		各種パラメータの名称。必要に応じて指定する。
+			VOICEVOX {
+  				"id": 0,
+				"name": "string",
+				"speaker_uuid": "string",
+				"style_id": 0,
+				"speedScale": 0,
+				"pitchScale": 0,
+				"intonationScale": 0,
+				"volumeScale": 0,
+				"prePhonemeLength": 0,
+				"postPhonemeLength": 0,
+				"pauseLength": 0,
+				"pauseLengthScale": 1
+			}
+			AivisSpeech {
+			    "id": 0,
+			    "name": "string",
+			    "speaker_uuid": "string",
+			    "style_id": 0,
+			    "speedScale": 0,
+			    "intonationScale": 0,
+			    "tempoDynamicsScale": 1,
+			    "pitchScale": 0,
+			    "volumeScale": 0,
+			    "prePhonemeLength": 0,
+			    "postPhonemeLength": 0,
+			    "pauseLength": 0,
+			    "pauseLengthScale": 1
+			}
+			Conqui TTS {
+				"temperature"
+				"length_penalty"
+				"repetition_penalty"
+				"top_k"
+				"top_p"
+				"speed"
+				"enable_text_splitting"
+				"stream_chunk_size"
+			} 
+		定位情報として、下記のパラメータを指定する。ステレオマイクの間隔は0.2mとします。これにより、話者のステレオ定位を定義する。
+			pan = ±**:音声の左右の定位を指定する。単位は°とする。+は右方向、-は左方向
+			distance = ***.** :話者のマイクまでの距離を指定する。 単位はmとする。
+		パラメータの指定方法は､パラメータ名=*** とする。
+			
+	5. @script 台詞･各種音声出力の指示をする。このセクション以外で音声出力をするものはない。
+		書式	役名(臨時パラメータ):台詞'単語:読み'台詞
+				#コマンド
+				空白行
+		役名	@castセクションで定義された役名
+		臨時パラメータ	@castで指定された役者に対する臨時パラメータに対し、±の補正値を加える。 複数を指定可能とする。panも同様に補正値を加える。
+		台詞	発声するテキスト。誤読することがあるため、誤読を防ぐため単語をシングルクォーテーションで囲み指定する。単語と読みを":"で切り分ける。
+				同時にアクセントの指示も出来る。
+		臨時パラメータは､castやsceneで設定された値に対し±の差分で指示する。エンジンのパラメータは正確にその名称を記載する。
+		
+		#で始まる行は、コマンド行とする。コマンドは以下とする。(追加可能)
+			空白	コメント行。 #の後に空白文字があると、その行はコメント行とする。
+			bgm_start ファイル名.wav	ファイル名.wavをBGMとして再生する。ファイル名.wavのファイルは、bgm_dirから探す。
+			bgm_stop	bgmを停止する。
+			se ファイル名.wav	効果音としてファイル名.wavを挿入する。ファイル名.wavは、se_dirから探す。
+			pause ****	****msの無音を挿入する。
+			paragraph	段落の区切りを示す。
+			数字	次の行から数字の文だけ同時発声する。
+		空白行は無視する。
+
+上記は繰り返し出現することができる。
++

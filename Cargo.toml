@@ -32,3 +32,9 @@ tracing.workspace = true
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 clap = { version = "4", features = ["derive"] }
 rayon = "1"
+reqwest = "0.12"
+
+[dev-dependencies]
+async-trait = "0.1.89"
+hound = "3.5.1"
+tempfile = "3.27.0"
