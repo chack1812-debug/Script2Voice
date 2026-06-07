@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::path::Path;
-use std::process::Child;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -11,7 +10,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
 use crate::engine::Engine;
-use crate::process::{ensure_running, terminate_process};
+use crate::process::{ensure_running, terminate_process, EngineProcess};
 
 /// スピーカーキャッシュの型: speaker_name -> style_name -> style_id
 type SpeakerCache = HashMap<String, HashMap<String, u32>>;
@@ -22,7 +21,7 @@ pub struct HttpEngine {
     client: Arc<Client>,
     cache: Arc<RwLock<SpeakerCache>>,
     exe_path: Option<String>,
-    process: Mutex<Option<Child>>,
+    process: Mutex<Option<EngineProcess>>,
 }
 
 impl HttpEngine {

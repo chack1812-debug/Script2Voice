@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::process::Child;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -11,7 +10,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::engine::Engine;
-use crate::process::{ensure_running, terminate_process};
+use crate::process::{ensure_running, terminate_process, EngineProcess};
 
 pub struct XttsEngine {
     name: String,
@@ -19,7 +18,7 @@ pub struct XttsEngine {
     client: Arc<Client>,
     speaker_cache: Arc<RwLock<HashSet<String>>>,
     exe_path: Option<String>,
-    process: Mutex<Option<Child>>,
+    process: Mutex<Option<EngineProcess>>,
 }
 
 impl XttsEngine {
