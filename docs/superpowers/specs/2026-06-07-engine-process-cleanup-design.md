@@ -44,7 +44,7 @@ Job Object の FFI を安全にラップする RAII 構造体（仮称 `EngineJo
 
 - `EngineJob::new() -> io::Result<Self>`: Job Object を作成し `KILL_ON_JOB_CLOSE` を設定
 - `EngineJob::assign(&self, child: &Child) -> io::Result<()>`: 指定プロセスを Job に割り当てる
-  - 割り当て前にプロセスが孫プロセスを spawn してしまうと Job に含まれない可能性があるため、`Command` 起動時に `CREATE_SUSPENDED` で生成し、Job 割り当て後に `ResumeThread` で再開する（既存の `Command::spawn()` をそのまま使う場合と比べてより確実）
+  - `std::process::Command::spawn()` は生成直後のスレッドハンドルを返さないため `CREATE_SUSPENDED` + `ResumeThread` による厳密な競合排除はできない。`spawn()` 直後、可能な限り早いタイミングで `AssignProcessToJobObject` を呼ぶ（マイクロ秒オーダーの競合窓は残るが、エンジン起動処理（DLL読み込み・サーバー初期化）の所要時間と比べて無視できるレベルであり、実用上問題ない）
 - `EngineJob::terminate(&self) -> io::Result<()>`: `TerminateJobObject` で Job 配下を即時終了する
 - `Drop` でハンドルを閉じる（＝明示的に `terminate` しなかった場合、本体終了時に OS が `KILL_ON_JOB_CLOSE` により配下を巻き込み終了する）
 - Windows 専用 API のため `#[cfg(windows)]` でガードする
