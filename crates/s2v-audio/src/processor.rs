@@ -113,8 +113,11 @@ impl AudioProcessor {
 
         let dist_gain_l = self.config.reference_dist / geo.dist_l.max(0.1);
         let dist_gain_r = self.config.reference_dist / geo.dist_r.max(0.1);
-        let pat_l = ((1.0 - k) + k * (geo.angle_l - mic_angle_rad).cos()).max(0.01);
-        let pat_r = ((1.0 - k) + k * (geo.angle_r + mic_angle_rad).cos()).max(0.01);
+        // Lマイクは外側 (-mic_angle / 左向き)、Rマイクは外側 (+mic_angle / 右向き) を向く
+        // ORTF的な「外開き」配置。distance/ITDによる左右差と指向性パターンによる左右差が
+        // 同じ方向を強め合うようにする (符号が逆だと両者が打ち消し合い、定位が反転して聞こえる)。
+        let pat_l = ((1.0 - k) + k * (geo.angle_l + mic_angle_rad).cos()).max(0.01);
+        let pat_r = ((1.0 - k) + k * (geo.angle_r - mic_angle_rad).cos()).max(0.01);
 
         let gain_l = (vol_factor * dist_gain_l * pat_l) as f32;
         let gain_r = (vol_factor * dist_gain_r * pat_r) as f32;
@@ -339,9 +342,11 @@ mod tests {
 
     #[test]
     fn process_panning_creates_stereo_asymmetry() {
-        // XYクロスペアマイク配置: Lマイクは+45°(右向き)、Rマイクは-45°(左向き)。
-        // 左パン(pan=-45)ではRマイクが音源を強く拾いRchが大きくなり、
-        // 右パン(pan=+45)ではLマイクが拾いLchが大きくなる。
+        // 外開き(ORTF的)マイク配置: Lマイクは-45°(左向き)、Rマイクは+45°(右向き)。
+        // pan は + で右、- で左から聞こえる仕様 (台本仕様.txt) なので、
+        // 左パン(pan=-45)では音源がLマイクに近く・正面に来てLchが大きくなり、
+        // 右パン(pan=+45)では音源がRマイクに近く・正面に来てRchが大きくなる。
+        // (距離由来のITD/ILDと指向性パターン由来のILDが同じ方向を強め合う)
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in.wav");
         write_test_wav(&input, 48000, 440.0, 0.2);
@@ -364,24 +369,25 @@ mod tests {
         let center_ratio = (l_center - r_center).abs() / (l_center + r_center + 1.0);
         assert!(center_ratio < 0.1, "center should be approximately symmetric, got ratio={center_ratio:.3}");
 
-        // 左パン: L ≠ R (非対称が生まれる)
+        // 左パン(pan=-45): 音源は左側 → Lchが大きくなるはず (台本仕様.txt: -=左)
         let out_left = dir.path().join("left.wav");
         proc.process(&input, &out_left, &dummy_cast(-45.0, 1.0), &default_scene()).unwrap();
         let l_left = read_rms(&out_left, 0);
         let r_left = read_rms(&out_left, 1);
         let left_ratio = (l_left - r_left).abs() / (l_left + r_left + 1.0);
         assert!(left_ratio > 0.05, "left pan should create stereo asymmetry, got ratio={left_ratio:.3}");
+        assert!(l_left > r_left,
+            "pan=-45 (left) should be louder in the L channel, got L={l_left:.1} R={r_left:.1}");
 
-        // 右パン: 左パンと逆方向の非対称
+        // 右パン(pan=+45): 音源は右側 → Rchが大きくなるはず (台本仕様.txt: +=右)
         let out_right = dir.path().join("right.wav");
         proc.process(&input, &out_right, &dummy_cast(45.0, 1.0), &default_scene()).unwrap();
         let l_right = read_rms(&out_right, 0);
         let r_right = read_rms(&out_right, 1);
-        // 左パンと右パンで大小関係が逆転する
-        let left_dominant = l_left > r_left;
-        let right_dominant = l_right > r_right;
-        assert_ne!(left_dominant, right_dominant,
-            "left and right pan should create opposite stereo balance");
+        let right_ratio = (l_right - r_right).abs() / (l_right + r_right + 1.0);
+        assert!(right_ratio > 0.05, "right pan should create stereo asymmetry, got ratio={right_ratio:.3}");
+        assert!(r_right > l_right,
+            "pan=+45 (right) should be louder in the R channel, got L={l_right:.1} R={r_right:.1}");
     }
 
     #[test]
