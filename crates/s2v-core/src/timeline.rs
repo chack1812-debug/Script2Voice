@@ -11,6 +11,7 @@ pub enum EventType {
     BgmStart,
     BgmStop,
     Se,
+    Paragraph,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -118,6 +119,18 @@ impl TimelineProcessor {
         });
     }
 
+    pub fn register_paragraph(&mut self) {
+        self.events.push(TimelineEvent {
+            event_type: EventType::Paragraph,
+            start_ms: self.current_ms,
+            duration_ms: 0.0,
+            path: None,
+            text: None,
+            display_text: Some("[PARAGRAPH]".to_string()),
+            cast: None,
+        });
+    }
+
     pub fn get_events(&self) -> &[TimelineEvent] {
         &self.events
     }
@@ -210,6 +223,22 @@ mod tests {
         let e = &tp.get_events()[0];
         assert_eq!(e.event_type, EventType::BgmStart);
         assert!((e.start_ms - 3000.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn register_paragraph_uses_current_time_and_zero_duration() {
+        let mut tp = TimelineProcessor::new(&default_pause());
+        tp.advance_after_speech(1000.0, None);
+        let before = tp.current_ms;
+        tp.register_paragraph();
+        let events = tp.get_events();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::Paragraph);
+        assert!((events[0].start_ms - before).abs() < 1e-10);
+        assert!((events[0].duration_ms - 0.0).abs() < 1e-10);
+        assert_eq!(events[0].display_text.as_deref(), Some("[PARAGRAPH]"));
+        // current_ms は変化しない (advance は呼び出し側が別途行う)
+        assert!((tp.current_ms - before).abs() < 1e-10);
     }
 
     #[test]
