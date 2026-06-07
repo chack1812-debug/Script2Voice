@@ -15,20 +15,36 @@ pub struct Cast {
 }
 
 impl Cast {
-    /// 臨時パラメータを適用した新 Cast を返す (Python版 create_effective_cast 相当)
+    /// 臨時パラメータを適用した新 Cast を返す (Python版 create_effective_cast 相当)。
+    /// 数値は基準値への加算、未知のパラメータは上書きとして扱う。
     pub fn with_offsets(&self, offsets: &HashMap<String, f64>) -> Self {
         let mut cast = self.clone();
         for (k, &v) in offsets {
             match k.as_str() {
-                "pan" => cast.pan = v,
-                "distance" => cast.distance = v,
-                "volume" => cast.volume = v,
+                "pan" => cast.pan += v,
+                "distance" => cast.distance += v,
+                "volume" => cast.volume += v,
                 other => {
-                    cast.params.insert(other.to_string(), Value::from(v));
+                    if let Some(neutral) = engine_param_neutral_default(other) {
+                        let base = self.params.get(other).and_then(|v| v.as_f64()).unwrap_or(neutral);
+                        cast.params.insert(other.to_string(), Value::from(base + v));
+                    } else {
+                        cast.params.insert(other.to_string(), Value::from(v));
+                    }
                 }
             }
         }
         cast
+    }
+}
+
+/// VOICEVOX/AivisSpeech/XTTS のエンジン固有パラメータの中立値 (Python版 _engine_param_defaults 相当)。
+/// 該当しないキーは None を返す (=上書き対象)。
+fn engine_param_neutral_default(key: &str) -> Option<f64> {
+    match key {
+        "speedScale" | "intonationScale" | "volumeScale" | "tempoDynamicsScale" | "speed" => Some(1.0),
+        "pitchScale" | "temperature" | "pitch" => Some(0.0),
+        _ => None,
     }
 }
 
@@ -54,31 +70,32 @@ mod tests {
     }
 
     #[test]
-    fn with_offsets_overrides_pan() {
+    fn with_offsets_adds_to_base_pan() {
+        // Python版 create_effective_cast: 数値フィールドは現在値に加算する (上書きではない)
         let cast = base_cast();
         let mut offsets = HashMap::new();
         offsets.insert("pan".to_string(), 30.0_f64);
         let effective = cast.with_offsets(&offsets);
-        assert!((effective.pan - 30.0).abs() < 1e-10);
+        assert!((effective.pan - (cast.pan + 30.0)).abs() < 1e-10);
         assert!((effective.distance - 1.0).abs() < 1e-10);
     }
 
     #[test]
-    fn with_offsets_overrides_distance() {
+    fn with_offsets_adds_to_base_distance() {
         let cast = base_cast();
         let mut offsets = HashMap::new();
         offsets.insert("distance".to_string(), 2.5_f64);
         let effective = cast.with_offsets(&offsets);
-        assert!((effective.distance - 2.5).abs() < 1e-10);
+        assert!((effective.distance - (cast.distance + 2.5)).abs() < 1e-10);
     }
 
     #[test]
-    fn with_offsets_overrides_volume() {
+    fn with_offsets_adds_to_base_volume() {
         let cast = base_cast();
         let mut offsets = HashMap::new();
         offsets.insert("volume".to_string(), 0.8_f64);
         let effective = cast.with_offsets(&offsets);
-        assert!((effective.volume - 0.8).abs() < 1e-10);
+        assert!((effective.volume - (cast.volume + 0.8)).abs() < 1e-10);
     }
 
     #[test]
@@ -101,12 +118,35 @@ mod tests {
     }
 
     #[test]
-    fn with_offsets_unknown_key_goes_to_params() {
-        let cast = base_cast();
+    fn with_offsets_adds_to_existing_engine_param() {
+        // Python版: エンジンパラメータは params の既存値 (なければ中立値) に加算する
+        let cast = base_cast(); // params["speedScale"] = 1.0
         let mut offsets = HashMap::new();
-        offsets.insert("speedScale".to_string(), 1.5_f64);
+        offsets.insert("speedScale".to_string(), 0.5_f64);
         let effective = cast.with_offsets(&offsets);
         let speed = effective.params["speedScale"].as_f64().unwrap();
-        assert!((speed - 1.5).abs() < 1e-10);
+        assert!((speed - 1.5).abs() < 1e-10, "expected 1.0 (base) + 0.5 (offset) = 1.5, got {speed}");
+    }
+
+    #[test]
+    fn with_offsets_engine_param_uses_neutral_default_when_absent() {
+        // base_cast には pitchScale が無いため、中立値 0.0 を基準に加算する
+        let cast = base_cast();
+        let mut offsets = HashMap::new();
+        offsets.insert("pitchScale".to_string(), 0.3_f64);
+        let effective = cast.with_offsets(&offsets);
+        let pitch = effective.params["pitchScale"].as_f64().unwrap();
+        assert!((pitch - 0.3).abs() < 1e-10, "expected neutral 0.0 + 0.3 = 0.3, got {pitch}");
+    }
+
+    #[test]
+    fn with_offsets_unknown_key_overwrites_in_params() {
+        // engine_param_keys にも numeric_fields にも該当しないキーは上書き格納する
+        let cast = base_cast();
+        let mut offsets = HashMap::new();
+        offsets.insert("room_size".to_string(), 0.6_f64);
+        let effective = cast.with_offsets(&offsets);
+        let room_size = effective.params["room_size"].as_f64().unwrap();
+        assert!((room_size - 0.6).abs() < 1e-10);
     }
 }

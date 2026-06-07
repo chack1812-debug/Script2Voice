@@ -19,6 +19,15 @@ pub struct Producer {
     sample_rate: u32,
 }
 
+/// 話者交代時のポーズ判定 (Python版 producer.py:188-193 相当)。
+/// `None` を返した場合は `advance_after_speech` の既定値 (sentence pause) が使われる。
+fn speech_pause(last_cast: Option<&str>, cast_name: &str, cast_pause_ms: f64) -> Option<f64> {
+    match last_cast {
+        Some(name) if name != cast_name => Some(cast_pause_ms),
+        _ => None, // sentence pause (last_cast == None or same cast as previous)
+    }
+}
+
 struct ConcurrencyConfig {
     voicevox: usize,
     aivis: usize,
@@ -107,7 +116,8 @@ impl Producer {
         let room_sizes: Vec<f64> = tasks.iter()
             .map(|(_, _, t)| {
                 t.cast.params.get("room_size").and_then(|v| v.as_f64())
-                    .unwrap_or(t.scene_config.room_size)
+                    .or(t.scene_config.room_size)
+                    .unwrap_or(self.audio_processor.config_room_size())
             })
             .collect();
         self.audio_processor.prewarm_ir_cache(&room_sizes);
@@ -233,11 +243,7 @@ impl Producer {
                                 t.text.clone(), t.display_text.clone(),
                                 t.cast.name.clone(),
                             );
-                            let pause = if last_cast.as_deref() == Some(cast_name.as_str()) {
-                                None // sentence pause
-                            } else {
-                                Some(timeline.cast_pause_ms)
-                            };
+                            let pause = speech_pause(last_cast.as_deref(), cast_name, timeline.cast_pause_ms);
                             last_cast = Some(cast_name.clone());
                             timeline.advance_after_speech(t.duration_ms, pause);
                         } else {
@@ -268,5 +274,26 @@ impl Producer {
         exporter.generate_combined_audio()?;
         info!("--- Export Finished: {} ---", self.project_root.display());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod speech_pause_tests {
+    use super::*;
+
+    #[test]
+    fn first_speech_in_scene_uses_sentence_pause() {
+        // Python版: last_cast_name is None -> sentence_pause (cast_pause ではない)
+        assert_eq!(speech_pause(None, "めたん", 500.0), None);
+    }
+
+    #[test]
+    fn same_cast_as_previous_uses_sentence_pause() {
+        assert_eq!(speech_pause(Some("めたん"), "めたん", 500.0), None);
+    }
+
+    #[test]
+    fn different_cast_than_previous_uses_cast_pause() {
+        assert_eq!(speech_pause(Some("めたん"), "まい", 500.0), Some(500.0));
     }
 }

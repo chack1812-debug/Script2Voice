@@ -101,8 +101,8 @@ impl ScriptParser {
         let params = extract_kv_params(&param_tokens.join(","));
         SceneConfig {
             name,
-            room_size: params.get("room_size").copied().unwrap_or(0.1),
-            reverb_wet: params.get("reverb_wet").copied().unwrap_or(0.7),
+            room_size: params.get("room_size").copied(),
+            reverb_wet: params.get("reverb_wet").copied(),
         }
     }
 
@@ -219,7 +219,7 @@ impl ScriptParser {
             text,
             display_text,
             offset_params,
-            scene_config: crate::types::SceneConfig { name: String::new(), room_size: 0.1, reverb_wet: 0.7 },
+            scene_config: crate::types::SceneConfig { name: String::new(), room_size: None, reverb_wet: None },
         })
     }
 }
@@ -295,8 +295,8 @@ paragraph 1000
     fn parses_scene_room_params() {
         let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
         let sc = &scenes[0].config;
-        assert!((sc.room_size - 0.3).abs() < 1e-6);
-        assert!((sc.reverb_wet - 0.5).abs() < 1e-6);
+        assert!((sc.room_size.unwrap() - 0.3).abs() < 1e-6);
+        assert!((sc.reverb_wet.unwrap() - 0.5).abs() < 1e-6);
     }
 
     #[test]
@@ -366,7 +366,7 @@ A:さようなら
         assert_eq!(scenes.len(), 2);
         assert_eq!(scenes[0].config.name, "居間");
         assert_eq!(scenes[1].config.name, "屋外");
-        assert!((scenes[1].config.room_size - 0.8).abs() < 1e-6);
+        assert!((scenes[1].config.room_size.unwrap() - 0.8).abs() < 1e-6);
     }
 
     #[test]

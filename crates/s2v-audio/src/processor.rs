@@ -5,6 +5,18 @@ use s2v_core::{AudioConfig, Cast, SceneConfig};
 use crate::resampler::resample_mono;
 use crate::reverb::IrCache;
 
+/// room_size/reverb_wet の実効値を決定する (Cast > Scene > AudioConfig の優先順)。
+/// Python版 audio_processor.py:81-88 (`c_room_size if ... else (s_room_size if ... else self.default_room_size)`) 相当。
+fn resolve_reverb_params(cast: &Cast, scene: &SceneConfig, default_room_size: f64, default_reverb_wet: f64) -> (f64, f64) {
+    let room_size = cast.params.get("room_size").and_then(|v| v.as_f64())
+        .or(scene.room_size)
+        .unwrap_or(default_room_size);
+    let reverb_wet = cast.params.get("reverb_wet").and_then(|v| v.as_f64())
+        .or(scene.reverb_wet)
+        .unwrap_or(default_reverb_wet);
+    (room_size, reverb_wet)
+}
+
 pub struct AudioProcessor {
     config: AudioConfig,
     ir_cache: IrCache,
@@ -23,6 +35,10 @@ impl AudioProcessor {
         self.config.sample_rate
     }
 
+    pub fn config_room_size(&self) -> f64 {
+        self.config.room_size
+    }
+
     pub fn prewarm_ir_cache(&self, room_sizes: &[f64]) {
         self.ir_cache.prewarm(room_sizes);
     }
@@ -30,11 +46,8 @@ impl AudioProcessor {
     /// WAV ファイルを読み込み、DSP 処理を施して stereo WAV として書き出す。
     /// 戻り値: 出力サンプル数（失敗時は Err）
     pub fn process(&self, input: &Path, output: &Path, cast: &Cast, scene: &SceneConfig) -> anyhow::Result<usize> {
-        // --- パラメータ決定 (Cast > Scene > Config デフォルト) ---
-        let room_size = cast.params.get("room_size").and_then(|v| v.as_f64())
-            .unwrap_or(scene.room_size);
-        let reverb_wet = cast.params.get("reverb_wet").and_then(|v| v.as_f64())
-            .unwrap_or(scene.reverb_wet);
+        // --- パラメータ決定 (Cast > Scene > AudioConfig デフォルト) ---
+        let (room_size, reverb_wet) = resolve_reverb_params(cast, scene, self.config.room_size, self.config.reverb_wet);
 
         self.ir_cache.compute_if_needed(room_size);
 
@@ -88,13 +101,15 @@ impl AudioProcessor {
         let mic_angle_rad = self.config.mic_angle.to_radians();
         let k = self.config.mic_directivity;
         let nominal_pat = (1.0 - k) + k * (0.0_f64 - mic_angle_rad).cos();
-        let ref_gain_linear = 10.0_f64.powf(self.config.reference_gain_db / 20.0);
         let max_gain_linear = 10.0_f64.powf(self.config.max_gain_db / 20.0);
         let base_norm = max_gain_linear / nominal_pat.max(1e-6);
 
         let engine_vol = self.config.engine_volume_offsets
             .get(&cast.engine_type).copied().unwrap_or(1.0);
-        let vol_factor = base_norm * cast.volume * engine_vol * ref_gain_linear;
+        // Python版 (core/audio_processor.py) は config.REFERENCE_GAIN_DB を
+        // 定義しているがゲイン計算には使用していない (未使用の設定値)。
+        // 移植時に誤って乗算していたため、Python版に合わせて除外する。
+        let vol_factor = base_norm * cast.volume * engine_vol;
 
         let dist_gain_l = self.config.reference_dist / geo.dist_l.max(0.1);
         let dist_gain_r = self.config.reference_dist / geo.dist_r.max(0.1);
@@ -221,7 +236,38 @@ mod tests {
     }
 
     fn default_scene() -> SceneConfig {
-        SceneConfig { name: "テスト".to_string(), room_size: 0.1, reverb_wet: 0.3 }
+        SceneConfig { name: "テスト".to_string(), room_size: Some(0.1), reverb_wet: Some(0.3) }
+    }
+
+    #[test]
+    fn resolve_reverb_params_falls_back_to_audio_config_when_scene_omits() {
+        // s2v-57z: シーン側でroom_size/reverb_wetが省略された場合、AudioConfigの値にフォールバックする
+        // (Python版 audio_processor.py:87-88 self.default_room_size/self.default_base_wet 相当)
+        let cast = dummy_cast(0.0, 1.0);
+        let scene = SceneConfig { name: "テスト".to_string(), room_size: None, reverb_wet: None };
+        let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
+        assert!((room_size - 0.42).abs() < 1e-10, "config値にフォールバックするはず, got {room_size}");
+        assert!((reverb_wet - 0.55).abs() < 1e-10, "config値にフォールバックするはず, got {reverb_wet}");
+    }
+
+    #[test]
+    fn resolve_reverb_params_prefers_scene_over_config_default() {
+        let cast = dummy_cast(0.0, 1.0);
+        let scene = SceneConfig { name: "テスト".to_string(), room_size: Some(0.8), reverb_wet: Some(0.2) };
+        let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
+        assert!((room_size - 0.8).abs() < 1e-10);
+        assert!((reverb_wet - 0.2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn resolve_reverb_params_prefers_cast_over_scene_and_config() {
+        let mut cast = dummy_cast(0.0, 1.0);
+        cast.params.insert("room_size".to_string(), serde_json::json!(0.9));
+        cast.params.insert("reverb_wet".to_string(), serde_json::json!(0.1));
+        let scene = SceneConfig { name: "テスト".to_string(), room_size: Some(0.8), reverb_wet: Some(0.2) };
+        let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
+        assert!((room_size - 0.9).abs() < 1e-10);
+        assert!((reverb_wet - 0.1).abs() < 1e-10);
     }
 
     fn write_test_wav(path: &Path, sample_rate: u32, freq: f32, duration_s: f32) {
@@ -238,6 +284,39 @@ mod tests {
             writer.write_sample((v * 32767.0) as i16).unwrap();
         }
         writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn reference_gain_db_does_not_affect_output_level() {
+        // Python版 (core/audio_processor.py) は config.REFERENCE_GAIN_DB を
+        // 定義しているが、ゲイン計算には一切使用していない（未使用の設定値）。
+        // Rust版が独自に reference_gain_db を音量係数へ乗じてしまうと、
+        // Python版に対して出力音量が変化してしまう（移植バグ）。
+        // よって reference_gain_db を変えても出力レベルは変わらないはず。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        write_test_wav(&input, 48000, 440.0, 0.1);
+
+        let mut cfg_a = default_audio_config();
+        cfg_a.reference_gain_db = -5.0;
+        let mut cfg_b = default_audio_config();
+        cfg_b.reference_gain_db = -20.0;
+
+        let peak_for = |cfg: AudioConfig| -> f32 {
+            let out = dir.path().join(format!("out_{}.wav", cfg.reference_gain_db));
+            let proc = AudioProcessor::new(cfg);
+            proc.process(&input, &out, &dummy_cast(0.0, 1.0), &default_scene()).unwrap();
+            let mut r = hound::WavReader::open(&out).unwrap();
+            r.samples::<i16>().map(|s| (s.unwrap() as f32).abs()).fold(0.0_f32, f32::max)
+        };
+
+        let peak_a = peak_for(cfg_a);
+        let peak_b = peak_for(cfg_b);
+
+        assert!(
+            (peak_a - peak_b).abs() / peak_a.max(1.0) < 0.01,
+            "reference_gain_db should not change output level (Python版に未使用): peak_a={peak_a}, peak_b={peak_b}"
+        );
     }
 
     #[test]

@@ -7,16 +7,18 @@ use crate::cast::Cast;
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SceneConfig {
     pub name: String,
-    pub room_size: f64,
-    pub reverb_wet: f64,
+    /// 省略時は `None`。実効値への解決は処理時に AudioConfig の値へフォールバックする
+    /// (Python版 audio_processor.py の `getattr(config, 'ROOM_SIZE'/'REVERB_WET', ...)` 相当)。
+    pub room_size: Option<f64>,
+    pub reverb_wet: Option<f64>,
 }
 
 impl SceneConfig {
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             name: name.into(),
-            room_size: 0.1,
-            reverb_wet: 0.7,
+            room_size: None,
+            reverb_wet: None,
         }
     }
 }
@@ -53,9 +55,9 @@ pub struct PauseConfig {
 impl Default for PauseConfig {
     fn default() -> Self {
         Self {
-            sentence_ms: 200.0,
-            cast_ms: 500.0,
-            paragraph_ms: 1000.0,
+            sentence_ms: 500.0,
+            cast_ms: 300.0,
+            paragraph_ms: 1500.0,
         }
     }
 }
@@ -84,20 +86,21 @@ mod tests {
     use super::*;
     #[test]
     fn scene_config_defaults() {
+        // 省略時は None。実効値はAudioConfigへフォールバックする (s2v-57z)
         let sc = SceneConfig::new("居間");
         assert_eq!(sc.name, "居間");
-        assert!((sc.room_size - 0.1).abs() < 1e-10);
-        assert!((sc.reverb_wet - 0.7).abs() < 1e-10);
+        assert_eq!(sc.room_size, None);
+        assert_eq!(sc.reverb_wet, None);
     }
 
     #[test]
     fn scene_config_custom_values() {
         let sc = SceneConfig {
             name: "広場".to_string(),
-            room_size: 0.8,
-            reverb_wet: 0.3,
+            room_size: Some(0.8),
+            reverb_wet: Some(0.3),
         };
-        assert!((sc.room_size - 0.8).abs() < 1e-10);
+        assert_eq!(sc.room_size, Some(0.8));
     }
 
     #[test]
@@ -138,11 +141,12 @@ mod tests {
     }
 
     #[test]
-    fn pause_config_defaults_are_reasonable() {
+    fn pause_config_defaults_match_python_parser_defaults() {
+        // Python版 core/parser.py:32 self.pause_config = {"sentence": 500, "cast": 300, "paragraph": 1500}
         let pc = PauseConfig::default();
-        assert!(pc.sentence_ms > 0.0);
-        assert!(pc.cast_ms >= pc.sentence_ms);
-        assert!(pc.paragraph_ms >= pc.cast_ms);
+        assert_eq!(pc.sentence_ms, 500.0);
+        assert_eq!(pc.cast_ms, 300.0);
+        assert_eq!(pc.paragraph_ms, 1500.0);
     }
 
     #[test]

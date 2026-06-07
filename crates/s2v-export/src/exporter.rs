@@ -57,9 +57,22 @@ impl<'a> Exporter<'a> {
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("timeline.fcpxml");
 
-        let total_s = self.events.iter()
+        // タイムラインの総長さ = max(audio_end, bgm_end, se_end) (Python版 exporter.py:33-47 相当)
+        let audio_end = self.events.iter()
             .map(|e| (e.start_ms + e.duration_ms) / 1000.0)
             .fold(0.0_f64, f64::max);
+        let bgm_end = self.compute_bgm_segments().iter()
+            .map(|seg| seg.mix_start_s + seg.mix_duration_s)
+            .fold(0.0_f64, f64::max);
+        let se_end = self.events.iter()
+            .filter(|e| e.event_type == EventType::Se)
+            .filter_map(|e| {
+                let p = e.path.as_ref()?;
+                if !p.exists() { return None; }
+                Some(e.start_ms / 1000.0 + wav_duration_s(p))
+            })
+            .fold(0.0_f64, f64::max);
+        let total_s = audio_end.max(bgm_end).max(se_end);
         let total_ticks = (total_s * 30000.0) as u64;
 
         let resources = self.build_resource_tags();
@@ -97,22 +110,30 @@ impl<'a> Exporter<'a> {
     pub fn generate_combined_audio(&self) -> anyhow::Result<()> {
         let out_path = self.output_dir.join("full_dialogue.wav");
         let sr = self.sample_rate;
+        let se_fade_s = self.bgm_config.se_fade_out_s;
 
         // dialogue クリップを収集
         let audio_events: Vec<_> = self.events.iter()
             .filter(|e| e.event_type == EventType::Audio)
             .filter(|e| e.path.as_ref().map(|p| p.exists()).unwrap_or(false))
             .collect();
+        let bgm_segs = self.compute_bgm_segments();
+        let se_events: Vec<_> = self.events.iter()
+            .filter(|e| e.event_type == EventType::Se)
+            .filter(|e| e.path.as_ref().map(|p| p.exists()).unwrap_or(false))
+            .collect();
 
-        if audio_events.is_empty() {
-            warn!("ミックス対象の音声が存在しません。");
+        // 音声・BGM・SE のいずれも存在しない場合のみスキップ (Python版 Fix #5 相当)
+        if audio_events.is_empty() && bgm_segs.is_empty() && se_events.is_empty() {
+            warn!("ミックス対象の音声・BGM・SEが存在しません。full_dialogue.wav の生成をスキップします。");
             return Ok(());
         }
 
-        // 総サンプル数を算出
+        info!("voice={} bgm={} se={} をミックス中...", audio_events.len(), bgm_segs.len(), se_events.len());
+
+        // 1. dialogue クリップを読み込み、総サンプル数を算出
         let mut total_samples: usize = 0;
         let mut clips: Vec<(usize, Vec<[f32; 2]>)> = Vec::new();
-
         for event in &audio_events {
             let path = event.path.as_ref().unwrap();
             let start = (event.start_ms / 1000.0 * sr as f64) as usize;
@@ -125,12 +146,25 @@ impl<'a> Exporter<'a> {
             }
         }
 
+        // BGM のバッファ占有サンプルを反映 (クロスフェード拡張分を含む)
+        for seg in &bgm_segs {
+            let end_s = ((seg.mix_start_s + seg.mix_duration_s) * sr as f64) as usize;
+            total_samples = total_samples.max(end_s);
+        }
+
+        // SE のバッファ占有サンプルを反映
+        for event in &se_events {
+            let path = event.path.as_ref().unwrap();
+            let end_s = ((event.start_ms / 1000.0 + wav_duration_s(path)) * sr as f64) as usize;
+            total_samples = total_samples.max(end_s);
+        }
+
         if total_samples == 0 {
             warn!("有効なサンプルがありません。");
             return Ok(());
         }
 
-        // float32 バッファに加算ミックス
+        // 2. 出力バッファを作成し、dialogue クリップを加算
         let mut buf: Vec<[f32; 2]> = vec![[0.0, 0.0]; total_samples];
         for (start, samples) in clips {
             for (i, s) in samples.iter().enumerate() {
@@ -141,13 +175,81 @@ impl<'a> Exporter<'a> {
             }
         }
 
-        // クリッピング防止
+        // 3. BGM をクロスフェード付きでループ展開してミックス (-10dB相当の0.3倍, Python版 Fix #1相当)
+        for seg in &bgm_segs {
+            if !seg.path.exists() {
+                continue;
+            }
+            let Ok(bgm) = read_stereo_float(&seg.path, sr) else { continue };
+            if bgm.is_empty() {
+                continue;
+            }
+            let need = (seg.mix_duration_s * sr as f64) as usize;
+            if need == 0 {
+                continue;
+            }
+            let mut looped = loop_to_length(&bgm, need);
+
+            let fi_n = ((seg.fade_in_s * sr as f64) as usize).min(looped.len());
+            for (i, s) in looped[..fi_n].iter_mut().enumerate() {
+                let g = i as f32 / fi_n.max(1) as f32;
+                s[0] *= g;
+                s[1] *= g;
+            }
+            let fo_n = ((seg.fade_out_s * sr as f64) as usize).min(looped.len());
+            let fo_start = looped.len() - fo_n;
+            for (i, s) in looped[fo_start..].iter_mut().enumerate() {
+                let g = 1.0 - (i as f32 / fo_n.max(1) as f32);
+                s[0] *= g;
+                s[1] *= g;
+            }
+
+            let start_s = (seg.mix_start_s * sr as f64) as usize;
+            if start_s < total_samples {
+                let end_s = (start_s + looped.len()).min(total_samples);
+                for (i, s) in looped[..end_s - start_s].iter().enumerate() {
+                    buf[start_s + i][0] += s[0] * 0.3;
+                    buf[start_s + i][1] += s[1] * 0.3;
+                }
+                info!(
+                    "BGMをミックス: {} ({:.1}s, fi={:.2}s, fo={:.2}s)",
+                    seg.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
+                    seg.mix_duration_s, seg.fade_in_s, seg.fade_out_s,
+                );
+            }
+        }
+
+        // 4. SE をミックス (末尾フェードアウト付き)
+        for event in &se_events {
+            let path = event.path.as_ref().unwrap();
+            let Ok(mut se) = read_stereo_float(path, sr) else { continue };
+            let fo_n = ((se_fade_s * sr as f64) as usize).min(se.len());
+            if fo_n > 0 {
+                let fo_start = se.len() - fo_n;
+                for (i, s) in se[fo_start..].iter_mut().enumerate() {
+                    let g = 1.0 - (i as f32 / fo_n as f32);
+                    s[0] *= g;
+                    s[1] *= g;
+                }
+            }
+            let start_s = (event.start_ms / 1000.0 * sr as f64) as usize;
+            if start_s < total_samples {
+                let end_s = (start_s + se.len()).min(total_samples);
+                for (i, s) in se[..end_s - start_s].iter().enumerate() {
+                    buf[start_s + i][0] += s[0];
+                    buf[start_s + i][1] += s[1];
+                }
+                info!("SEをミックス: {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+            }
+        }
+
+        // 5. クリッピング防止
         let peak = buf.iter().flat_map(|s| s.iter()).cloned().map(f32::abs).fold(0.0_f32, f32::max);
         if peak > 1.0 {
             buf.iter_mut().for_each(|s| { s[0] /= peak; s[1] /= peak; });
         }
 
-        // WAV 書き出し
+        // 6. WAV 書き出し
         std::fs::create_dir_all(out_path.parent().unwrap_or(Path::new(".")))?;
         let spec = hound::WavSpec {
             channels: 2,
@@ -179,6 +281,7 @@ impl<'a> Exporter<'a> {
     }
 
     fn build_audio_clips(&self) -> String {
+        let bgm_segs = self.compute_bgm_segments();
         self.events.iter().enumerate()
             .filter_map(|(i, e)| match e.event_type {
                 EventType::Audio => {
@@ -190,16 +293,27 @@ impl<'a> Exporter<'a> {
                     ))
                 }
                 EventType::BgmStart => {
-                    let start = (e.start_ms / 1000.0 * 30000.0) as u64;
-                    let dur = (self.bgm_config.crossfade_s * 30000.0) as u64;
+                    // Python版 exporter.py:218-223: 実際の bgm_start〜bgm_stop 区間長を使う
+                    let seg = bgm_segs.iter().find(|s| s.index == i)?;
+                    if seg.event_duration_s <= 0.0 {
+                        return None;
+                    }
+                    let start = (seg.event_start_s * 30000.0) as u64;
+                    let dur = (seg.event_duration_s * 30000.0) as u64;
                     Some(format!(
                         r#"<audio ref="a{i}" lane="{}" offset="{start}/30000s" duration="{dur}/30000s" role="music"/>"#,
                         i + 1
                     ))
                 }
                 EventType::Se => {
+                    // Python版 exporter.py:224-229: 実ファイル長を使う
+                    let path = e.path.as_ref()?;
+                    let dur_s = wav_duration_s(path);
+                    if dur_s <= 0.0 {
+                        return None;
+                    }
                     let start = (e.start_ms / 1000.0 * 30000.0) as u64;
-                    let dur = 1500_u64; // SE デフォルト 0.05s
+                    let dur = (dur_s * 30000.0) as u64;
                     Some(format!(
                         r#"<audio ref="a{i}" lane="{}" offset="{start}/30000s" duration="{dur}/30000s" role="effects"/>"#,
                         i + 1
@@ -210,6 +324,111 @@ impl<'a> Exporter<'a> {
             .collect::<Vec<_>>()
             .join("\n                            ")
     }
+
+    /// `#bgm_start`/`#bgm_stop` のペアからミックス用セグメント情報を計算する
+    /// (Python版 `_compute_bgm_segments` 相当)。
+    fn compute_bgm_segments(&self) -> Vec<BgmSegment> {
+        let xfade = self.bgm_config.crossfade_s;
+        let half = xfade / 2.0;
+
+        let total_s = self.events.iter()
+            .map(|e| (e.start_ms + e.duration_ms) / 1000.0)
+            .fold(0.0_f64, f64::max);
+
+        struct Raw {
+            index: usize,
+            path: PathBuf,
+            event_start: f64,
+            event_end: f64,
+        }
+
+        let mut raw: Vec<Raw> = Vec::new();
+        let mut pending: Option<(usize, f64, PathBuf)> = None;
+
+        for (i, event) in self.events.iter().enumerate() {
+            match event.event_type {
+                EventType::BgmStart => {
+                    if let Some((idx, start, path)) = pending.take() {
+                        raw.push(Raw { index: idx, path, event_start: start, event_end: event.start_ms / 1000.0 });
+                    }
+                    pending = Some((i, event.start_ms / 1000.0, event.path.clone().unwrap_or_default()));
+                }
+                EventType::BgmStop => {
+                    if let Some((idx, start, path)) = pending.take() {
+                        raw.push(Raw { index: idx, path, event_start: start, event_end: event.start_ms / 1000.0 });
+                    }
+                }
+                _ => {}
+            }
+        }
+        if let Some((idx, start, path)) = pending {
+            let mut event_end = total_s;
+            if event_end <= start {
+                let file_dur = wav_duration_s(&path);
+                event_end = start + if file_dur > 0.0 { file_dur } else { 30.0 };
+            }
+            raw.push(Raw { index: idx, path, event_start: start, event_end });
+        }
+
+        if raw.is_empty() {
+            return Vec::new();
+        }
+
+        let n = raw.len();
+        raw.into_iter().enumerate().map(|(k, seg)| {
+            let seg_dur = (seg.event_end - seg.event_start).max(0.0);
+            let clamp = seg_dur / 3.0;
+            let fi_half = if k > 0 { half.min(clamp) } else { 0.0 };
+            let fo_half = if k < n - 1 { half.min(clamp) } else { 0.0 };
+            let mix_start = (seg.event_start - fi_half).max(0.0);
+            let mix_end = seg.event_end + fo_half;
+            BgmSegment {
+                index: seg.index,
+                path: seg.path,
+                event_start_s: seg.event_start,
+                event_duration_s: seg_dur,
+                mix_start_s: mix_start,
+                mix_duration_s: (mix_end - mix_start).max(0.0),
+                fade_in_s: fi_half * 2.0,
+                fade_out_s: fo_half * 2.0,
+            }
+        }).collect()
+    }
+}
+
+/// BGMミックス用セグメント情報 (Python版 `_compute_bgm_segments` の戻り値相当)
+struct BgmSegment {
+    index: usize,
+    path: PathBuf,
+    event_start_s: f64,
+    event_duration_s: f64,
+    mix_start_s: f64,
+    mix_duration_s: f64,
+    fade_in_s: f64,
+    fade_out_s: f64,
+}
+
+/// WAV ファイルの再生時間 (秒)。読み込み失敗時は 0.0 (Python版 `_get_file_duration_s` 相当)
+fn wav_duration_s(path: &Path) -> f64 {
+    let Ok(reader) = hound::WavReader::open(path) else { return 0.0 };
+    let spec = reader.spec();
+    if spec.sample_rate == 0 {
+        return 0.0;
+    }
+    reader.duration() as f64 / spec.sample_rate as f64
+}
+
+/// `src` を `need` サンプルになるまでループして返す (Python版 `_loop_to_length` 相当)
+fn loop_to_length(src: &[[f32; 2]], need: usize) -> Vec<[f32; 2]> {
+    if src.is_empty() || need == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(need);
+    while out.len() < need {
+        let take = (need - out.len()).min(src.len());
+        out.extend_from_slice(&src[..take]);
+    }
+    out
 }
 
 fn format_srt_time(seconds: f64) -> String {
@@ -378,6 +597,162 @@ mod tests {
         let sound_max = all[sound_start..].iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
         assert!(silence_max == 0, "silence section should be zero");
         assert!(sound_max > 0, "sound section should be non-zero");
+    }
+
+    fn make_bgm_start(start_ms: f64, path: PathBuf) -> TimelineEvent {
+        TimelineEvent {
+            event_type: EventType::BgmStart,
+            start_ms,
+            duration_ms: 0.0,
+            path: Some(path),
+            text: None,
+            display_text: None,
+            cast: None,
+        }
+    }
+
+    fn make_bgm_stop(start_ms: f64) -> TimelineEvent {
+        TimelineEvent {
+            event_type: EventType::BgmStop,
+            start_ms,
+            duration_ms: 0.0,
+            path: None,
+            text: None,
+            display_text: None,
+            cast: None,
+        }
+    }
+
+    fn make_se(start_ms: f64, path: PathBuf) -> TimelineEvent {
+        TimelineEvent {
+            event_type: EventType::Se,
+            start_ms,
+            duration_ms: 0.0,
+            path: Some(path),
+            text: None,
+            display_text: None,
+            cast: None,
+        }
+    }
+
+    #[test]
+    fn combined_audio_mixes_bgm_into_output() {
+        // Python版 generate_combined_audio はBGMをループ・クロスフェードしつつ0.3倍でミックスする。
+        // セリフが無くてもBGM単独でミックス音声が生成され、無音であってはならない。
+        let dir = tempfile::tempdir().unwrap();
+        let bgm = dir.path().join("bgm.wav");
+        write_wav(&bgm, 48000, 0.5);
+
+        let events = vec![
+            make_bgm_start(0.0, bgm.clone()),
+            make_bgm_stop(1000.0),
+        ];
+        let out_dir = dir.path().join("out");
+        let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
+        exp.generate_combined_audio().unwrap();
+
+        let out = out_dir.join("full_dialogue.wav");
+        assert!(out.exists(), "BGMのみでもfull_dialogue.wavが生成されるはず");
+        let mut reader = hound::WavReader::open(&out).unwrap();
+        let all: Vec<i16> = reader.samples().map(|s| s.unwrap()).collect();
+        let max = all.iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
+        assert!(max > 0, "BGMがミックス出力に含まれているはず (Python版は0.3倍でミックスする)");
+    }
+
+    #[test]
+    fn combined_audio_mixes_se_into_output() {
+        // Python版 generate_combined_audio はSEをフェードアウト付きでミックスする。
+        let dir = tempfile::tempdir().unwrap();
+        let se = dir.path().join("se.wav");
+        write_wav(&se, 48000, 0.2);
+
+        let events = vec![
+            make_se(100.0, se.clone()),
+        ];
+        let out_dir = dir.path().join("out");
+        let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
+        exp.generate_combined_audio().unwrap();
+
+        let out = out_dir.join("full_dialogue.wav");
+        assert!(out.exists(), "SEのみでもfull_dialogue.wavが生成されるはず");
+        let mut reader = hound::WavReader::open(&out).unwrap();
+        let all: Vec<i16> = reader.samples().map(|s| s.unwrap()).collect();
+        let max = all.iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
+        assert!(max > 0, "SEがミックス出力に含まれているはず");
+    }
+
+    #[test]
+    fn fcpxml_bgm_clip_duration_reflects_actual_event_span_not_crossfade() {
+        // Python版 exporter.py:218-223 は _compute_bgm_segments の event_duration
+        // (実際の bgm_start〜bgm_stop 区間) をクリップ長として使う。
+        // クロスフェード長(既定3.0秒)固定であってはならない。
+        let dir = tempfile::tempdir().unwrap();
+        let bgm = dir.path().join("bgm.wav");
+        write_wav(&bgm, 48000, 0.1);
+
+        let events = vec![
+            make_bgm_start(0.0, bgm.clone()),
+            make_bgm_stop(5000.0), // 実区間5.0秒 = 150000 ticks (クロスフェード3.0秒=90000ticksとは異なる)
+        ];
+        let out_dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
+        exp.generate_fcpxml().unwrap();
+        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+
+        assert!(
+            content.contains(r#"duration="150000/30000s" role="music""#),
+            "BGMクリップ長は実区間(5.0s=150000ticks)であるべき。実際の出力:\n{content}"
+        );
+    }
+
+    #[test]
+    fn fcpxml_se_clip_duration_reflects_actual_file_length() {
+        // Python版 exporter.py:224-229 は _get_file_duration_s で実ファイル長を取得する。
+        // 固定 0.05秒(1500 ticks) であってはならない。
+        let dir = tempfile::tempdir().unwrap();
+        let se = dir.path().join("se.wav");
+        write_wav(&se, 48000, 0.4); // 0.4秒 = 12000 ticks
+
+        let events = vec![make_se(0.0, se.clone())];
+        let out_dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
+        exp.generate_fcpxml().unwrap();
+        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+
+        assert!(
+            content.contains(r#"duration="12000/30000s" role="effects""#),
+            "SEクリップ長は実ファイル長(0.4s=12000ticks)であるべき。実際の出力:\n{content}"
+        );
+    }
+
+    #[test]
+    fn fcpxml_total_duration_accounts_for_se_file_extent_beyond_last_event_start() {
+        // Python版 exporter.py:33-47 は se_end = event['start'] + 実ファイル長 を考慮し、
+        // total_duration = max(audio_end, bgm_end, se_end) とする。
+        // SEイベントは登録時 duration_ms=0 のため、開始時刻だけでなく
+        // 実ファイル長を加味しないと、SEがダイアローグより後まで鳴る場合に
+        // タイムラインが途中で切れてしまう。
+        let dir = tempfile::tempdir().unwrap();
+        let se = dir.path().join("se.wav");
+        write_wav(&se, 48000, 5.0); // 5秒のSE
+
+        let events = vec![
+            make_audio_event(0.0, 500.0, "短いセリフ", None), // 0.5sで終わる
+            make_se(1000.0, se.clone()),                       // 1.0s開始、5秒再生 -> 6.0sまで
+        ];
+        let out_dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
+        exp.generate_fcpxml().unwrap();
+        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+
+        let dur_str = content
+            .split(r#"sequence format="r1" duration=""#).nth(1).unwrap()
+            .split("/30000s").next().unwrap();
+        let total_ticks: u64 = dur_str.parse().unwrap();
+        assert!(
+            total_ticks >= 180_000,
+            "全体長はSEの終端(1.0s開始+5.0秒=6.0s=180000ticks)を含むはず。実際: {total_ticks} ticks"
+        );
     }
 
     #[test]

@@ -102,6 +102,40 @@ fn fft_convolve(signal: &[f32], kernel: &[f32]) -> Vec<f32> {
     out_buf
 }
 
+/// 2次Butterworthローパスフィルタの SOS 係数 [b0,b1,b2,a0,a1,a2] (a0=1) を求める。
+/// 双一次変換によるRBJ Audio EQ Cookbookの式 (Q = 1/sqrt(2)) は
+/// scipy.signal.butter(2, cutoff_hz, 'lp', fs=sample_rate, output='sos') と
+/// 浮動小数点誤差(1e-16オーダー)の範囲で一致する (Python版 audio_processor.py:36 相当)。
+fn butterworth_lowpass_sos(cutoff_hz: f64, sample_rate: f64) -> [f64; 6] {
+    let q = std::f64::consts::FRAC_1_SQRT_2;
+    let w0 = 2.0 * std::f64::consts::PI * cutoff_hz / sample_rate;
+    let cos_w0 = w0.cos();
+    let alpha = w0.sin() / (2.0 * q);
+
+    let b0 = (1.0 - cos_w0) / 2.0;
+    let b1 = 1.0 - cos_w0;
+    let b2 = (1.0 - cos_w0) / 2.0;
+    let a0 = 1.0 + alpha;
+    let a1 = -2.0 * cos_w0;
+    let a2 = 1.0 - alpha;
+
+    [b0 / a0, b1 / a0, b2 / a0, 1.0, a1 / a0, a2 / a0]
+}
+
+/// 単一セクションの SOS フィルタを Direct Form II Transposed で適用する
+/// (scipy.signal.sosfilt と数値的に等価)。
+fn sosfilt_single_section(sos: &[f64; 6], input: &[f64]) -> Vec<f64> {
+    let [b0, b1, b2, _a0, a1, a2] = *sos;
+    let mut z1 = 0.0_f64;
+    let mut z2 = 0.0_f64;
+    input.iter().map(|&x| {
+        let y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
+        y
+    }).collect()
+}
+
 /// シード固定の乱数でリバーブ IR を生成する
 fn build_ir(room_size: f64, sample_rate: u32) -> [Vec<f32>; 2] {
     let fs = sample_rate as f64;
@@ -112,28 +146,24 @@ fn build_ir(room_size: f64, sample_rate: u32) -> [Vec<f32>; 2] {
     let seed = (round4(room_size) * 10000.0) as u64 & 0xFFFF_FFFF;
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    let decay: Vec<f32> = (0..n)
+    // Python版 audio_processor.py:36 self._reverb_sos = signal.butter(2, 1800, 'lp', fs=fs, output='sos') 相当
+    let sos = butterworth_lowpass_sos(1800.0, fs);
+
+    let decay: Vec<f64> = (0..n)
         .map(|i| {
             let t = i as f64 / fs;
-            (-6.91 * t / rv_time).exp() as f32
+            (-6.91 * t / rv_time).exp()
         })
         .collect();
 
     std::array::from_fn(|_| {
-        let noise: Vec<f32> = StandardNormal
+        let noise: Vec<f64> = StandardNormal
             .sample_iter(&mut rng)
             .take(n)
-            .map(|v: f64| v as f32)
             .collect();
-        // 簡易ローパス (一次IIRでソフィスティケートされた実装を回避)
-        let alpha = 0.12_f32;
-        let mut filtered = vec![0.0_f32; n];
-        filtered[0] = noise[0] * alpha;
-        for i in 1..n {
-            filtered[i] = alpha * noise[i] + (1.0 - alpha) * filtered[i - 1];
-        }
+        let filtered = sosfilt_single_section(&sos, &noise);
         let mut ir: Vec<f32> = vec![0.0; pre_delay];
-        ir.extend(filtered.iter().zip(decay.iter()).map(|(s, d)| s * d));
+        ir.extend(filtered.iter().zip(decay.iter()).map(|(s, d)| (s * d) as f32));
         ir
     })
 }
@@ -205,6 +235,46 @@ mod tests {
         let result = fft_convolve(&signal, &delta);
         for (a, b) in signal.iter().zip(result.iter()) {
             assert!((a - b).abs() < 1e-3, "a={a}, b={b}");
+        }
+    }
+
+    #[test]
+    fn butterworth_lowpass_sos_matches_scipy_butter_2_1800hz() {
+        // 参照値: scipy.signal.butter(2, 1800, 'lp', fs=48000, output='sos')[0]
+        // (Python版 audio_processor.py:36 self._reverb_sos の生成と等価)
+        let sos = butterworth_lowpass_sos(1800.0, 48000.0);
+        let expected = [
+            0.011857682643241158,
+            0.023715365286482316,
+            0.011857682643241158,
+            1.0,
+            -1.6692031429311929,
+            0.7166338735041575,
+        ];
+        for (a, b) in sos.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-12, "got {sos:?}, expected {expected:?}");
+        }
+    }
+
+    #[test]
+    fn sosfilt_single_section_matches_scipy_sosfilt_impulse_response() {
+        // 参照値: scipy.signal.sosfilt(sos, [1,0,0,0,0,0,0,0]) (fs=48000)
+        let sos = butterworth_lowpass_sos(1800.0, 48000.0);
+        let mut impulse = vec![0.0_f64; 8];
+        impulse[0] = 1.0;
+        let y = sosfilt_single_section(&sos, &impulse);
+        let expected = [
+            0.011857682643241158,
+            0.04350824642246111,
+            0.07598416727162914,
+            0.09565352765971114,
+            0.10521234088519019,
+            0.10707221203959165,
+            0.1033265454680878,
+            0.0957414203849639,
+        ];
+        for (a, b) in y.iter().zip(expected.iter()) {
+            assert!((a - b).abs() < 1e-12, "got {y:?}, expected {expected:?}");
         }
     }
 
