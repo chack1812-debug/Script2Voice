@@ -30,14 +30,18 @@ impl<'a> Exporter<'a> {
         std::fs::create_dir_all(&dir)?;
         let path = dir.join("subtitles.srt");
 
-        let audio_events: Vec<_> = self.events.iter()
-            .filter(|e| e.event_type == EventType::Audio)
+        let mut subtitle_events: Vec<_> = self.events.iter()
+            .filter(|e| e.event_type == EventType::Audio || e.event_type == EventType::Paragraph)
             .collect();
+        subtitle_events.sort_by(|a, b| a.start_ms.partial_cmp(&b.start_ms).unwrap());
 
         let mut content = String::new();
-        for (i, event) in audio_events.iter().enumerate() {
+        for (i, event) in subtitle_events.iter().enumerate() {
             let start_s = event.start_ms / 1000.0;
-            let end_s = (event.start_ms + event.duration_ms) / 1000.0;
+            let end_s = match event.event_type {
+                EventType::Paragraph => start_s,
+                _ => (event.start_ms + event.duration_ms) / 1000.0,
+            };
             content.push_str(&format!(
                 "{}\n{} --> {}\n{}\n\n",
                 i + 1,
@@ -489,6 +493,18 @@ mod tests {
         }
     }
 
+    fn make_paragraph_event(start_ms: f64) -> TimelineEvent {
+        TimelineEvent {
+            event_type: EventType::Paragraph,
+            start_ms,
+            duration_ms: 0.0,
+            path: None,
+            text: None,
+            display_text: Some("[PARAGRAPH]".to_string()),
+            cast: None,
+        }
+    }
+
     fn default_bgm() -> BgmConfig {
         BgmConfig { crossfade_s: 3.0, se_fade_out_s: 0.05 }
     }
@@ -525,6 +541,26 @@ mod tests {
         assert!(content.contains("2\n"));
         assert!(content.contains("00:00:02,000 --> 00:00:02,800"));
         assert!(content.contains("さようなら"));
+    }
+
+    #[test]
+    fn srt_includes_paragraph_markers_in_chronological_order_with_continuous_numbering() {
+        let events = vec![
+            make_audio_event(0.0, 1500.0, "こんにちは", None),
+            make_paragraph_event(1500.0),
+            make_audio_event(3000.0, 800.0, "さようなら", None),
+        ];
+        let dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
+        exp.generate_srt().unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("timeline/subtitles.srt")).unwrap();
+        // 1: 通常の字幕
+        assert!(content.contains("1\n00:00:00,000 --> 00:00:01,500\nこんにちは\n"));
+        // 2: ゼロ秒の [PARAGRAPH] エントリ。タイムスタンプは直前のセリフの終了時刻と同一
+        assert!(content.contains("2\n00:00:01,500 --> 00:00:01,500\n[PARAGRAPH]\n"));
+        // 3: 通常の字幕（連番が続く）
+        assert!(content.contains("3\n00:00:03,000 --> 00:00:03,800\nさようなら\n"));
     }
 
     #[test]
