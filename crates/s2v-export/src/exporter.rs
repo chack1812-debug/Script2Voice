@@ -320,6 +320,7 @@ impl<'a> Exporter<'a> {
                     ))
                 }
                 EventType::BgmStop => None,
+                EventType::Paragraph => None,
             })
             .collect::<Vec<_>>()
             .join("\n                            ")
