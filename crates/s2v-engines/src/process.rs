@@ -99,6 +99,67 @@ mod tests {
         script
     }
 
+    /// ランチャーが孫プロセスを spawn し続けるダミースクリプト一式を書き出す。
+    /// ランチャー自身は起動直後に `launcher_marker.txt` を作成し（is_alive 用の合図）、
+    /// 孫プロセスは `grandchild_log.txt` に "alive" を1行ずつ追記し続ける。
+    fn write_launcher_with_grandchild(dir: &std::path::Path) -> std::path::PathBuf {
+        let grandchild = dir.join("grandchild.cmd");
+        std::fs::write(
+            &grandchild,
+            "@echo off\r\n:loop\r\necho alive >> \"%~dp0grandchild_log.txt\"\r\nping -n 2 127.0.0.1 > nul\r\ngoto loop\r\n",
+        )
+        .unwrap();
+
+        let launcher = dir.join("launcher.cmd");
+        std::fs::write(
+            &launcher,
+            "@echo off\r\necho ready > \"%~dp0launcher_marker.txt\"\r\nstart \"\" /min cmd /c \"%~dp0grandchild.cmd\"\r\n:loop\r\nping -n 2 127.0.0.1 > nul\r\ngoto loop\r\n",
+        )
+        .unwrap();
+
+        launcher
+    }
+
+    #[tokio::test]
+    async fn terminate_process_kills_grandchild_processes_via_job_object() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher = write_launcher_with_grandchild(dir.path());
+        let marker = dir.path().join("launcher_marker.txt");
+        let log = dir.path().join("grandchild_log.txt");
+
+        let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
+        let marker_for_check = marker.clone();
+        ensure_running("test", launcher.to_str(), &process, move || {
+            let marker = marker_for_check.clone();
+            async move { marker.exists() }
+        })
+        .await
+        .unwrap();
+
+        // 孫プロセスがログに書き込み始めるまで待つ(最大15秒)
+        let mut lines_before = 0usize;
+        for _ in 0..30 {
+            if let Ok(content) = std::fs::read_to_string(&log) {
+                lines_before = content.lines().count();
+                if lines_before > 0 {
+                    break;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        assert!(lines_before > 0, "孫プロセスが起動してログに書き込み始めていること");
+
+        terminate_process("test", &process);
+
+        // 孫プロセスが書き込みを止めた(=終了した)ことを確認する
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let lines_after = std::fs::read_to_string(&log).unwrap().lines().count();
+        assert_eq!(
+            lines_after, lines_before,
+            "Job Object経由でランチャーだけでなく孫プロセスも終了していること"
+        );
+    }
+
     #[tokio::test]
     async fn ensure_running_does_not_spawn_when_already_alive() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
