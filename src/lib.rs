@@ -253,7 +253,10 @@ impl Producer {
                     ScriptItem::Command(cmd) => {
                         match cmd {
                             ScriptCommand::Pause(ms) => timeline.advance_pause(*ms),
-                            ScriptCommand::Paragraph => timeline.advance_paragraph(),
+                            ScriptCommand::Paragraph => {
+                                timeline.register_paragraph();
+                                timeline.advance_paragraph();
+                            }
                             ScriptCommand::BgmStart(path) => timeline.register_bgm(PathBuf::from(path)),
                             ScriptCommand::BgmStop => timeline.register_bgm_stop(),
                             ScriptCommand::Se(path) => timeline.register_se(PathBuf::from(path)),

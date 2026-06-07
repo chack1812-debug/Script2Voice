@@ -50,6 +50,7 @@ paragraph 800
 @script
 めたん:こんにちは、まいさん。
 まい:こんにちは、めたんさん。
+#paragraph
 #pause 300
 めたん:今日はいい天気ですね。
 "#;
@@ -119,6 +120,7 @@ async fn produces_full_output_set_from_sample_script() {
     let srt = std::fs::read_to_string(&srt_path).unwrap();
     assert!(srt.contains("こんにちは、まいさん。"));
     assert!(srt.contains("-->"));
+    assert!(srt.contains("[PARAGRAPH]"), "SRTに[PARAGRAPH]マーカーが含まれること");
 
     // FCPXML
     let fcpxml_path = project_dir.join("timeline/timeline.fcpxml");
