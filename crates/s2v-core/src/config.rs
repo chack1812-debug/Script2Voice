@@ -35,6 +35,80 @@ pub struct AudioConfig {
     pub mic_directivity: f64,
     pub mic_angle: f64,
     pub engine_volume_offsets: HashMap<String, f64>,
+    #[serde(default)]
+    pub early_reflections: EarlyConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MaterialConfig {
+    pub reflection_coeff: f64,
+    pub absorption_cutoff_hz: f64,
+}
+
+impl MaterialConfig {
+    const fn new(reflection_coeff: f64, absorption_cutoff_hz: f64) -> Self {
+        Self { reflection_coeff, absorption_cutoff_hz }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct EarlyConfig {
+    #[serde(default = "er_enabled")]
+    pub enabled: bool,
+    #[serde(default = "er_ear_height")]
+    pub ear_height: f64,
+    #[serde(default = "er_listener_offset")]
+    pub listener_offset: [f64; 2],
+    #[serde(default = "er_room_dims_min")]
+    pub room_dims_min: [f64; 3],
+    #[serde(default = "er_room_dims_max")]
+    pub room_dims_max: [f64; 3],
+    #[serde(default = "er_floor")]
+    pub floor: MaterialConfig,
+    #[serde(default = "er_ceiling")]
+    pub ceiling: MaterialConfig,
+    #[serde(default = "er_front_wall")]
+    pub front_wall: MaterialConfig,
+    #[serde(default = "er_back_wall")]
+    pub back_wall: MaterialConfig,
+    #[serde(default = "er_side_walls")]
+    pub side_walls: MaterialConfig,
+    #[serde(default = "er_early_level")]
+    pub early_level: f64,
+    #[serde(default = "er_wet_distance_slope")]
+    pub wet_distance_slope: f64,
+}
+
+fn er_enabled() -> bool { true }
+fn er_ear_height() -> f64 { 1.2 }
+fn er_listener_offset() -> [f64; 2] { [0.0, 0.0] }
+fn er_room_dims_min() -> [f64; 3] { [4.0, 5.0, 3.0] }
+fn er_room_dims_max() -> [f64; 3] { [25.0, 45.0, 18.0] }
+fn er_floor() -> MaterialConfig { MaterialConfig::new(0.5, 3500.0) }
+fn er_ceiling() -> MaterialConfig { MaterialConfig::new(0.6, 6000.0) }
+fn er_front_wall() -> MaterialConfig { MaterialConfig::new(0.85, 10000.0) }
+fn er_back_wall() -> MaterialConfig { MaterialConfig::new(0.40, 4000.0) }
+fn er_side_walls() -> MaterialConfig { MaterialConfig::new(0.70, 8000.0) }
+fn er_early_level() -> f64 { 1.0 }
+fn er_wet_distance_slope() -> f64 { 0.1 }
+
+impl Default for EarlyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: er_enabled(),
+            ear_height: er_ear_height(),
+            listener_offset: er_listener_offset(),
+            room_dims_min: er_room_dims_min(),
+            room_dims_max: er_room_dims_max(),
+            floor: er_floor(),
+            ceiling: er_ceiling(),
+            front_wall: er_front_wall(),
+            back_wall: er_back_wall(),
+            side_walls: er_side_walls(),
+            early_level: er_early_level(),
+            wet_distance_slope: er_wet_distance_slope(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -169,5 +243,29 @@ se_fade_out_s = 0.05
     fn rejects_invalid_toml() {
         let result = Config::from_toml("this is not valid toml [[[");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn early_reflections_defaults_when_section_absent() {
+        let cfg = Config::from_toml(SAMPLE_TOML).unwrap();
+        let er = &cfg.audio.early_reflections;
+        assert!(er.enabled);
+        assert!((er.ear_height - 1.2).abs() < 1e-10);
+        assert_eq!(er.room_dims_min, [4.0, 5.0, 3.0]);
+        assert_eq!(er.room_dims_max, [25.0, 45.0, 18.0]);
+        assert!((er.front_wall.reflection_coeff - 0.85).abs() < 1e-10);
+        assert!((er.back_wall.absorption_cutoff_hz - 4000.0).abs() < 1e-10);
+        assert!((er.wet_distance_slope - 0.1).abs() < 1e-10);
+    }
+
+    #[test]
+    fn early_reflections_partial_section_fills_missing_fields() {
+        let toml = format!("{SAMPLE_TOML}\n[audio.early_reflections]\nenabled = false\near_height = 1.7\n");
+        let cfg = Config::from_toml(&toml).unwrap();
+        let er = &cfg.audio.early_reflections;
+        assert!(!er.enabled);
+        assert!((er.ear_height - 1.7).abs() < 1e-10);
+        assert_eq!(er.room_dims_max, [25.0, 45.0, 18.0]);
+        assert!((er.floor.reflection_coeff - 0.5).abs() < 1e-10);
     }
 }

@@ -223,6 +223,7 @@ mod tests {
                 m.insert("voicevox".to_string(), 1.0);
                 m
             },
+            early_reflections: s2v_core::EarlyConfig::default(),
         }
     }
 

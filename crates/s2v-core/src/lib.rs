@@ -5,7 +5,7 @@ pub mod timeline;
 pub mod types;
 
 pub use cast::Cast;
-pub use config::{AudioConfig, BgmConfig, Config, ConcurrencyConfig, EngineUrl};
+pub use config::{AudioConfig, BgmConfig, Config, ConcurrencyConfig, EarlyConfig, EngineUrl, MaterialConfig};
 pub use parser::ScriptParser;
 pub use timeline::{EventType, TimelineEvent, TimelineProcessor};
 pub use types::{PauseConfig, Scene, SceneConfig, ScriptCommand, ScriptItem};
