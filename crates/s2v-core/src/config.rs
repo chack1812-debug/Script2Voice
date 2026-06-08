@@ -268,4 +268,12 @@ se_fade_out_s = 0.05
         assert_eq!(er.room_dims_max, [25.0, 45.0, 18.0]);
         assert!((er.floor.reflection_coeff - 0.5).abs() < 1e-10);
     }
+
+    #[test]
+    fn parses_real_config_toml_with_early_reflections() {
+        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml")).unwrap();
+        let cfg = Config::from_toml(&s).unwrap();
+        assert!(cfg.audio.early_reflections.enabled);
+        assert!((cfg.audio.early_reflections.front_wall.reflection_coeff - 0.85).abs() < 1e-10);
+    }
 }

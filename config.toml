@@ -25,6 +25,20 @@ max_gain_db = -1.0
 mic_directivity = 0.2
 mic_angle = 30.0
 
+[audio.early_reflections]
+enabled = true
+ear_height = 1.2
+listener_offset = [0.0, 0.0]
+room_dims_min = [4.0, 5.0, 3.0]
+room_dims_max = [25.0, 45.0, 18.0]
+early_level = 1.0
+wet_distance_slope = 0.1
+floor = { reflection_coeff = 0.5, absorption_cutoff_hz = 3500.0 }
+ceiling = { reflection_coeff = 0.6, absorption_cutoff_hz = 6000.0 }
+front_wall = { reflection_coeff = 0.85, absorption_cutoff_hz = 10000.0 }
+back_wall = { reflection_coeff = 0.40, absorption_cutoff_hz = 4000.0 }
+side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
+
 [audio.engine_volume_offsets]
 voicevox = 1.2
 aivis = 0.9
