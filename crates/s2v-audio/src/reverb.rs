@@ -37,7 +37,7 @@ impl IrCache {
     }
 
     /// IR を使って stereo バッファにリバーブをかける (in-place)
-    pub fn apply(&self, stereo: &mut Vec<[f32; 2]>, room_size: f64, reverb_wet: f64, avg_dist: f64) {
+    pub fn apply(&self, stereo: &mut Vec<[f32; 2]>, room_size: f64, reverb_wet: f64, avg_dist: f64, wet_distance_slope: f64) {
         if reverb_wet <= 0.0 || stereo.is_empty() {
             return;
         }
@@ -46,7 +46,7 @@ impl IrCache {
         let cache = self.cache.lock().unwrap();
         let Some(ir) = cache.get(&key) else { return };
 
-        let actual_wet = (reverb_wet * (1.0 + 0.1 * avg_dist)).min(0.9) as f32;
+        let actual_wet = (reverb_wet * (1.0 + wet_distance_slope * avg_dist)).min(0.9) as f32;
 
         for ch in 0..2 {
             let dry: Vec<f32> = stereo.iter().map(|s| s[ch]).collect();
@@ -204,7 +204,7 @@ mod tests {
         cache.compute_if_needed(0.3);
         let original: Vec<[f32; 2]> = (0..100).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
         let mut signal = original.clone();
-        cache.apply(&mut signal, 0.3, 0.0, 1.0);
+        cache.apply(&mut signal, 0.3, 0.0, 1.0, 0.1);
         for (a, b) in original.iter().zip(signal.iter()) {
             assert!((a[0] - b[0]).abs() < 1e-6);
         }
@@ -222,7 +222,7 @@ mod tests {
             })
             .collect();
         let before = signal[100][0];
-        cache.apply(&mut signal, 0.5, 0.3, 1.0);
+        cache.apply(&mut signal, 0.5, 0.3, 1.0, 0.1);
         // リバーブ後は少なくとも何らかの変化があるはず
         let changed = signal.iter().any(|s| (s[0] - before).abs() > 1e-4);
         assert!(changed, "apply should modify signal");
@@ -286,5 +286,29 @@ mod tests {
         for (a, b) in ir1[0].iter().zip(ir2[0].iter()) {
             assert_eq!(a, b);
         }
+    }
+
+    #[test]
+    fn apply_uses_distance_slope_for_wet_amount() {
+        // slope を大きくすると遠距離での wet 比が増える → 出力の変化量が増える
+        let make_signal = || -> Vec<[f32; 2]> {
+            (0..2400).map(|i| {
+                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                [v, v]
+            }).collect()
+        };
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.5);
+
+        let dry = make_signal();
+        let mut s_small = make_signal();
+        let mut s_large = make_signal();
+        cache.apply(&mut s_small, 0.5, 0.3, 5.0, 0.1);
+        cache.apply(&mut s_large, 0.5, 0.3, 5.0, 0.5);
+
+        let dev = |sig: &Vec<[f32; 2]>| -> f64 {
+            sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
+        };
+        assert!(dev(&s_large) > dev(&s_small), "slope大の方がwet寄与が大きいこと");
     }
 }

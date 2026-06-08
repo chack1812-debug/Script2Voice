@@ -158,7 +158,7 @@ impl AudioProcessor {
         }
 
         // リバーブ
-        self.ir_cache.apply(&mut stereo, room_size, reverb_wet, cast.distance);
+        self.ir_cache.apply(&mut stereo, room_size, reverb_wet, cast.distance, self.config.early_reflections.wet_distance_slope);
 
         // リミッター
         let peak_out = stereo.iter().flat_map(|s| s.iter()).cloned().map(f32::abs).fold(0.0_f32, f32::max);
