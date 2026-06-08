@@ -166,7 +166,7 @@ impl AudioProcessor {
 }
 
 /// 簡易一次 IIR ローパスで空気吸収をシミュレート
-fn apply_air_absorption(samples: &[f32], dist: f64, sample_rate: u32, air_coeff: f64) -> Vec<f32> {
+pub(crate) fn apply_air_absorption(samples: &[f32], dist: f64, sample_rate: u32, air_coeff: f64) -> Vec<f32> {
     if air_coeff <= 0.0 {
         return samples.to_vec();
     }

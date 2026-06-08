@@ -106,7 +106,7 @@ fn fft_convolve(signal: &[f32], kernel: &[f32]) -> Vec<f32> {
 /// 双一次変換によるRBJ Audio EQ Cookbookの式 (Q = 1/sqrt(2)) は
 /// scipy.signal.butter(2, cutoff_hz, 'lp', fs=sample_rate, output='sos') と
 /// 浮動小数点誤差(1e-16オーダー)の範囲で一致する (Python版 audio_processor.py:36 相当)。
-fn butterworth_lowpass_sos(cutoff_hz: f64, sample_rate: f64) -> [f64; 6] {
+pub(crate) fn butterworth_lowpass_sos(cutoff_hz: f64, sample_rate: f64) -> [f64; 6] {
     let q = std::f64::consts::FRAC_1_SQRT_2;
     let w0 = 2.0 * std::f64::consts::PI * cutoff_hz / sample_rate;
     let cos_w0 = w0.cos();
@@ -124,7 +124,7 @@ fn butterworth_lowpass_sos(cutoff_hz: f64, sample_rate: f64) -> [f64; 6] {
 
 /// 単一セクションの SOS フィルタを Direct Form II Transposed で適用する
 /// (scipy.signal.sosfilt と数値的に等価)。
-fn sosfilt_single_section(sos: &[f64; 6], input: &[f64]) -> Vec<f64> {
+pub(crate) fn sosfilt_single_section(sos: &[f64; 6], input: &[f64]) -> Vec<f64> {
     let [b0, b1, b2, _a0, a1, a2] = *sos;
     let mut z1 = 0.0_f64;
     let mut z2 = 0.0_f64;
