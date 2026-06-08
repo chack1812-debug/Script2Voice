@@ -2,6 +2,7 @@ use std::path::Path;
 
 use s2v_core::{AudioConfig, Cast, SceneConfig};
 
+use crate::geometry::calc_geometry;
 use crate::resampler::resample_mono;
 use crate::reverb::IrCache;
 
@@ -84,7 +85,7 @@ impl AudioProcessor {
 
         // --- 幾何学計算 ---
         let pan_rad = cast.pan.to_radians();
-        let geo = self.calc_geometry(cast.distance, pan_rad);
+        let geo = calc_geometry(self.config.microphone_spacing, cast.distance, pan_rad);
 
         // 空気吸収フィルター
         let data_l = apply_air_absorption(&mono, geo.dist_l, self.config.sample_rate, self.config.air_absorption_coeff);
@@ -162,23 +163,6 @@ impl AudioProcessor {
         Ok(stereo.len())
     }
 
-    fn calc_geometry(&self, distance: f64, pan_rad: f64) -> GeoParams {
-        let d_h = self.config.microphone_spacing / 2.0;
-        let sx = distance * pan_rad.sin();
-        let sy = distance * pan_rad.cos();
-        let dist_l = ((sx + d_h).powi(2) + sy.powi(2)).sqrt();
-        let dist_r = ((sx - d_h).powi(2) + sy.powi(2)).sqrt();
-        let angle_l = (sx + d_h).atan2(sy);
-        let angle_r = (sx - d_h).atan2(sy);
-        GeoParams { dist_l, dist_r, angle_l, angle_r }
-    }
-}
-
-struct GeoParams {
-    dist_l: f64,
-    dist_r: f64,
-    angle_l: f64,
-    angle_r: f64,
 }
 
 /// 簡易一次 IIR ローパスで空気吸収をシミュレート
@@ -406,9 +390,7 @@ mod tests {
 
     #[test]
     fn calc_geometry_symmetric_at_center() {
-        let proc = AudioProcessor::new(default_audio_config());
-        let geo = proc.calc_geometry(1.0, 0.0);
-        // pan=0 のとき dist_l と dist_r は対称
+        let geo = calc_geometry(0.2, 1.0, 0.0);
         assert!((geo.dist_l - geo.dist_r).abs() < 1e-10);
     }
 
