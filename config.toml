@@ -22,8 +22,8 @@ reverb_wet = 0.7
 reference_dist = 1.0
 reference_gain_db = -5.0
 max_gain_db = -1.0
-mic_directivity = 0.5
-mic_angle = 45.0
+mic_directivity = 0.2
+mic_angle = 30.0
 
 [audio.engine_volume_offsets]
 voicevox = 1.2
