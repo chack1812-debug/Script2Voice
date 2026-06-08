@@ -34,11 +34,11 @@ impl EngineManager {
     }
 
     pub async fn activate_required(&self, types: &HashSet<String>) -> anyhow::Result<()> {
-        for name in types {
-            if let Some(engine) = self.engines.get(name.as_str()) {
-                engine.activate().await?;
-            }
-        }
+        let engines: Vec<Arc<dyn Engine>> = types
+            .iter()
+            .filter_map(|name| self.engines.get(name.as_str()).cloned())
+            .collect();
+        futures::future::try_join_all(engines.iter().map(|e| e.activate())).await?;
         Ok(())
     }
 
@@ -75,6 +75,7 @@ mod tests {
         synthesize_count: Arc<AtomicUsize>,
         terminate_count: Arc<AtomicUsize>,
         should_fail: bool,
+        delay_ms: u64,
     }
 
     impl StubEngine {
@@ -84,11 +85,16 @@ mod tests {
                 synthesize_count: Arc::new(AtomicUsize::new(0)),
                 terminate_count: Arc::new(AtomicUsize::new(0)),
                 should_fail: false,
+                delay_ms: 0,
             }
         }
 
         fn failing() -> Self {
             Self { should_fail: true, ..Self::new() }
+        }
+
+        fn with_delay(ms: u64) -> Self {
+            Self { delay_ms: ms, ..Self::new() }
         }
     }
 
@@ -96,6 +102,9 @@ mod tests {
     impl Engine for StubEngine {
         async fn activate(&self) -> anyhow::Result<()> {
             self.activate_count.fetch_add(1, Ordering::SeqCst);
+            if self.delay_ms > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(self.delay_ms)).await;
+            }
             if self.should_fail {
                 anyhow::bail!("engine activation failed");
             }
@@ -163,6 +172,25 @@ mod tests {
         mgr.register("voicevox", Arc::new(StubEngine::failing()));
         let types: HashSet<String> = ["voicevox".to_string()].into();
         assert!(mgr.activate_required(&types).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn activate_required_runs_engines_concurrently() {
+        let mut mgr = EngineManager::new();
+        mgr.register("voicevox", Arc::new(StubEngine::with_delay(200)));
+        mgr.register("aivis", Arc::new(StubEngine::with_delay(200)));
+
+        let types: HashSet<String> = ["voicevox".to_string(), "aivis".to_string()].into();
+
+        let start = std::time::Instant::now();
+        mgr.activate_required(&types).await.unwrap();
+        let elapsed = start.elapsed();
+
+        // 逐次なら 400ms 以上かかる。並行なら ~200ms。余裕をみて 350ms 未満を要求する。
+        assert!(
+            elapsed < std::time::Duration::from_millis(350),
+            "並行起動なら 350ms 未満で終わるはず。実測: {elapsed:?}"
+        );
     }
 
     #[tokio::test]
