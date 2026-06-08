@@ -297,6 +297,26 @@ mod tests {
         writer.finalize().unwrap();
     }
 
+    /// 決定的な広帯域ノイズ WAV を書き出す（テスト再現性のため固定シードLCG）。
+    fn write_noise_wav(path: &Path, sample_rate: u32, duration_s: f32) {
+        let n = (sample_rate as f32 * duration_s) as usize;
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        let mut state: u32 = 0x12345678;
+        for _ in 0..n {
+            // 線形合同法で [-0.5, 0.5) の擬似乱数
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            let v = (state >> 8) as f32 / 16_777_216.0 - 0.5;
+            writer.write_sample((v * 32767.0) as i16).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
     #[test]
     fn reference_gain_db_does_not_affect_output_level() {
         // Python版 (core/audio_processor.py) は config.REFERENCE_GAIN_DB を
@@ -444,17 +464,13 @@ mod tests {
 
     #[test]
     fn early_reflections_enabled_adds_energy() {
-        // 注意: 純音(440Hz)に対して直接音と早期反射タップを重畳すると、
-        // pan/distance の組み合わせによっては遅延差が半波長付近となり
-        // 位相干渉(コムフィルタ効果)で逆に総エネルギーが減少するケースがある
-        // (実測: dummy_cast(20.0, 2.0) では off=9.65e11, on=3.85e11 と減少する)。
-        // これは early タップの加算が物理的に正しく機能している証拠でもあるが、
-        // 「enabled で増える」という不変条件の検証には不向きな組み合わせ。
-        // ここでは干渉が生じにくく増加方向に頑健なパラメータを用いる
-        // (pan=10.0, distance=5.0; 実測比 約5.3倍)。
+        // 信号非依存にするため広帯域ノイズを使う。純音だと早期反射の遅延と波長の
+        // 位相関係（コムフィルタ）で総エネルギーが増減し得るが、無相関ノイズに
+        // 遅延・減衰コピーを加えると総エネルギーは確実に増える（位相依存しない）。
+        // かつて純音で FAIL した cast(20.0, 2.0) でも頑健に成り立つことを示す。
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in.wav");
-        write_test_wav(&input, 48000, 440.0, 0.1);
+        write_noise_wav(&input, 48000, 0.1);
         let scene = SceneConfig { name: "s".into(), room_size: Some(0.1), reverb_wet: Some(0.0) };
 
         let energy_for = |enabled: bool| -> f64 {
@@ -463,13 +479,13 @@ mod tests {
             cfg.early_reflections.enabled = enabled;
             let proc = AudioProcessor::new(cfg);
             let out = dir.path().join(format!("out_{enabled}.wav"));
-            proc.process(&input, &out, &dummy_cast(10.0, 5.0), &scene).unwrap();
+            proc.process(&input, &out, &dummy_cast(20.0, 2.0), &scene).unwrap();
             let mut r = hound::WavReader::open(&out).unwrap();
             r.samples::<i16>().map(|s| { let v = s.unwrap() as f64; v * v }).sum()
         };
 
         let e_off = energy_for(false);
         let e_on = energy_for(true);
-        assert!(e_on > e_off * 1.01, "早期反射ありで総エネルギー増加: off={e_off}, on={e_on}");
+        assert!(e_on > e_off * 1.01, "早期反射ありで総エネルギー増加(ノイズ入力): off={e_off}, on={e_on}");
     }
 }
