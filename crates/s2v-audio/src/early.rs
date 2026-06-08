@@ -182,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn front_wall_reflection_coeff_scales_tap_gain() {
+        // 前壁のみ残し、反射率を上げるとその反射タップのゲインが線形に増える(spec §6)
+        let mono = vec![1.0_f32; 1000];
+        let front_gain_for = |coeff: f64| -> f32 {
+            let mut er = EarlyConfig::default();
+            er.floor.reflection_coeff = 0.0;
+            er.ceiling.reflection_coeff = 0.0;
+            er.back_wall.reflection_coeff = 0.0;
+            er.side_walls.reflection_coeff = 0.0;
+            er.front_wall.reflection_coeff = coeff;
+            let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+            assert_eq!(taps.len(), 1, "前壁のみ → 1タップ");
+            taps[0].gain_l
+        };
+        assert!(front_gain_for(0.85) > front_gain_for(0.5), "前壁反射率↑ → タップゲイン↑");
+    }
+
+    #[test]
     fn material_lowpass_attenuates_high_frequencies() {
         let fs = 48000.0;
         let n = 4096;

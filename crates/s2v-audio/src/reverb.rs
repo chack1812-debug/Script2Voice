@@ -311,4 +311,28 @@ mod tests {
         };
         assert!(dev(&s_large) > dev(&s_small), "slope大の方がwet寄与が大きいこと");
     }
+
+    #[test]
+    fn apply_increases_wet_with_distance() {
+        // 距離が増えると wet 比が増える(D/Rが下がる)。slope固定で avg_dist を変えて検証(spec §6)。
+        let make_signal = || -> Vec<[f32; 2]> {
+            (0..2400).map(|i| {
+                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                [v, v]
+            }).collect()
+        };
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(0.5);
+
+        let dry = make_signal();
+        let mut s_near = make_signal();
+        let mut s_far = make_signal();
+        cache.apply(&mut s_near, 0.5, 0.3, 1.0, 0.1);
+        cache.apply(&mut s_far, 0.5, 0.3, 5.0, 0.1);
+
+        let dev = |sig: &Vec<[f32; 2]>| -> f64 {
+            sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
+        };
+        assert!(dev(&s_far) > dev(&s_near), "遠い音源ほど wet 寄与が大きいこと");
+    }
 }
