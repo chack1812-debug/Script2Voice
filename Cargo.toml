@@ -29,7 +29,9 @@ s2v-export  = { path = "crates/s2v-export" }
 anyhow.workspace = true
 tokio.workspace = true
 tracing.workspace = true
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "chrono"] }
+tracing-appender = "0.2"
+chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 rayon = "1"
 reqwest = "0.12"

@@ -8,7 +8,10 @@ use reqwest::Client;
 use s2v_core::{Config, ScriptParser};
 use s2v_engines::{EngineManager, HttpEngine, XttsEngine};
 use script2voice::Producer;
-use tracing_subscriber::EnvFilter;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::fmt::time::ChronoLocal;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::{fmt, EnvFilter};
 
 #[derive(Parser)]
 #[command(name = "script2voice", version, about = "台本から音声・字幕・タイムラインを生成する")]
@@ -33,12 +36,44 @@ fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::path::P
         .unwrap_or_else(|| PathBuf::from("config.toml"))
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+/// 実行ログを追記するファイルのパス（project_dir/run.log）を返す。
+fn log_file_path(project_dir: &std::path::Path) -> PathBuf {
+    project_dir.join("run.log")
+}
+
+/// コンソール（stdout）と project_dir/run.log の両方へログを出力する subscriber を初期化する。
+/// 返した WorkerGuard は main 終了まで保持すること（drop でバッファを flush する）。
+fn init_logging(project_dir: &std::path::Path) -> anyhow::Result<WorkerGuard> {
+    let path = log_file_path(project_dir);
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("ログファイルを開けません: {}", path.display()))?;
+    let (file_writer, guard) = tracing_appender::non_blocking(file);
+
+    let time_format = "%Y-%m-%d %H:%M:%S%.3f".to_string();
+
+    let console_layer = fmt::layer()
+        .with_timer(ChronoLocal::new(time_format.clone()))
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+
+    let file_layer = fmt::layer()
+        .with_ansi(false)
+        .with_writer(file_writer)
+        .with_timer(ChronoLocal::new(time_format))
+        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+
+    tracing_subscriber::registry()
+        .with(console_layer)
+        .with(file_layer)
         .init();
 
+    Ok(guard)
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let script_path = std::fs::canonicalize(&cli.script)
@@ -54,6 +89,8 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| std::path::Path::new("."))
         .join(&project_name);
     std::fs::create_dir_all(&project_dir)?;
+
+    let _guard = init_logging(&project_dir)?;
 
     tracing::info!("--- Project: {project_name} ---");
     tracing::info!("Output Directory: {}", project_dir.display());
@@ -175,5 +212,12 @@ mod tests {
     fn fails_without_script_argument() {
         let result = Cli::try_parse_from(["script2voice"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn log_file_path_is_run_log_in_project_dir() {
+        let p = log_file_path(std::path::Path::new("/tmp/proj"));
+        assert_eq!(p.file_name().unwrap(), "run.log");
+        assert_eq!(p.parent().unwrap(), std::path::Path::new("/tmp/proj"));
     }
 }
