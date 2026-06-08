@@ -2,7 +2,7 @@
 
 use s2v_core::{AudioConfig, EarlyConfig, MaterialConfig};
 
-use crate::geometry::{calc_geometry, image_position, room_dims, Surface};
+use crate::geometry::{calc_geometry, directivity_pattern, image_position, room_dims, Surface};
 use crate::processor::apply_air_absorption;
 use crate::reverb::{butterworth_lowpass_sos, sosfilt_single_section};
 
@@ -78,8 +78,8 @@ pub fn build_early_taps(
         let path_r = (geo.dist_r.powi(2) + dz * dz).sqrt();
 
         // 指向性パターン(外開きORTF: Lは+mic_angle, Rは-mic_angle)
-        let pat_l = ((1.0 - k) + k * (geo.angle_l + mic_angle_rad).cos()).max(0.01);
-        let pat_r = ((1.0 - k) + k * (geo.angle_r - mic_angle_rad).cos()).max(0.01);
+        let pat_l = directivity_pattern(geo.angle_l, k, mic_angle_rad);
+        let pat_r = directivity_pattern(geo.angle_r, k, -mic_angle_rad);
 
         let coeff = mat.reflection_coeff * er.early_level;
         let gain_l = (vol_factor * (audio.reference_dist / path_l.max(0.1)) * pat_l * coeff) as f32;
@@ -154,6 +154,17 @@ mod tests {
         let mono = vec![1.0_f32; 1000];
         let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
         assert_eq!(taps.len(), 1, "床のみ → 1タップ");
+    }
+
+    #[test]
+    fn panned_source_produces_left_right_asymmetric_taps() {
+        let er = EarlyConfig::default();
+        let mono = vec![1.0_f32; 2000];
+        // pan=+30度(右)。少なくとも1タップで gain_l != gain_r または rel_l != rel_r になること。
+        let taps = build_early_taps(&mono, 2.0, 30.0_f64.to_radians(), 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+        assert!(!taps.is_empty());
+        let asym = taps.iter().any(|t| (t.gain_l - t.gain_r).abs() > 1e-6 || t.rel_l != t.rel_r);
+        assert!(asym, "パンした音源は左右非対称なタップを生むこと");
     }
 
     #[test]

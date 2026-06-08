@@ -32,6 +32,13 @@ pub fn room_dims(room_size: f64, min: [f64; 3], max: [f64; 3]) -> [f64; 3] {
     ]
 }
 
+/// マイク指向性パターン値。angle は音源方位、mic_angle_offset はマイク軸オフセット
+/// （外開きORTF: Lマイクは +mic_angle、Rマイクは -mic_angle を渡す）。k は指向性係数。
+/// 既存の直接音・早期反射のパターン式と数値的に同一。
+pub fn directivity_pattern(angle: f64, k: f64, mic_angle_offset: f64) -> f64 {
+    ((1.0 - k) + k * (angle + mic_angle_offset).cos()).max(0.01)
+}
+
 /// 反射面の種別。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Surface { Floor, Ceiling, LeftWall, RightWall, BackWall, FrontWall }
@@ -75,6 +82,18 @@ mod tests {
     fn image_position_floor_mirrors_below() {
         let img = image_position([2.0, 3.0, 1.2], Surface::Floor, [10.0, 12.0, 4.0]);
         assert_eq!(img, [2.0, 3.0, -1.2]);
+    }
+
+    #[test]
+    fn directivity_pattern_matches_inline_formula() {
+        let k = 0.5;
+        let ma = 45.0_f64.to_radians();
+        let angle = 0.3_f64;
+        let expected = ((1.0 - k) + k * (angle + ma).cos()).max(0.01);
+        assert!((directivity_pattern(angle, k, ma) - expected).abs() < 1e-15);
+        // 外開き: L は +ma, R は -ma
+        let r = directivity_pattern(angle, k, -ma);
+        assert!((r - ((1.0 - k) + k * (angle - ma).cos()).max(0.01)).abs() < 1e-15);
     }
 
     #[test]

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use s2v_core::{AudioConfig, Cast, SceneConfig};
 
-use crate::geometry::calc_geometry;
+use crate::geometry::{calc_geometry, directivity_pattern};
 use crate::resampler::resample_mono;
 use crate::reverb::IrCache;
 
@@ -117,8 +117,8 @@ impl AudioProcessor {
         // Lマイクは外側 (-mic_angle / 左向き)、Rマイクは外側 (+mic_angle / 右向き) を向く
         // ORTF的な「外開き」配置。distance/ITDによる左右差と指向性パターンによる左右差が
         // 同じ方向を強め合うようにする (符号が逆だと両者が打ち消し合い、定位が反転して聞こえる)。
-        let pat_l = ((1.0 - k) + k * (geo.angle_l + mic_angle_rad).cos()).max(0.01);
-        let pat_r = ((1.0 - k) + k * (geo.angle_r - mic_angle_rad).cos()).max(0.01);
+        let pat_l = directivity_pattern(geo.angle_l, k, mic_angle_rad);
+        let pat_r = directivity_pattern(geo.angle_r, k, -mic_angle_rad);
 
         let gain_l = (vol_factor * dist_gain_l * pat_l) as f32;
         let gain_r = (vol_factor * dist_gain_r * pat_r) as f32;
