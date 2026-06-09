@@ -276,4 +276,11 @@ se_fade_out_s = 0.05
         assert!(cfg.audio.early_reflections.enabled);
         assert!((cfg.audio.early_reflections.front_wall.reflection_coeff - 0.85).abs() < 1e-10);
     }
+
+    #[test]
+    fn real_config_reverb_wet_is_scaler_default() {
+        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml")).unwrap();
+        let cfg = Config::from_toml(&s).unwrap();
+        assert!((cfg.audio.reverb_wet - 1.0).abs() < 1e-10, "reverb_wet 既定はスケーラ 1.0");
+    }
 }
