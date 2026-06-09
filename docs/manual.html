@@ -524,6 +524,10 @@ se_dir = ./assets/se
     <td>処理が遅い／メモリ消費が大きい</td>
     <td>config.toml の <code>[concurrency]</code> セクションで、各エンジンの同時合成数や音響処理の並列数 (<code>audio_process</code>) を環境に合わせて調整してください。</td>
   </tr>
+  <tr>
+    <td>「出力ファイルのいずれかが使用中のため、今回の生成一式を連番 _N で保存します」と表示される</td>
+    <td>前回の出力（<code>full_dialogue.wav</code> / <code>timeline/*.srt・*.fcpxml</code> / <code>audio/voice_*.wav</code>）を動画編集ソフト等で<strong>開いたまま再実行</strong>すると、ファイルが使用中で上書きできません。この場合プログラムは異常終了せず、<strong>今回の生成一式すべてを共通の連番 <code>_N</code></strong>（例 <code>full_dialogue_1.wav</code>, <code>audio/voice_0001_1.wav</code>, <code>timeline/timeline_1.fcpxml</code>, <code>timeline/subtitles_1.srt</code>）で保存します。FCPXML は同じ <code>_N</code> の音声を参照するので整合性は保たれます。既定名の前世代ファイルはそのまま残ります。元の名前で出力したい場合は、開いているアプリを閉じてから再実行してください。</td>
+  </tr>
 </table>
 
 <h2 id="appendix">6. 付録: パラメータ早見表</h2>
