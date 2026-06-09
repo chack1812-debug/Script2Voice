@@ -273,9 +273,9 @@ impl Producer {
         // エクスポート
         let events = timeline.into_events();
         let exporter = Exporter::new(&events, &self.project_root, self.sample_rate, self.bgm_config.clone());
-        exporter.generate_srt()?;
-        exporter.generate_fcpxml()?;
-        exporter.generate_combined_audio()?;
+        exporter.generate_srt("")?;
+        exporter.generate_fcpxml("")?;
+        exporter.generate_combined_audio("")?;
         info!("--- Export Finished: {} ---", self.project_root.display());
         Ok(())
     }

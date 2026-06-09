@@ -25,10 +25,10 @@ impl<'a> Exporter<'a> {
         }
     }
 
-    pub fn generate_srt(&self) -> anyhow::Result<()> {
+    pub fn generate_srt(&self, suffix: &str) -> anyhow::Result<()> {
         let dir = self.output_dir.join("timeline");
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join("subtitles.srt");
+        let path = with_suffix(&dir.join("subtitles.srt"), suffix);
 
         let mut subtitle_events: Vec<_> = self.events.iter()
             .filter(|e| e.event_type == EventType::Audio || e.event_type == EventType::Paragraph)
@@ -56,10 +56,10 @@ impl<'a> Exporter<'a> {
         Ok(())
     }
 
-    pub fn generate_fcpxml(&self) -> anyhow::Result<()> {
+    pub fn generate_fcpxml(&self, suffix: &str) -> anyhow::Result<()> {
         let dir = self.output_dir.join("timeline");
         std::fs::create_dir_all(&dir)?;
-        let path = dir.join("timeline.fcpxml");
+        let path = with_suffix(&dir.join("timeline.fcpxml"), suffix);
 
         // タイムラインの総長さ = max(audio_end, bgm_end, se_end) (Python版 exporter.py:33-47 相当)
         let audio_end = self.events.iter()
@@ -111,8 +111,8 @@ impl<'a> Exporter<'a> {
         Ok(())
     }
 
-    pub fn generate_combined_audio(&self) -> anyhow::Result<()> {
-        let out_path = self.output_dir.join("full_dialogue.wav");
+    pub fn generate_combined_audio(&self, suffix: &str) -> anyhow::Result<()> {
+        let out_path = with_suffix(&self.output_dir.join("full_dialogue.wav"), suffix);
         let sr = self.sample_rate;
         let se_fade_s = self.bgm_config.se_fade_out_s;
 
@@ -574,7 +574,7 @@ mod tests {
         ];
         let dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
-        exp.generate_srt().unwrap();
+        exp.generate_srt("").unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("timeline/subtitles.srt")).unwrap();
         assert!(content.contains("1\n"));
@@ -594,7 +594,7 @@ mod tests {
         ];
         let dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
-        exp.generate_srt().unwrap();
+        exp.generate_srt("").unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("timeline/subtitles.srt")).unwrap();
         // 1: 通常の字幕
@@ -620,7 +620,7 @@ mod tests {
         ];
         let dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
-        exp.generate_fcpxml().unwrap();
+        exp.generate_fcpxml("").unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
         assert!(content.contains(r#"<fcpxml version="1.8">"#));
@@ -643,7 +643,7 @@ mod tests {
         ];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
-        exp.generate_combined_audio().unwrap();
+        exp.generate_combined_audio("").unwrap();
 
         let out = out_dir.join("full_dialogue.wav");
         assert!(out.exists());
@@ -664,7 +664,7 @@ mod tests {
         ];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
-        exp.generate_combined_audio().unwrap();
+        exp.generate_combined_audio("").unwrap();
 
         let out = out_dir.join("full_dialogue.wav");
         let mut reader = hound::WavReader::open(&out).unwrap();
@@ -728,7 +728,7 @@ mod tests {
         ];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
-        exp.generate_combined_audio().unwrap();
+        exp.generate_combined_audio("").unwrap();
 
         let out = out_dir.join("full_dialogue.wav");
         assert!(out.exists(), "BGMのみでもfull_dialogue.wavが生成されるはず");
@@ -750,7 +750,7 @@ mod tests {
         ];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
-        exp.generate_combined_audio().unwrap();
+        exp.generate_combined_audio("").unwrap();
 
         let out = out_dir.join("full_dialogue.wav");
         assert!(out.exists(), "SEのみでもfull_dialogue.wavが生成されるはず");
@@ -775,7 +775,7 @@ mod tests {
         ];
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
-        exp.generate_fcpxml().unwrap();
+        exp.generate_fcpxml("").unwrap();
         let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         assert!(
@@ -795,7 +795,7 @@ mod tests {
         let events = vec![make_se(0.0, se.clone())];
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
-        exp.generate_fcpxml().unwrap();
+        exp.generate_fcpxml("").unwrap();
         let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         assert!(
@@ -821,7 +821,7 @@ mod tests {
         ];
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
-        exp.generate_fcpxml().unwrap();
+        exp.generate_fcpxml("").unwrap();
         let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         let dur_str = content
@@ -842,7 +842,7 @@ mod tests {
         ];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
-        exp.generate_combined_audio().unwrap();
+        exp.generate_combined_audio("").unwrap();
         assert!(!out_dir.join("full_dialogue.wav").exists());
     }
 
@@ -904,5 +904,34 @@ mod tests {
         std::fs::write(dir.path().join("a_1.wav"), b"x").unwrap(); // _1 スロットを一部埋める
         let files = vec![a, b];
         assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "_2");
+    }
+
+    #[test]
+    fn generate_outputs_with_suffix_writes_numbered_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = dir.path();
+        let wav = out_dir.join("voice_0001_2.wav");
+        write_wav(&wav, 48000, 0.1);
+        let events = vec![make_audio_event(0.0, 100.0, "テスト", Some(wav.clone()))];
+        let exp = Exporter::new(&events, out_dir, 48000, default_bgm());
+        exp.generate_srt("_2").unwrap();
+        exp.generate_fcpxml("_2").unwrap();
+        exp.generate_combined_audio("_2").unwrap();
+        assert!(out_dir.join("timeline/subtitles_2.srt").exists());
+        assert!(out_dir.join("timeline/timeline_2.fcpxml").exists());
+        assert!(out_dir.join("full_dialogue_2.wav").exists());
+    }
+
+    #[test]
+    fn fcpxml_references_suffixed_voice_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let out_dir = dir.path();
+        let wav = out_dir.join("voice_0001_2.wav");
+        write_wav(&wav, 48000, 0.1);
+        let events = vec![make_audio_event(0.0, 100.0, "テスト", Some(wav.clone()))];
+        let exp = Exporter::new(&events, out_dir, 48000, default_bgm());
+        exp.generate_fcpxml("_2").unwrap();
+        let xml = std::fs::read_to_string(out_dir.join("timeline/timeline_2.fcpxml")).unwrap();
+        assert!(xml.contains("voice_0001_2.wav"), "FCPXMLは連番付き音声を参照すること: {xml}");
     }
 }
