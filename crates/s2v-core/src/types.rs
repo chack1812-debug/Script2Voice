@@ -23,6 +23,9 @@ pub struct SceneConfig {
     pub listener_dx: Option<f64>,
     #[serde(default)]
     pub listener_dy: Option<f64>,
+    /// 聴取者(マイクペア中心)の床面からの絶対高さ[m]。省略時は config の ear_height。
+    #[serde(default)]
+    pub listener_z: Option<f64>,
 }
 
 impl SceneConfig {
@@ -36,6 +39,7 @@ impl SceneConfig {
             room_h: None,
             listener_dx: None,
             listener_dy: None,
+            listener_z: None,
         }
     }
 }
@@ -113,6 +117,7 @@ mod tests {
         assert_eq!(sc.room_h, None);
         assert_eq!(sc.listener_dx, None);
         assert_eq!(sc.listener_dy, None);
+        assert_eq!(sc.listener_z, None);
     }
 
     #[test]

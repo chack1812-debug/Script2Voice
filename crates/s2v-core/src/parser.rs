@@ -107,6 +107,7 @@ impl ScriptParser {
             room_h: params.get("room_h").copied(),
             listener_dx: params.get("listener_dx").copied(),
             listener_dy: params.get("listener_dy").copied(),
+            listener_z: params.get("listener_z").copied(),
             ..SceneConfig::new(name)
         }
     }
@@ -509,5 +510,14 @@ A(pan=15,distance=2):セリフ
         assert_eq!(sc.listener_dx, None);
         assert_eq!(sc.listener_dy, None);
         assert_eq!(sc.room_size, Some(0.1));
+    }
+
+    #[test]
+    fn scene_header_parses_listener_z() {
+        let p = ScriptParser::new();
+        let sc = p.parse_scene_header("舞台 room_w=20 room_d=30 room_h=12 listener_z=1.1");
+        assert_eq!(sc.listener_z, Some(1.1));
+        let sc2 = p.parse_scene_header("小部屋 room_size=0.1");
+        assert_eq!(sc2.listener_z, None);
     }
 }
