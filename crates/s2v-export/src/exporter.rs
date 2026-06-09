@@ -401,6 +401,48 @@ impl<'a> Exporter<'a> {
     }
 }
 
+/// ファイル名の拡張子の前に suffix を挿入する。suffix が空ならパスをそのまま返す。
+/// 例: with_suffix("voice_0001.wav", "_3") == "voice_0001_3.wav"
+pub fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    if suffix.is_empty() {
+        return path.to_path_buf();
+    }
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let name = match path.extension() {
+        Some(ext) => format!("{stem}{suffix}.{}", ext.to_string_lossy()),
+        None => format!("{stem}{suffix}"),
+    };
+    match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.join(name),
+        _ => PathBuf::from(name),
+    }
+}
+
+/// パスが書き込み可能か（=使用中でないか）。非存在は true。
+/// 既存ファイルは truncate せずに書き込みオープンを試し、成否で判定する。
+pub fn is_path_writable(path: &Path) -> bool {
+    if !path.exists() {
+        return true;
+    }
+    std::fs::OpenOptions::new().write(true).open(path).is_ok()
+}
+
+/// 生成の既定名ファイル一式から世代サフィックスを決める。
+/// すべて書込可なら ""。いずれか使用中なら、一式の `_n` 版がすべて未存在になる最小の `_n`。
+pub fn resolve_generation_suffix(default_files: &[PathBuf], max: usize) -> anyhow::Result<String> {
+    let needs_fallback = default_files.iter().any(|p| p.exists() && !is_path_writable(p));
+    if !needs_fallback {
+        return Ok(String::new());
+    }
+    for n in 1..=max {
+        let suffix = format!("_{n}");
+        if default_files.iter().all(|p| !with_suffix(p, &suffix).exists()) {
+            return Ok(suffix);
+        }
+    }
+    anyhow::bail!("使用中の出力を回避する空き連番({max}まで)が見つかりませんでした")
+}
+
 /// BGMミックス用セグメント情報 (Python版 `_compute_bgm_segments` の戻り値相当)
 struct BgmSegment {
     index: usize,
@@ -802,5 +844,59 @@ mod tests {
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
         exp.generate_combined_audio().unwrap();
         assert!(!out_dir.join("full_dialogue.wav").exists());
+    }
+
+    #[test]
+    fn with_suffix_inserts_before_extension() {
+        assert_eq!(with_suffix(Path::new("a/voice_0001.wav"), "_3"), PathBuf::from("a/voice_0001_3.wav"));
+        assert_eq!(with_suffix(Path::new("subtitles.srt"), "_2"), PathBuf::from("subtitles_2.srt"));
+        assert_eq!(with_suffix(Path::new("noext"), "_1"), PathBuf::from("noext_1"));
+        assert_eq!(with_suffix(Path::new("x.wav"), ""), PathBuf::from("x.wav"));
+    }
+
+    #[test]
+    fn is_path_writable_true_for_missing_and_normal_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(is_path_writable(&dir.path().join("nope.wav")));
+        let f = dir.path().join("ok.txt");
+        std::fs::write(&f, b"x").unwrap();
+        assert!(is_path_writable(&f));
+    }
+
+    #[test]
+    fn is_path_writable_false_for_directory_named_like_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path().join("locked.wav");
+        std::fs::create_dir(&d).unwrap();
+        assert!(!is_path_writable(&d));
+    }
+
+    #[test]
+    fn resolve_suffix_empty_when_all_writable() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
+        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "");
+    }
+
+    #[test]
+    fn resolve_suffix_falls_back_when_one_locked() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        std::fs::create_dir(&a).unwrap(); // a.wav をディレクトリにして書込不可(=ロック相当)
+        let b = dir.path().join("b.srt");
+        let files = vec![a, b];
+        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "_1");
+    }
+
+    #[test]
+    fn resolve_suffix_skips_existing_numbered_slot() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.wav");
+        std::fs::create_dir(&a).unwrap();
+        let b = dir.path().join("b.srt");
+        std::fs::write(&b, b"x").unwrap();
+        std::fs::write(dir.path().join("a_1.wav"), b"x").unwrap(); // _1 スロットを一部埋める
+        let files = vec![a, b];
+        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "_2");
     }
 }
