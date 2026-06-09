@@ -11,6 +11,18 @@ pub struct SceneConfig {
     /// (Python版 audio_processor.py の `getattr(config, 'ROOM_SIZE'/'REVERB_WET', ...)` 相当)。
     pub room_size: Option<f64>,
     pub reverb_wet: Option<f64>,
+    /// 部屋寸法[m]。3つすべて指定されたとき room_size より優先される。
+    #[serde(default)]
+    pub room_w: Option<f64>,
+    #[serde(default)]
+    pub room_d: Option<f64>,
+    #[serde(default)]
+    pub room_h: Option<f64>,
+    /// 聴取者(マイクペア中心)の部屋中央からのオフセット[m]。省略時は config の listener_offset。
+    #[serde(default)]
+    pub listener_dx: Option<f64>,
+    #[serde(default)]
+    pub listener_dy: Option<f64>,
 }
 
 impl SceneConfig {
@@ -19,6 +31,11 @@ impl SceneConfig {
             name: name.into(),
             room_size: None,
             reverb_wet: None,
+            room_w: None,
+            room_d: None,
+            room_h: None,
+            listener_dx: None,
+            listener_dy: None,
         }
     }
 }
@@ -95,11 +112,7 @@ mod tests {
 
     #[test]
     fn scene_config_custom_values() {
-        let sc = SceneConfig {
-            name: "広場".to_string(),
-            room_size: Some(0.8),
-            reverb_wet: Some(0.3),
-        };
+        let sc = SceneConfig { room_size: Some(0.8), reverb_wet: Some(0.3), ..SceneConfig::new("広場") };
         assert_eq!(sc.room_size, Some(0.8));
     }
 

@@ -247,7 +247,7 @@ mod tests {
     }
 
     fn default_scene() -> SceneConfig {
-        SceneConfig { name: "テスト".to_string(), room_size: Some(0.1), reverb_wet: Some(0.3) }
+        SceneConfig { room_size: Some(0.1), reverb_wet: Some(0.3), ..SceneConfig::new("テスト") }
     }
 
     #[test]
@@ -255,7 +255,7 @@ mod tests {
         // s2v-57z: シーン側でroom_size/reverb_wetが省略された場合、AudioConfigの値にフォールバックする
         // (Python版 audio_processor.py:87-88 self.default_room_size/self.default_base_wet 相当)
         let cast = dummy_cast(0.0, 1.0);
-        let scene = SceneConfig { name: "テスト".to_string(), room_size: None, reverb_wet: None };
+        let scene = SceneConfig { room_size: None, reverb_wet: None, ..SceneConfig::new("テスト") };
         let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
         assert!((room_size - 0.42).abs() < 1e-10, "config値にフォールバックするはず, got {room_size}");
         assert!((reverb_wet - 0.55).abs() < 1e-10, "config値にフォールバックするはず, got {reverb_wet}");
@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn resolve_reverb_params_prefers_scene_over_config_default() {
         let cast = dummy_cast(0.0, 1.0);
-        let scene = SceneConfig { name: "テスト".to_string(), room_size: Some(0.8), reverb_wet: Some(0.2) };
+        let scene = SceneConfig { room_size: Some(0.8), reverb_wet: Some(0.2), ..SceneConfig::new("テスト") };
         let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
         assert!((room_size - 0.8).abs() < 1e-10);
         assert!((reverb_wet - 0.2).abs() < 1e-10);
@@ -275,7 +275,7 @@ mod tests {
         let mut cast = dummy_cast(0.0, 1.0);
         cast.params.insert("room_size".to_string(), serde_json::json!(0.9));
         cast.params.insert("reverb_wet".to_string(), serde_json::json!(0.1));
-        let scene = SceneConfig { name: "テスト".to_string(), room_size: Some(0.8), reverb_wet: Some(0.2) };
+        let scene = SceneConfig { room_size: Some(0.8), reverb_wet: Some(0.2), ..SceneConfig::new("テスト") };
         let (room_size, reverb_wet) = resolve_reverb_params(&cast, &scene, 0.42, 0.55);
         assert!((room_size - 0.9).abs() < 1e-10);
         assert!((reverb_wet - 0.1).abs() < 1e-10);
@@ -455,7 +455,7 @@ mod tests {
         cfg.reverb_wet = 0.0;
         let proc = AudioProcessor::new(cfg);
         let out = dir.path().join("out.wav");
-        proc.process(&input, &out, &dummy_cast(20.0, 2.0), &SceneConfig { name: "s".into(), room_size: Some(0.1), reverb_wet: Some(0.0) }).unwrap();
+        proc.process(&input, &out, &dummy_cast(20.0, 2.0), &SceneConfig { room_size: Some(0.1), reverb_wet: Some(0.0), ..SceneConfig::new("s") }).unwrap();
 
         let mut r = hound::WavReader::open(&out).unwrap();
         let energy: f64 = r.samples::<i16>().map(|s| { let v = s.unwrap() as f64; v * v }).sum();
@@ -471,7 +471,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("in.wav");
         write_noise_wav(&input, 48000, 0.1);
-        let scene = SceneConfig { name: "s".into(), room_size: Some(0.1), reverb_wet: Some(0.0) };
+        let scene = SceneConfig { room_size: Some(0.1), reverb_wet: Some(0.0), ..SceneConfig::new("s") };
 
         let energy_for = |enabled: bool| -> f64 {
             let mut cfg = default_audio_config();

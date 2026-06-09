@@ -100,9 +100,14 @@ impl ScriptParser {
         let name = name_tokens.join(" ");
         let params = extract_kv_params(&param_tokens.join(","));
         SceneConfig {
-            name,
             room_size: params.get("room_size").copied(),
             reverb_wet: params.get("reverb_wet").copied(),
+            room_w: params.get("room_w").copied(),
+            room_d: params.get("room_d").copied(),
+            room_h: params.get("room_h").copied(),
+            listener_dx: params.get("listener_dx").copied(),
+            listener_dy: params.get("listener_dy").copied(),
+            ..SceneConfig::new(name)
         }
     }
 
@@ -219,7 +224,7 @@ impl ScriptParser {
             text,
             display_text,
             offset_params,
-            scene_config: crate::types::SceneConfig { name: String::new(), room_size: None, reverb_wet: None },
+            scene_config: crate::types::SceneConfig::new(String::new()),
         })
     }
 }
@@ -480,5 +485,26 @@ A(pan=15,distance=2):セリフ
         } else {
             panic!("expected speech");
         }
+    }
+
+    #[test]
+    fn scene_header_parses_room_dims_and_listener() {
+        let p = ScriptParser::new();
+        let sc = p.parse_scene_header("ホール room_w=25 room_d=45 room_h=18 listener_dx=0 listener_dy=-15");
+        assert_eq!(sc.name, "ホール");
+        assert_eq!(sc.room_w, Some(25.0));
+        assert_eq!(sc.room_d, Some(45.0));
+        assert_eq!(sc.room_h, Some(18.0));
+        assert_eq!(sc.listener_dx, Some(0.0));
+        assert_eq!(sc.listener_dy, Some(-15.0));
+    }
+
+    #[test]
+    fn scene_header_room_dims_default_none() {
+        let p = ScriptParser::new();
+        let sc = p.parse_scene_header("小部屋 room_size=0.1");
+        assert_eq!(sc.room_w, None);
+        assert_eq!(sc.listener_dx, None);
+        assert_eq!(sc.room_size, Some(0.1));
     }
 }
