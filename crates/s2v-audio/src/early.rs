@@ -38,7 +38,9 @@ pub fn build_early_taps(
     let [w, d, h] = dims;
     let eps = 0.05_f64;
 
-    // 聴取者(マイクペア中心) L と音源 S を箱座標で配置(同高 ear_height)。
+    // 聴取者(マイクペア中心) L と音源 S を箱座標で配置。
+    // lz = 聴取者の床面からの高さ(scene listener_z または config ear_height)、
+    // sz = 話者の実効高さ(source_height 引数、processor で解決済み)。両者は異なり得る。
     let lx = (w / 2.0 + geo.listener_offset[0]).clamp(eps, w - eps);
     let ly = (d / 2.0 + geo.listener_offset[1]).clamp(eps, d - eps);
     let lz = geo.listener_height.clamp(eps, h - eps);
@@ -186,7 +188,8 @@ mod tests {
         er.side_walls.reflection_coeff = 0.0;
         let mono = vec![1.0_f32; 1000];
         let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
-        let expected = ((2.0_f64.powi(2) + (2.0 * 1.2_f64).powi(2)).sqrt() / 340.0 * 48000.0) as i64;
+        let eh = er.ear_height;
+        let expected = ((2.0_f64.powi(2) + (2.0 * eh).powi(2)).sqrt() / 340.0 * 48000.0) as i64;
         let rel = taps[0].rel_l as i64;
         assert!((rel - expected).abs() <= 5, "床タップ遅延 rel={rel}, expected≈{expected}");
     }
