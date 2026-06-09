@@ -181,8 +181,8 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 （<code>microphone_spacing</code> は <code>[audio]</code> 既存設定）。
 </p>
 <p>
-音源は、聴取者から見て台本の <code>pan</code>（方位角）・<code>distance</code>（距離）の位置に、
-聴取者と同じ高さで置かれます。各面の鏡像（イメージソース）から届く反射の
+音源は、聴取者から見て台本の <code>pan</code>（方位角）・<code>distance</code>（距離）・<code>height</code>（高さ）の位置に
+置かれます（<code>height</code> 省略時は聴取者と同じ高さ。§7参照）。各面の鏡像（イメージソース）から届く反射の
 <strong>遅延・音量・左右方向</strong>がこの幾何から自動計算されます。
 </p>
 
@@ -383,9 +383,10 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
 
 <footer>
   Script2Voice（Rust版） 空間音響パラメータ解説（早期反射・物理残響・台本での部屋指定）<br>
-  対応版コミット: <code>ed7d61d..717426b</code>／関連設計書:
+  対応版コミット: <code>ed7d61d..f03b8b0</code>／関連設計書:
   <code>docs/superpowers/specs/2026-06-08-early-reflections-image-source-design.md</code>,
-  <code>docs/superpowers/specs/2026-06-09-physical-room-acoustics-design.md</code>
+  <code>docs/superpowers/specs/2026-06-09-physical-room-acoustics-design.md</code>,
+  <code>docs/superpowers/specs/2026-06-09-listener-speaker-height-design.md</code>
 </footer>
 </main>
 </div>

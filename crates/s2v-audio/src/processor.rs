@@ -585,4 +585,34 @@ mod tests {
         };
         assert_ne!(read(&out_low), read(&out_high), "話者高さで出力が変わること");
     }
+
+    #[test]
+    fn speaker_height_base_plus_offset_equals_absolute() {
+        // 実効高さ = cast.height + height_offset。基準1.5+行内0.3 は 絶対1.8(+0) と同一出力になること。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        write_noise_wav(&input, 48000, 0.1);
+        let mut cfg = default_audio_config();
+        cfg.reverb_wet = 0.0;
+        let proc = AudioProcessor::new(cfg);
+        let scene = SceneConfig { room_w: Some(8.0), room_d: Some(8.0), room_h: Some(5.0), reverb_wet: Some(0.0), ..SceneConfig::new("室") };
+
+        let mut combined = dummy_cast(0.0, 2.0);
+        combined.height = Some(1.5);
+        combined.height_offset = 0.3;
+        let mut absolute = dummy_cast(0.0, 2.0);
+        absolute.height = Some(1.8);
+        absolute.height_offset = 0.0;
+
+        let out_c = dir.path().join("combined.wav");
+        let out_a = dir.path().join("absolute.wav");
+        proc.process(&input, &out_c, &combined, &scene).unwrap();
+        proc.process(&input, &out_a, &absolute, &scene).unwrap();
+
+        let read = |p: &std::path::Path| -> Vec<i16> {
+            let mut r = hound::WavReader::open(p).unwrap();
+            r.samples::<i16>().map(|s| s.unwrap()).collect()
+        };
+        assert_eq!(read(&out_c), read(&out_a), "基準+行内オフセットの合算が絶対指定と一致すること");
+    }
 }
