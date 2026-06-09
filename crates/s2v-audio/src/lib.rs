@@ -1,3 +1,4 @@
+pub mod acoustics;
 pub mod early;
 pub mod geometry;
 pub mod processor;
