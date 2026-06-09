@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Script2Voice 取扱説明書・操作マニュアル</title>
+<title>Script2Voice 取扱説明書・操作マニュアル（空間音響パラメータ解説 統合版）</title>
 <style>
   :root {
     --accent: #3a6ea5;
@@ -23,7 +23,7 @@
   }
   .layout { display: flex; max-width: 1200px; margin: 0 auto; }
   nav.toc {
-    flex: 0 0 250px;
+    flex: 0 0 270px;
     padding: 24px 16px;
     position: sticky;
     top: 0;
@@ -38,6 +38,25 @@
   nav.toc li { margin: 4px 0; }
   nav.toc a { text-decoration: none; color: #444; font-size: 0.92rem; }
   nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+  /* 折りたたみ目次 */
+  nav.toc details { margin: 0; }
+  nav.toc summary {
+    cursor: pointer;
+    list-style: none;
+    position: relative;
+    padding-left: 1.1em;
+  }
+  nav.toc summary::-webkit-details-marker { display: none; }
+  nav.toc summary::before {
+    content: "▸";
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+    color: var(--accent);
+    font-size: 0.85em;
+  }
+  nav.toc details[open] > summary::before { content: "▾"; }
+  nav.toc li.leaf { padding-left: 1.1em; }
   main { flex: 1; padding: 32px 40px; min-width: 0; }
   h1 { color: var(--accent); border-bottom: 3px solid var(--accent); padding-bottom: 8px; }
   h2 {
@@ -86,6 +105,7 @@
     font-size: 0.78em;
     margin-right: 6px;
   }
+  .axis { background: #f0f4f9; border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; }
   footer {
     margin-top: 4em;
     padding: 16px 40px;
@@ -106,35 +126,77 @@
 <nav class="toc">
   <h2>目次</h2>
   <ul>
-    <li><a href="#overview">1. Script2Voice とは</a></li>
-    <li><a href="#setup">2. 準備・セットアップ</a>
-      <ul>
-        <li><a href="#build">2.1 ビルド方法</a></li>
-        <li><a href="#engines">2.2 音声合成エンジンの起動</a></li>
-        <li><a href="#config">2.3 config.toml の設定</a></li>
-      </ul>
+    <li class="leaf"><a href="#overview">1. Script2Voice とは</a></li>
+    <li>
+      <details open>
+        <summary><a href="#setup">2. 準備・セットアップ</a></summary>
+        <ul>
+          <li class="leaf"><a href="#build">2.1 ビルド方法</a></li>
+          <li class="leaf"><a href="#engines">2.2 音声合成エンジンの起動</a></li>
+          <li class="leaf"><a href="#config">2.3 config.toml の設定</a></li>
+        </ul>
+      </details>
     </li>
-    <li><a href="#usage">3. 基本操作</a>
-      <ul>
-        <li><a href="#cli">3.1 コマンドラインの使い方</a></li>
-        <li><a href="#flow">3.2 処理の流れ</a></li>
-        <li><a href="#output">3.3 出力されるファイル</a></li>
-      </ul>
+    <li>
+      <details open>
+        <summary><a href="#usage">3. 基本操作</a></summary>
+        <ul>
+          <li class="leaf"><a href="#cli">3.1 コマンドラインの使い方</a></li>
+          <li class="leaf"><a href="#flow">3.2 処理の流れ</a></li>
+          <li class="leaf"><a href="#output">3.3 出力されるファイル</a></li>
+        </ul>
+      </details>
     </li>
-    <li><a href="#script-format">4. 台本ファイルの書き方</a>
-      <ul>
-        <li><a href="#sec-scene">4.1 @scene セクション</a></li>
-        <li><a href="#sec-pause">4.2 @pause セクション</a></li>
-        <li><a href="#sec-asset">4.3 @asset セクション</a></li>
-        <li><a href="#sec-cast">4.4 @cast セクション</a></li>
-        <li><a href="#sec-script">4.5 @script セクション</a></li>
-        <li><a href="#commands">4.6 コマンド一覧 (#行)</a></li>
-        <li><a href="#ruby">4.7 ルビ表記・台詞の書き方</a></li>
-        <li><a href="#sample">4.8 サンプル台本</a></li>
-      </ul>
+    <li>
+      <details open>
+        <summary><a href="#script-format">4. 台本ファイルの書き方</a></summary>
+        <ul>
+          <li class="leaf"><a href="#sec-scene">4.1 @scene セクション</a></li>
+          <li class="leaf"><a href="#sec-pause">4.2 @pause セクション</a></li>
+          <li class="leaf"><a href="#sec-asset">4.3 @asset セクション</a></li>
+          <li class="leaf"><a href="#sec-cast">4.4 @cast セクション</a></li>
+          <li class="leaf"><a href="#sec-script">4.5 @script セクション</a></li>
+          <li class="leaf"><a href="#commands">4.6 コマンド一覧 (#行)</a></li>
+          <li class="leaf"><a href="#ruby">4.7 ルビ表記・台詞の書き方</a></li>
+          <li class="leaf"><a href="#sample">4.8 サンプル台本</a></li>
+        </ul>
+      </details>
     </li>
-    <li><a href="#troubleshooting">5. トラブルシューティング</a></li>
-    <li><a href="#appendix">6. 付録: パラメータ早見表</a></li>
+    <li>
+      <details open>
+        <summary><a href="#acoustics">5. 空間音響パラメータ解説</a></summary>
+        <ul>
+          <li class="leaf"><a href="#intro">5.1 この機能は何か</a></li>
+          <li class="leaf"><a href="#where">5.2 追加場所（config.toml）</a></li>
+          <li>
+            <details open>
+              <summary><a href="#model">5.3 空間モデルの考え方</a></summary>
+              <ul>
+                <li class="leaf"><a href="#coords">5.3.1 座標系</a></li>
+                <li class="leaf"><a href="#mic">5.3.2 聴取者＝マイク位置</a></li>
+                <li class="leaf"><a href="#chain">5.3.3 処理の流れ</a></li>
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details open>
+              <summary><a href="#params">5.4 パラメータ詳細</a></summary>
+              <ul>
+                <li class="leaf"><a href="#p-basic">5.4.1 全体・部屋・聴取</a></li>
+                <li class="leaf"><a href="#p-dr">5.4.2 距離による残響（D/R）</a></li>
+                <li class="leaf"><a href="#p-material">5.4.3 面ごとの素材</a></li>
+              </ul>
+            </details>
+          </li>
+          <li class="leaf"><a href="#tuning">5.5 チューニング指針</a></li>
+          <li class="leaf"><a href="#compat">5.6 互換性・注意点</a></li>
+          <li class="leaf"><a href="#scene-room">5.7 台本(scene)で部屋を指定する</a></li>
+          <li class="leaf"><a href="#physical-reverb">5.8 残響の物理導出と reverb_wet</a></li>
+        </ul>
+      </details>
+    </li>
+    <li class="leaf"><a href="#troubleshooting">6. トラブルシューティング</a></li>
+    <li class="leaf"><a href="#appendix">7. 付録: パラメータ早見表</a></li>
   </ul>
 </nav>
 
@@ -144,6 +206,7 @@
   本書は、台本ファイルから音声合成・空間音響処理・字幕(SRT)・編集タイムライン(FCPXML)・
   ミックス済み音声(WAV)を一括生成するツール <strong>Script2Voice</strong>（Rust 版）の
   取扱説明書です。インストールから台本の書き方、出力物の確認方法までを解説します。
+  早期反射・物理残響などの<strong>空間音響パラメータの詳細解説（<a href="#acoustics">第5章</a>）</strong>も本書に統合されています。
 </p>
 
 <h2 id="overview">1. Script2Voice とは</h2>
@@ -257,7 +320,7 @@ cargo build --release</code></pre>
   <tr><td><code>[audio] reverb_wet</code></td><td>残響量の<strong>倍率</strong>（既定 1.0＝物理量どおり）。部屋寸法と壁素材から算出される残響基準値に掛ける。<code>@scene</code> で上書き可</td></tr>
   <tr><td><code>[audio] reference_dist / reference_gain_db / max_gain_db</code></td><td>距離減衰や音量の基準値・上限値</td></tr>
   <tr><td><code>[audio] mic_directivity / mic_angle</code></td><td>仮想マイクの指向性の強さと向き（外開き ORTF 配置）。値が大きいほど定位の広がりが強くなる</td></tr>
-  <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="early_reflections.html">空間音響パラメータ解説</a>を参照</td></tr>
+  <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照</td></tr>
   <tr><td><code>[audio.engine_volume_offsets]</code></td><td>エンジンごとの音量補正係数 (例: <code>voicevox = 1.2</code>)</td></tr>
   <tr><td><code>[concurrency]</code></td><td>エンジンごとの同時合成数、音響処理の並列数（<code>0</code> = CPU コア数を自動使用）</td></tr>
   <tr><td><code>[bgm] crossfade_s / se_fade_out_s</code></td><td>BGM のクロスフェード秒数、SE のフェードアウト秒数</td></tr>
@@ -277,7 +340,7 @@ cargo build --release</code></pre>
   （指定したパスが最優先されます）。
 </div>
 
-<h2 id="usage">2. 基本操作</h2>
+<h2 id="usage">3. 基本操作</h2>
 
 <h3 id="cli">3.1 コマンドラインの使い方</h3>
 <pre><code>script2voice &lt;台本ファイルのパス&gt; [--config &lt;設定ファイルのパス&gt;]</code></pre>
@@ -355,7 +418,7 @@ script2voice .\scripts\episode01.txt --config .\my_config.toml</code></pre>
   残響の長さ・量、および床・壁・天井からの早期反射は、部屋寸法と各面の素材（反射率・吸音特性）から
   物理的に決まります。素材の既定値や各面の調整は config.toml の <code>[audio.early_reflections]</code> で行います
   （壁・天井の反射率を 0 にすると屋外＝床反射のみ・ほぼ無残響）。詳しくは
-  <a href="early_reflections.html">空間音響パラメータ解説</a>を参照してください。
+  <a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
 </div>
 <p>
   各場面には <code>@asset</code> / <code>@cast</code> / <code>@script</code> の各セクションを
@@ -418,7 +481,7 @@ se_dir = ./assets/se</code></pre>
   到達時間差（ITD）・音量差（ILD）・床/壁/天井の早期反射を計算して定位を再現します。
   <code>pan</code> は仕様どおり <strong>+ で右、− で左</strong>に定位します。定位の強さ（広がり）は
   config.toml の <code>mic_directivity</code> / <code>mic_angle</code> で調整できます（値が大きいほど広がりが強い）。
-  詳しくは<a href="early_reflections.html">空間音響パラメータ解説</a>を参照してください。
+  詳しくは<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
 </div>
 
 <h3 id="sec-script">4.5 @script セクション — 台詞と音声指示</h3>
@@ -509,7 +572,287 @@ se_dir = ./assets/se
 #paragraph
 まい:そろそろ向かいましょうか。</code></pre>
 
-<h2 id="troubleshooting">5. トラブルシューティング</h2>
+<h2 id="acoustics">5. 空間音響パラメータ解説（早期反射・物理残響）</h2>
+<p>
+本章は、<strong>早期反射（イメージソース法）</strong>と
+<strong>距離依存の残響量制御</strong>に関する設定パラメータの意味・追加場所・調整方法をまとめたものです。
+すべて <code>config.toml</code> の数値設定のみで調整でき、プログラムの再ビルドは不要です。
+</p>
+
+<h3 id="intro">5.1 この機能は何か</h3>
+<p>
+従来の音響処理は「<strong>直接音</strong>（左右の定位・距離減衰）→ いきなり<strong>拡散リバーブ</strong>（残響の尾）」
+という構成で、その間を埋める<strong>早期反射が存在しませんでした</strong>。
+人間の耳は、直接音の直後（数ミリ秒〜数十ミリ秒）に届く<strong>床・壁・天井からの最初の反射</strong>を
+直接音と融合させて、「音が実在の空間の、その場所にある」と<strong>接地・外在化</strong>します。
+これが無いと、左右の方向は分かっても距離・上下が曖昧になり、音が<strong>「宙に浮いて」</strong>聞こえます。
+</p>
+<p>
+この機能は、部屋を<strong>箱（直方体）</strong>としてモデル化し、床・天井・前後左右の
+<strong>6面の一次反射</strong>を計算して直接音の直後に加えます。これにより接地感が生まれます。
+部屋の大きさは既存の <code>room_size</code> に連動します。
+</p>
+<div class="note">
+上下方向（仰角）の定位は耳介の形状（HRTF）に依存し、通常の2chステレオでは原理的に再現できません。
+本機能は水平面のモデルですが、<strong>床反射などで「接地感」を補う</strong>ことで「浮き」を軽減します。
+</div>
+
+<h3 id="where">5.2 追加場所（config.toml）</h3>
+<p>
+設定は実行ファイル（<code>script2voice.exe</code>）と同じフォルダにある <code>config.toml</code> の
+<code>[audio]</code> セクション内、新しいサブセクション <code>[audio.early_reflections]</code> に記述します。
+配置は <code>[audio]</code> のスカラー設定（<code>mic_angle</code> など）すべての<strong>後</strong>、
+かつ <code>[audio.engine_volume_offsets]</code> の<strong>前</strong>です。
+</p>
+<pre><code>[audio]
+# ... sample_rate, microphone_spacing, ... , mic_directivity, mic_angle まで ...
+mic_directivity = 0.2
+mic_angle = 30.0
+
+[audio.early_reflections]
+enabled = true
+ear_height = 1.2
+listener_offset = [0.0, 0.0]
+room_dims_min = [4.0, 5.0, 3.0]
+room_dims_max = [25.0, 45.0, 18.0]
+early_level = 1.0
+wet_distance_slope = 0.1
+floor      = { reflection_coeff = 0.5,  absorption_cutoff_hz = 3500.0 }
+ceiling    = { reflection_coeff = 0.6,  absorption_cutoff_hz = 6000.0 }
+front_wall = { reflection_coeff = 0.85, absorption_cutoff_hz = 10000.0 }
+back_wall  = { reflection_coeff = 0.40, absorption_cutoff_hz = 4000.0 }
+side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
+
+[audio.engine_volume_offsets]
+# ...</code></pre>
+<div class="tip">
+このセクション全体、あるいは個々の項目を<strong>省略しても動作します</strong>（後方互換）。
+省略した項目は上記の既定値が使われます。既存の <code>config.toml</code> をそのまま使っても問題ありません。
+</div>
+
+<h3 id="model">5.3 空間モデルの考え方</h3>
+
+<h4 id="coords">5.3.1 座標系</h4>
+<div class="axis">
+  <strong>箱（部屋）</strong>：x∈[0,W]、y∈[0,D]、z∈[0,H]（単位：メートル）<br>
+  <strong>X 軸＝幅</strong>（左右。+x が右）／<strong>Y 軸＝奥行</strong>（前後。+y が聴取者の正面）／
+  <strong>Z 軸＝高さ</strong>（上下。+z が上）
+</div>
+<p>
+部屋の寸法 <code>[W, D, H]</code> は、<code>room_size</code>（0.0〜1.0）に応じて
+<code>room_dims_min</code> と <code>room_dims_max</code> の間を<strong>線形補間</strong>して決まります。
+<code>room_size=0.0</code> で最小（小スタジオ）、<code>1.0</code> で最大（大ホール）です。
+</p>
+
+<h4 id="mic">5.3.2 聴取者＝マイク位置</h4>
+<p>
+<strong>聴取者の位置 = ステレオマイクペアの中心</strong>です。部屋の水平中央
+（<code>listener_offset</code> でずらせる）・高さ <code>ear_height</code> に置かれます。
+実際の収音は、その中心から左右に <code>microphone_spacing/2</code>（既定 ±0.1m）離れた2本のマイクで行われます
+（<code>microphone_spacing</code> は <code>[audio]</code> 既存設定）。
+</p>
+<p>
+音源は、聴取者から見て台本の <code>pan</code>（方位角）・<code>distance</code>（距離）・<code>height</code>（高さ）の位置に
+置かれます（<code>height</code> 省略時は聴取者と同じ高さ。<a href="#scene-room">5.7節</a>参照）。各面の鏡像（イメージソース）から届く反射の
+<strong>遅延・音量・左右方向</strong>がこの幾何から自動計算されます。
+</p>
+
+<h4 id="chain">5.3.3 処理の流れ</h4>
+<p>音響処理は次の順で行われます。早期反射はこの2番目に挿入されました。</p>
+<pre><code>直接音（定位・距離減衰）
+  → 早期反射（6面の一次反射）
+  → 拡散リバーブ（残響の尾）
+  → リミッター（音割れ防止）</code></pre>
+
+<h3 id="params">5.4 パラメータ詳細</h3>
+
+<h4 id="p-basic">5.4.1 全体・部屋・聴取</h4>
+<table class="kv-table">
+  <tr><th>パラメータ</th><th>既定値</th><th>意味・効果</th></tr>
+  <tr>
+    <td>enabled</td><td>true</td>
+    <td>早期反射機能の ON/OFF。<code>false</code> にすると早期反射は一切付加されず、<strong>従来とまったく同じ出力</strong>になります。</td>
+  </tr>
+  <tr>
+    <td>ear_height</td><td>1.2</td>
+    <td>聴取者（マイク）の高さ[m]。床・天井反射の遅延に影響します。値が小さいほど床が近く＝床反射が早く・強くなります（例：着席1.2、立位1.6程度）。</td>
+  </tr>
+  <tr>
+    <td>listener_offset</td><td>[0.0, 0.0]</td>
+    <td>聴取者を部屋中央から動かすオフセット <code>[左右, 前後]</code>[m]。左右にずらすと左右の壁反射が非対称になります。前にずらす（前壁に近づける）と前壁反射が早く・強くなり、ホールの「最前列」的な前方反射が得られます。</td>
+  </tr>
+  <tr>
+    <td>room_dims_min</td><td>[4.0, 5.0, 3.0]</td>
+    <td><code>room_size=0.0</code> のときの部屋寸法 <code>[幅, 奥行, 高さ]</code>[m]。既定はラジオ収録スタジオ程度の小部屋。</td>
+  </tr>
+  <tr>
+    <td>room_dims_max</td><td>[25.0, 45.0, 18.0]</td>
+    <td><code>room_size=1.0</code> のときの部屋寸法[m]。既定は約2000席のコンサートホール相当（体積≒2万m³級）。</td>
+  </tr>
+</table>
+<div class="note">
+部屋寸法は <code>room_size</code> で <code>min</code>〜<code>max</code> を線形補間します。<code>room_size</code> 自体は
+<code>[audio]</code>・各シーン・台本の臨時パラメータで指定できる既存の設定です（拡散リバーブにも連動）。
+</div>
+<div class="warn">
+大きな部屋（<code>room_size</code> 大）では壁が遠いため壁反射の遅延が長くなり、聴取者が中央だと
+「早期反射」というより後部残響に近づきます。その範囲では主に<strong>床・天井反射</strong>が接地感を担います。
+大ホールでも前方からの早期反射を強めたい場合は <code>listener_offset</code> の前後成分で前壁に寄せてください。
+</div>
+
+<h4 id="p-dr">5.4.2 距離による残響（D/R：直接音／残響比）</h4>
+<table class="kv-table">
+  <tr><th>パラメータ</th><th>既定値</th><th>意味・効果</th></tr>
+  <tr>
+    <td>early_level</td><td>1.0</td>
+    <td>早期反射全体の音量倍率。1.0 が物理基準。上げると反射が強く＝空間が「生き生き」するが、過大だと付帯音・濁りが出ます。下げると控えめになります。</td>
+  </tr>
+  <tr>
+    <td>wet_distance_slope</td><td>0.1</td>
+    <td>音源が遠いほど拡散リバーブ（残響）を増やす度合い。実効残響量 = <code>reverb_wet × (1 + slope × 距離)</code>（上限0.9）。値を大きくすると遠い音源がより残響的になり距離感が強調されます。既定 0.1 は従来の固定値と同じ＝挙動変化なし。</td>
+  </tr>
+</table>
+<p>
+<strong>D/R（直接音と残響の比）</strong>は距離感の重要な手がかりです。直接音は距離に応じて素直に減衰し、
+早期反射（<code>early_level</code>）と拡散残響（<code>wet_distance_slope</code>）が相対的に増えることで、
+「遠いほど残響に包まれる」自然な距離感を作ります。
+</p>
+
+<h4 id="p-material">5.4.3 面ごとの素材（反射率・吸音）</h4>
+<p>
+反射面を <strong>5つの素材グループ</strong>に分け、それぞれに2つの値を設定します。インラインテーブル
+（<code>{ reflection_coeff = …, absorption_cutoff_hz = … }</code>）で記述します。
+</p>
+<table class="kv-table">
+  <tr><th>キー</th><th>反射率 (reflection_coeff)</th><th>吸音カットオフ (absorption_cutoff_hz)</th></tr>
+  <tr><td>floor（床）</td><td>0.5</td><td>3500 Hz</td></tr>
+  <tr><td>ceiling（天井）</td><td>0.6</td><td>6000 Hz</td></tr>
+  <tr><td>front_wall（前壁）</td><td>0.85</td><td>10000 Hz</td></tr>
+  <tr><td>back_wall（後壁）</td><td>0.40</td><td>4000 Hz</td></tr>
+  <tr><td>side_walls（左右の側壁）</td><td>0.70</td><td>8000 Hz</td></tr>
+</table>
+<table class="kv-table">
+  <tr><th>項目</th><th>範囲の目安</th><th>意味・効果</th></tr>
+  <tr>
+    <td>reflection_coeff</td><td>0.0 〜 1.0</td>
+    <td>その面の反射の強さ。0 でその面の反射を無効化、1 で減衰なしの強い反射。高いほど明瞭で硬い響き、低いほど吸音された落ち着いた響き。</td>
+  </tr>
+  <tr>
+    <td>absorption_cutoff_hz</td><td>例 2000 〜 Nyquist(24000)</td>
+    <td>反射時のローパス（高域吸音）のカットオフ周波数[Hz]。<strong>低いほど高域が削れて柔らかい素材</strong>（カーペット・カーテン等）、高いほど高域も反射する硬い素材（コンクリート・ガラス等）。Nyquist 付近にすると吸音は実質無効。</td>
+  </tr>
+</table>
+<div class="tip">
+既定では<strong>前壁を高反射（0.85 / 10kHz）</strong>にしています。これはコンサートホールで
+ステージ側（演者の背後）の壁の反射が強いことを模したものです。後壁は吸音寄り（0.40 / 4kHz）にしています。
+左右の側壁は同一素材として扱います（位置は <code>listener_offset</code> で左右非対称にできます）。
+</div>
+
+<h3 id="tuning">5.5 チューニング指針</h3>
+<p>すべて <code>config.toml</code> の数値変更のみ。試聴しながら少しずつ調整してください。</p>
+<table>
+  <tr><th>狙い・症状</th><th>調整</th></tr>
+  <tr><td>まだ「浮く」感じが残る</td><td><code>floor.reflection_coeff</code> を上げる／<code>early_level</code> を上げる／<code>ear_height</code> を少し下げて床を近づける</td></tr>
+  <tr><td>反射が強すぎる・付帯音や濁りが気になる</td><td><code>early_level</code> を下げる／各面の <code>reflection_coeff</code> を下げる</td></tr>
+  <tr><td>空間を広く／狭くしたい</td><td><code>room_size</code>（部屋寸法に連動）を上げる／下げる</td></tr>
+  <tr><td>素材を柔らかく／硬くしたい</td><td>該当面の <code>absorption_cutoff_hz</code> を下げる（柔）／上げる（硬）</td></tr>
+  <tr><td>遠近感（距離感）を強めたい</td><td><code>wet_distance_slope</code> を上げる</td></tr>
+  <tr><td>前方からの反射を強めたい（ホール感）</td><td><code>front_wall.reflection_coeff</code> を上げる／<code>listener_offset</code> の前後成分で前壁に寄せる</td></tr>
+  <tr><td>機能を一時的に切りたい</td><td><code>enabled = false</code></td>
+  </tr>
+</table>
+
+<h3 id="compat">5.6 互換性・注意点</h3>
+<ul>
+  <li><span class="badge">後方互換</span><code>[audio.early_reflections]</code> セクションや個々の項目を省略しても動作し、省略分は既定値が使われます。</li>
+  <li><span class="badge">回帰なし</span><code>enabled = false</code> の出力は、本機能追加前と<strong>完全に同一</strong>です。</li>
+  <li><span class="badge">配置</span>運用ビルドでは <code>config.toml</code> を実行ファイルと同じフォルダに置いてください（<code>--config</code> 省略時はそこを参照します）。</li>
+  <li>本機能は Rust 版独自の拡張で、Python 版には早期反射はありません（意図的な差異）。</li>
+  <li>各反射は3D経路長で遅延・距離減衰を、水平方位で左右差（ITD/ILD）を計算します。上下方向は水平面に畳み込みます。</li>
+</ul>
+
+<h3 id="scene-room">5.7 台本(scene)で部屋を指定する</h3>
+<p>
+config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既定値・素材</strong>を決めますが、
+<strong>部屋の大きさと聴取者の位置は台本の <code>@scene</code> 行で場面ごとに指定</strong>できます。
+これにより「ホール」「小部屋」「屋外」などを場面単位で切り替えられます。
+</p>
+<table class="kv-table">
+  <tr><th>@scene パラメータ</th><th>意味・効果</th></tr>
+  <tr>
+    <td>room_size</td>
+    <td>0.0〜1.0 の簡易指定。<code>room_dims_min</code>〜<code>room_dims_max</code> を補間して寸法を決める。省略時は config 既定。</td>
+  </tr>
+  <tr>
+    <td>room_w / room_d / room_h</td>
+    <td>部屋の幅・奥行・高さ[m]。<strong>3つすべて指定すると room_size より優先</strong>。座標は x=幅(左右)・y=奥行(前後＝正面)・z=高さ。</td>
+  </tr>
+  <tr>
+    <td>listener_dx / listener_dy</td>
+    <td>聴取者（マイクペア中心）の部屋中央からのオフセット[m]（+x=右、+y=前）。省略時は config の <code>listener_offset</code>。前壁に寄せるとホール的な前方反射が強まる。</td>
+  </tr>
+  <tr>
+    <td>listener_z</td>
+    <td>聴取者（マイク中心）の<strong>床面からの絶対高さ</strong>[m]（<code>listener_dx/dy</code> の中央オフセットとは違い絶対値）。省略時は config の <code>ear_height</code>（既定1.2）。床・天井反射の遅延に効く。</td>
+  </tr>
+  <tr>
+    <td>reverb_wet</td>
+    <td>残響量の倍率（<a href="#physical-reverb">5.8節</a>参照）。場面ごとに残響の効きを調整できる。</td>
+  </tr>
+</table>
+<pre><code>@scene ホール room_w=25 room_d=45 room_h=18 listener_dy=-15 listener_z=1.1 reverb_wet=1.0
+@scene 小部屋 room_size=0.1
+@scene 屋外 room_w=50 room_d=50 room_h=30 reverb_wet=0.0</code></pre>
+<div class="note">
+話者ごとの位置（聴取者から見た <code>pan</code>＝方向、<code>distance</code>＝距離、<code>height</code>＝高さ）は <code>@cast</code> で指定します。
+<code>@scene</code> は「部屋」と「その中での聴取者の立ち位置・高さ」を、<code>@cast</code> は「聴取者から見た各話者の位置・高さ」を決めます。
+</div>
+<h4>話者の高さ（@cast height）</h4>
+<p>
+話者の高さは <code>@cast</code> 行の <code>height=**</code>（<strong>床面からの絶対高さ</strong>[m]）で指定します。
+省略時は<strong>聴取者と同じ高さ</strong>になります（後方互換）。話者を高く/低く置くと、床・天井反射の遅延・距離が変わります。
+</p>
+<table class="kv-table">
+  <tr><th>書き方</th><th>意味</th></tr>
+  <tr><td><code>@cast</code> 行 <code>height=1.7</code></td><td>その話者の基準の高さを 1.7m（床から）に設定。</td></tr>
+  <tr><td>行内 <code>A(height=0.3):台詞</code></td><td><strong>その行限定の加算</strong>（基準＋0.3m）。<code>pan</code>/<code>distance</code> の臨時パラメータと同じ扱い。</td></tr>
+</table>
+<div class="tip">
+高さは早期反射の床/天井反射の幾何にのみ効きます（Sabine 残響＝<a href="#physical-reverb">5.8節</a>には影響しません）。値は部屋の高さ <code>room_h</code> 内にクランプされます。
+</div>
+<div class="tip">
+<strong>屋外</strong>にするには、config の <code>[audio.early_reflections]</code> で壁・天井の <code>reflection_coeff</code> を 0 にします
+（床のみ反射）。これにより <a href="#physical-reverb">5.8節</a>の物理計算で残響もほぼ無くなります。場面によって屋内/屋外を変えたい場合は、現状は
+素材が config 全体共通のため、屋外専用の config.toml を用意して使い分けてください。
+</div>
+
+<h3 id="physical-reverb">5.8 残響の物理導出と reverb_wet</h3>
+<p>
+拡散リバーブ（残響の尾）は、<strong>部屋寸法と各面の素材から物理的に導出</strong>されます。手動の固定値ではありません。
+</p>
+<ul>
+  <li><strong>残響長 RT60</strong>：Sabine の式 <code>RT60 ≈ 0.161 × 体積V ÷ 総吸音A</code> で算出（A は 面積×吸音率の総和、吸音率 <code>α = 1 − reflection_coeff²</code>）。0.05〜12秒にクランプ。大きい/反射的な部屋ほど残響が長い。</li>
+  <li><strong>プリディレイ</strong>：平均自由行程 <code>4V/S</code> から算出（上限50ms）。</li>
+  <li><strong>残響基準量 wet_base</strong>：<code>1 − 平均吸音率</code>。吸音的な部屋ほど小さく、反射的な部屋ほど大きい。屋外（壁吸音）では 0 に近づく。</li>
+</ul>
+<table class="kv-table">
+  <tr><th>パラメータ</th><th>既定</th><th>意味・効果</th></tr>
+  <tr>
+    <td>reverb_wet</td><td>1.0</td>
+    <td><strong>物理基準量 wet_base への倍率</strong>。実効残響量 = <code>reverb_wet × wet_base × (1 + wet_distance_slope × 距離)</code>（上限0.9）。1.0で物理どおり、下げるとドライ寄り（ナレーションの明瞭さ確保等）、0で残響なし。config.toml の <code>[audio] reverb_wet</code> または <code>@scene</code> で指定。</td>
+  </tr>
+</table>
+<div class="warn">
+<strong>仕様変更（非互換）</strong>：<code>reverb_wet</code> は以前の「絶対的な残響ミックス量(0〜1)」から
+「物理基準量への倍率(既定1.0)」へ<strong>意味が変わりました</strong>。素材・寸法から残響が決まるようになったため、
+以前の台本・config の <code>reverb_wet</code> 値そのままでは響きが変わります。必要に応じて再調整してください。
+</div>
+<div class="tip">
+素材（<code>reflection_coeff</code>／<code>absorption_cutoff_hz</code>）は<strong>早期反射と拡散残響の両方</strong>を同時に決めます。
+反射率を上げると早期反射が強まり、残響も長く・大きくなります（物理的に一貫）。
+</div>
+
+<h2 id="troubleshooting">6. トラブルシューティング</h2>
 <table>
   <tr><th>症状</th><th>主な原因と対処</th></tr>
   <tr>
@@ -534,7 +877,7 @@ se_dir = ./assets/se
   </tr>
   <tr>
     <td>音が宙に浮いて聞こえる／距離感・上下感が弱い</td>
-    <td>床・壁・天井の早期反射が接地感を与えます。<code>[audio.early_reflections]</code> の <code>floor.reflection_coeff</code> や <code>early_level</code> を上げる、<code>@scene</code> で部屋寸法（<code>room_w/d/h</code>）や聴取者高さ（<code>listener_z</code>）を指定する等で調整できます（<a href="early_reflections.html">空間音響パラメータ解説</a>参照）。</td>
+    <td>床・壁・天井の早期反射が接地感を与えます。<code>[audio.early_reflections]</code> の <code>floor.reflection_coeff</code> や <code>early_level</code> を上げる、<code>@scene</code> で部屋寸法（<code>room_w/d/h</code>）や聴取者高さ（<code>listener_z</code>）を指定する等で調整できます（<a href="#acoustics">第5章 空間音響パラメータ解説</a>参照）。</td>
   </tr>
   <tr>
     <td>処理が遅い／メモリ消費が大きい</td>
@@ -546,7 +889,7 @@ se_dir = ./assets/se
   </tr>
 </table>
 
-<h2 id="appendix">6. 付録: パラメータ早見表</h2>
+<h2 id="appendix">7. 付録: パラメータ早見表</h2>
 <h4>@cast / 台詞の臨時パラメータで指定できる定位パラメータ</h4>
 <table class="kv-table">
   <tr><td><code>pan</code></td><td>左右の定位（度）。+ = 右、- = 左</td></tr>
@@ -578,7 +921,20 @@ se_dir = ./assets/se
 </main>
 </div>
 <footer>
-  Script2Voice 取扱説明書・操作マニュアル ／ 本書は Script2Voice (Rust 版) の利用者向けに作成されています。
+  Script2Voice 取扱説明書・操作マニュアル（空間音響パラメータ解説 統合版）／ 本書は Script2Voice (Rust 版) の利用者向けに作成されています。<br>
+  第5章（空間音響）関連設計書:
+  <code>docs/superpowers/specs/2026-06-08-early-reflections-image-source-design.md</code>,
+  <code>docs/superpowers/specs/2026-06-09-physical-room-acoustics-design.md</code>,
+  <code>docs/superpowers/specs/2026-06-09-listener-speaker-height-design.md</code>
 </footer>
+<script>
+  // 目次リンク: リンク部分のクリックでは折りたたみをトグルせずアンカーへ移動する
+  document.querySelectorAll("nav.toc summary > a").forEach(function (a) {
+    a.addEventListener("click", function (e) {
+      e.preventDefault(); // summary のトグル動作を抑止
+      location.hash = a.getAttribute("href");
+    });
+  });
+</script>
 </body>
 </html>
