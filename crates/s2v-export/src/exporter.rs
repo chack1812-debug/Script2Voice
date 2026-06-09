@@ -874,8 +874,14 @@ mod tests {
     #[test]
     fn resolve_suffix_empty_when_all_writable() {
         let dir = tempfile::tempdir().unwrap();
+        // 非存在のみ → 書込可扱い → ""
         let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
         assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "");
+        // 既存かつ書込可のファイルが混じっていても fallback しない（exists()&&writable のパスを検証）
+        let existing = dir.path().join("a.wav");
+        std::fs::write(&existing, b"x").unwrap();
+        let files2 = vec![existing, dir.path().join("b.srt")];
+        assert_eq!(resolve_generation_suffix(&files2, 100).unwrap(), "");
     }
 
     #[test]
