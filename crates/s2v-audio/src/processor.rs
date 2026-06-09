@@ -61,7 +61,10 @@ impl AudioProcessor {
         let (room_size, reverb_wet) = resolve_reverb_params(cast, scene, self.config.room_size, self.config.reverb_wet);
         let room_geo: RoomGeometry = resolve_room_geometry(scene, &self.config.early_reflections, room_size);
         let rp: ReverbParams = compute_reverb_params(room_geo.dims, &self.config.early_reflections, self.config.sound_speed, self.config.sample_rate);
-        self.ir_cache.compute_if_needed(rp.rt60, rp.pre_delay);
+        let reverb_active = reverb_wet > 0.0 && rp.wet_base > 0.0;
+        if reverb_active {
+            self.ir_cache.compute_if_needed(rp.rt60, rp.pre_delay);
+        }
 
         // --- WAV 読み込み ---
         let mut reader = hound::WavReader::open(input)?;
@@ -149,7 +152,6 @@ impl AudioProcessor {
         let early_max_rel = early_taps.iter().map(|t| t.rel_l.max(t.rel_r)).max().unwrap_or(0);
 
         // --- ステレオバッファ構築 ---
-        let reverb_active = reverb_wet > 0.0 && rp.wet_base > 0.0;
         let rv_samples = if reverb_active {
             (self.config.sample_rate as f64 * rp.rt60) as usize + rp.pre_delay
         } else { 0 };
@@ -532,5 +534,23 @@ mod tests {
         let (rt_small, _) = proc.reverb_params_for(&small, 0.1);
         let (rt_big, _) = proc.reverb_params_for(&big, 0.1);
         assert!(rt_big > rt_small, "大きい部屋ほど残響長が長い: small={rt_small}, big={rt_big}");
+    }
+
+    #[test]
+    fn scene_room_dims_affect_process_output_length() {
+        // 大きい部屋ほど rt60 が長く、残響テール分だけ出力サンプル数が増える。
+        // process() が scene 寸法を実際に残響へ反映していることを end-to-end で検証する。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        write_noise_wav(&input, 48000, 0.1);
+        let proc = AudioProcessor::new(default_audio_config());
+
+        let small = SceneConfig { room_w: Some(4.0), room_d: Some(5.0), room_h: Some(3.0), reverb_wet: Some(1.0), ..SceneConfig::new("小") };
+        let big = SceneConfig { room_w: Some(25.0), room_d: Some(45.0), room_h: Some(18.0), reverb_wet: Some(1.0), ..SceneConfig::new("大") };
+
+        let n_small = proc.process(&input, &dir.path().join("small.wav"), &dummy_cast(0.0, 1.0), &small).unwrap();
+        let n_big = proc.process(&input, &dir.path().join("big.wav"), &dummy_cast(0.0, 1.0), &big).unwrap();
+
+        assert!(n_big > n_small, "大部屋は残響テールが長く出力サンプル数が多い: small={n_small}, big={n_big}");
     }
 }
