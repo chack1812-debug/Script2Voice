@@ -253,10 +253,11 @@ cargo build --release</code></pre>
   <tr><td><code>[audio] microphone_spacing</code></td><td>仮想ステレオマイクの間隔 (m)。既定 0.2m</td></tr>
   <tr><td><code>[audio] sound_speed</code></td><td>音速 (m/s)。両耳間の到達時間差 (ITD) の計算に使用</td></tr>
   <tr><td><code>[audio] air_absorption_coeff</code></td><td>空気吸収の係数。距離に応じた高音域の減衰の強さ</td></tr>
-  <tr><td><code>[audio] room_size</code></td><td>場面の既定の部屋の広さ (0.0〜1.0)。<code>@scene</code> で上書き可</td></tr>
-  <tr><td><code>[audio] reverb_wet</code></td><td>場面の既定の残響ミックス量 (0.0〜1.0)。<code>@scene</code> で上書き可</td></tr>
+  <tr><td><code>[audio] room_size</code></td><td>場面の既定の部屋の広さ (0.0〜1.0)。<code>@scene</code> の <code>room_size</code> や寸法指定で上書き可</td></tr>
+  <tr><td><code>[audio] reverb_wet</code></td><td>残響量の<strong>倍率</strong>（既定 1.0＝物理量どおり）。部屋寸法と壁素材から算出される残響基準値に掛ける。<code>@scene</code> で上書き可</td></tr>
   <tr><td><code>[audio] reference_dist / reference_gain_db / max_gain_db</code></td><td>距離減衰や音量の基準値・上限値</td></tr>
-  <tr><td><code>[audio] mic_directivity / mic_angle</code></td><td>仮想マイクの指向性の強さと向き（クロスペア配置）</td></tr>
+  <tr><td><code>[audio] mic_directivity / mic_angle</code></td><td>仮想マイクの指向性の強さと向き（外開き ORTF 配置）。値が大きいほど定位の広がりが強くなる</td></tr>
+  <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="early_reflections.html">空間音響パラメータ解説</a>を参照</td></tr>
   <tr><td><code>[audio.engine_volume_offsets]</code></td><td>エンジンごとの音量補正係数 (例: <code>voicevox = 1.2</code>)</td></tr>
   <tr><td><code>[concurrency]</code></td><td>エンジンごとの同時合成数、音響処理の並列数（<code>0</code> = CPU コア数を自動使用）</td></tr>
   <tr><td><code>[bgm] crossfade_s / se_fade_out_s</code></td><td>BGM のクロスフェード秒数、SE のフェードアウト秒数</td></tr>
@@ -339,13 +340,23 @@ script2voice .\scripts\episode01.txt --config .\my_config.toml</code></pre>
 </div>
 
 <h3 id="sec-scene">4.1 @scene セクション — 場面の宣言</h3>
-<p>場面（シーン）の先頭で宣言します。場面名と音響場（部屋の音響特性）を指定できます。</p>
-<pre><code>@scene 01_オープニング room_size=0.3 reverb_wet=0.5</code></pre>
+<p>場面（シーン）の先頭で宣言します。場面名と音響場（部屋の大きさ・聴取者の位置・残響量）を指定できます。いずれのパラメータも省略可能です。</p>
+<pre><code>@scene 01_オープニング room_size=0.3 reverb_wet=1.0
+@scene ホール room_w=25 room_d=45 room_h=18 listener_dy=-15 listener_z=1.1</code></pre>
 <table class="kv-table">
   <tr><td>場面名</td><td><code>@scene</code> の直後に書く任意の文字列（出力フォルダ名や FCPXML のクリップ識別等に利用）</td></tr>
-  <tr><td><code>room_size</code></td><td>部屋の広さ（残響の特性に影響）。0.0〜1.0、小さいほど狭い空間。省略時は config.toml の既定値</td></tr>
-  <tr><td><code>reverb_wet</code></td><td>残響音のミックス量。0.0〜1.0。省略時は config.toml の既定値</td></tr>
+  <tr><td><code>room_size</code></td><td>部屋の広さの簡易指定。0.0〜1.0、小さいほど狭い空間。省略時は config.toml の既定値。寸法（下記 <code>room_w/d/h</code>）が優先される</td></tr>
+  <tr><td><code>room_w</code> / <code>room_d</code> / <code>room_h</code></td><td>部屋の幅・奥行・高さ（m）。<strong>3つすべて指定すると <code>room_size</code> より優先</strong>。座標は x=幅(左右)・y=奥行(前後＝聴取者の正面)・z=高さ</td></tr>
+  <tr><td><code>listener_dx</code> / <code>listener_dy</code></td><td>聴取者（ステレオマイク中心）の部屋中央からのオフセット（m。+x=右、+y=前）。省略時は config の値。前壁に寄せるとホール的な前方反射が強まる</td></tr>
+  <tr><td><code>listener_z</code></td><td>聴取者（マイク中心）の<strong>床面からの絶対高さ</strong>（m）。省略時は config の <code>ear_height</code></td></tr>
+  <tr><td><code>reverb_wet</code></td><td>残響量の<strong>倍率</strong>（既定 1.0＝物理量どおり）。部屋寸法と壁素材から算出される残響基準値に掛ける。0 で残響なし。省略時は config の既定値</td></tr>
 </table>
+<div class="note">
+  残響の長さ・量、および床・壁・天井からの早期反射は、部屋寸法と各面の素材（反射率・吸音特性）から
+  物理的に決まります。素材の既定値や各面の調整は config.toml の <code>[audio.early_reflections]</code> で行います
+  （壁・天井の反射率を 0 にすると屋外＝床反射のみ・ほぼ無残響）。詳しくは
+  <a href="early_reflections.html">空間音響パラメータ解説</a>を参照してください。
+</div>
 <p>
   各場面には <code>@asset</code> / <code>@cast</code> / <code>@script</code> の各セクションを
   含めることができます。新しい <code>@scene</code> が現れると、そこまでの内容で
@@ -396,17 +407,18 @@ se_dir = ./assets/se</code></pre>
   <tr><td>エンジン名</td><td><code>voicevox</code> / <code>aivis</code> / <code>xtts</code> のいずれか</td></tr>
   <tr><td><code>language</code></td><td>発声言語。XTTS のみ有効（例: <code>ja</code>, <code>en</code>）。VOICEVOX/AivisSpeech は常に日本語</td></tr>
   <tr><td><code>pan</code></td><td>左右の定位（単位: 度）。+ で右方向、- で左方向</td></tr>
-  <tr><td><code>distance</code></td><td>マイクまでの距離（単位: m）</td></tr>
+  <tr><td><code>distance</code></td><td>聴取者（マイク）までの距離（単位: m）</td></tr>
+  <tr><td><code>height</code></td><td>話者の<strong>床面からの絶対高さ</strong>（単位: m）。省略時は聴取者と同じ高さ。床・天井反射の幾何に影響する。行内臨時パラメータ（例 <code>めたん(height=0.3):…</code>）では、その行限定の加算オフセットとして働く</td></tr>
   <tr><td><code>volume</code></td><td>音量の倍率（既定 1.0）</td></tr>
   <tr><td>その他のパラメータ</td><td>各エンジン固有のパラメータ（<code>speedScale</code>, <code>pitchScale</code> など）をそのまま <code>名前=値</code> の形式で指定可能</td></tr>
 </table>
 <div class="note">
-  <code>pan</code> と <code>distance</code> は、左右に交差して向き合う「クロスペア型」の
-  仮想ステレオマイク（マイク間隔は config.toml の <code>microphone_spacing</code>、既定 0.2m）
-  でとらえた音として計算されます。マイクの指向性の影響で、
-  例えば <code>pan=-45</code>（左寄り）の音源が右チャンネルでより大きく聞こえるなど、
-  直感とは逆の定位になる場合があります。これは実際のクロスペアマイクの収音特性を
-  再現した仕様です。
+  <code>pan</code>（方向）・<code>distance</code>（距離）・<code>height</code>（高さ）は、外開き（ORTF 的）に配置した
+  仮想ステレオマイク（マイク間隔は config.toml の <code>microphone_spacing</code>、既定 0.2m）でとらえた音として、
+  到達時間差（ITD）・音量差（ILD）・床/壁/天井の早期反射を計算して定位を再現します。
+  <code>pan</code> は仕様どおり <strong>+ で右、− で左</strong>に定位します。定位の強さ（広がり）は
+  config.toml の <code>mic_directivity</code> / <code>mic_angle</code> で調整できます（値が大きいほど広がりが強い）。
+  詳しくは<a href="early_reflections.html">空間音響パラメータ解説</a>を参照してください。
 </div>
 
 <h3 id="sec-script">4.5 @script セクション — 台詞と音声指示</h3>
@@ -517,8 +529,12 @@ se_dir = ./assets/se
     <td>すべての台詞の音声合成・音響処理が失敗しています。上記の合成失敗の原因を解消してから再実行してください。</td>
   </tr>
   <tr>
-    <td>音の左右の定位が想定と逆に感じる</td>
-    <td>クロスペア型マイク収音モデルの仕様により、直感的な左右と実際に強調されるチャンネルが逆転する場合があります（<a href="#sec-cast">4.4 節の補足</a>を参照）。<code>pan</code> の符号を反転させて調整してください。</td>
+    <td>定位（左右の広がり）が指示より強い／弱いと感じる</td>
+    <td>定位は <code>pan</code> の角度に加えてマイク指向性の効きで決まります。config.toml の <code>[audio] mic_directivity</code> / <code>mic_angle</code> を下げると広がりが穏やかに、上げると強くなります（既定は控えめ寄りに調整済み）。<code>pan</code> は + が右、− が左です。</td>
+  </tr>
+  <tr>
+    <td>音が宙に浮いて聞こえる／距離感・上下感が弱い</td>
+    <td>床・壁・天井の早期反射が接地感を与えます。<code>[audio.early_reflections]</code> の <code>floor.reflection_coeff</code> や <code>early_level</code> を上げる、<code>@scene</code> で部屋寸法（<code>room_w/d/h</code>）や聴取者高さ（<code>listener_z</code>）を指定する等で調整できます（<a href="early_reflections.html">空間音響パラメータ解説</a>参照）。</td>
   </tr>
   <tr>
     <td>処理が遅い／メモリ消費が大きい</td>
@@ -534,9 +550,18 @@ se_dir = ./assets/se
 <h4>@cast / 台詞の臨時パラメータで指定できる定位パラメータ</h4>
 <table class="kv-table">
   <tr><td><code>pan</code></td><td>左右の定位（度）。+ = 右、- = 左</td></tr>
-  <tr><td><code>distance</code></td><td>マイクまでの距離（m）</td></tr>
+  <tr><td><code>distance</code></td><td>聴取者（マイク）までの距離（m）</td></tr>
+  <tr><td><code>height</code></td><td>話者の床面からの絶対高さ（m）。省略時は聴取者と同じ高さ。行内では加算オフセット</td></tr>
   <tr><td><code>volume</code></td><td>音量倍率</td></tr>
   <tr><td><code>delay</code></td><td>同時発声時の発声開始の遅延（ms）</td></tr>
+</table>
+<h4>@scene で指定できる音響場パラメータ</h4>
+<table class="kv-table">
+  <tr><td><code>room_size</code></td><td>部屋の広さの簡易指定（0.0〜1.0）</td></tr>
+  <tr><td><code>room_w</code> / <code>room_d</code> / <code>room_h</code></td><td>部屋の幅・奥行・高さ（m。3つ指定で <code>room_size</code> に優先）</td></tr>
+  <tr><td><code>listener_dx</code> / <code>listener_dy</code></td><td>聴取者の部屋中央からのオフセット（m。+x=右、+y=前）</td></tr>
+  <tr><td><code>listener_z</code></td><td>聴取者の床面からの絶対高さ（m）</td></tr>
+  <tr><td><code>reverb_wet</code></td><td>残響量の倍率（既定 1.0）</td></tr>
 </table>
 <h4>主なエンジン固有パラメータ（@cast / 台詞の臨時パラメータとして指定可能）</h4>
 <table>
