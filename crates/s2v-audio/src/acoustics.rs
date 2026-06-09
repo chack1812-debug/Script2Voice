@@ -9,6 +9,7 @@ use crate::geometry::room_dims;
 pub struct RoomGeometry {
     pub dims: [f64; 3],
     pub listener_offset: [f64; 2],
+    pub listener_height: f64,
 }
 
 /// scene と config から部屋寸法・聴取オフセットを解決する。
@@ -25,7 +26,7 @@ pub fn resolve_room_geometry(scene: &SceneConfig, er: &EarlyConfig, fallback_roo
         (None, None) => er.listener_offset,
         (dx, dy) => [dx.unwrap_or(0.0), dy.unwrap_or(0.0)],
     };
-    RoomGeometry { dims, listener_offset }
+    RoomGeometry { dims, listener_offset, listener_height: scene.listener_z.unwrap_or(er.ear_height) }
 }
 
 /// 拡散リバーブの物理パラメータ。
@@ -108,6 +109,16 @@ mod tests {
         assert_eq!(resolve_room_geometry(&scene_none, &er, 0.5).listener_offset, [1.0, 2.0]);
         let scene_set = SceneConfig { listener_dx: Some(-3.0), listener_dy: Some(4.0), ..SceneConfig::new("x") };
         assert_eq!(resolve_room_geometry(&scene_set, &er, 0.5).listener_offset, [-3.0, 4.0]);
+    }
+
+    #[test]
+    fn resolve_listener_height_uses_scene_then_config() {
+        let mut er = EarlyConfig::default();
+        er.ear_height = 1.2;
+        let scene_none = SceneConfig::new("x");
+        assert!((resolve_room_geometry(&scene_none, &er, 0.5).listener_height - 1.2).abs() < 1e-10);
+        let scene_set = SceneConfig { listener_z: Some(2.0), ..SceneConfig::new("x") };
+        assert!((resolve_room_geometry(&scene_set, &er, 0.5).listener_height - 2.0).abs() < 1e-10);
     }
 
     #[test]

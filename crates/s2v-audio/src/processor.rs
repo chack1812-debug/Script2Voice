@@ -138,6 +138,8 @@ impl AudioProcessor {
         let gain_r = (vol_factor * dist_gain_r * pat_r) as f32;
 
         // --- 早期反射タップ（イメージソース法）---
+        // 話者の実効高さ = 基準(@cast、未指定=聴取者高さ) + 行内臨時パラメータの加算
+        let source_height = cast.height.unwrap_or(room_geo.listener_height) + cast.height_offset;
         let early_taps = build_early_taps(
             &mono,
             cast.distance,
@@ -146,6 +148,7 @@ impl AudioProcessor {
             &self.config,
             &self.config.early_reflections,
             &room_geo,
+            source_height,
             self.config.sample_rate,
             min_delay,
         );
@@ -554,5 +557,32 @@ mod tests {
         let n_big = proc.process(&input, &dir.path().join("big.wav"), &dummy_cast(0.0, 1.0), &big).unwrap();
 
         assert!(n_big > n_small, "大部屋は残響テールが長く出力サンプル数が多い: small={n_small}, big={n_big}");
+    }
+
+    #[test]
+    fn speaker_height_changes_process_output() {
+        // 話者高さを変えると早期反射の床反射が変わり、出力(早期反射ON)が変化する
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        write_noise_wav(&input, 48000, 0.1);
+        let mut cfg = default_audio_config();
+        cfg.reverb_wet = 0.0; // 残響を切り早期反射のみ比較
+        let proc = AudioProcessor::new(cfg);
+        let scene = SceneConfig { room_w: Some(8.0), room_d: Some(8.0), room_h: Some(5.0), reverb_wet: Some(0.0), ..SceneConfig::new("室") };
+
+        let mut low = dummy_cast(0.0, 2.0);
+        low.height = Some(1.0);
+        let mut high = dummy_cast(0.0, 2.0);
+        high.height = Some(3.0);
+        let out_low = dir.path().join("low.wav");
+        let out_high = dir.path().join("high.wav");
+        proc.process(&input, &out_low, &low, &scene).unwrap();
+        proc.process(&input, &out_high, &high, &scene).unwrap();
+
+        let read = |p: &std::path::Path| -> Vec<i16> {
+            let mut r = hound::WavReader::open(p).unwrap();
+            r.samples::<i16>().map(|s| s.unwrap()).collect()
+        };
+        assert_ne!(read(&out_low), read(&out_high), "話者高さで出力が変わること");
     }
 }
