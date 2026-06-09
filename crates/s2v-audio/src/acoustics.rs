@@ -12,6 +12,7 @@ pub struct RoomGeometry {
 }
 
 /// scene と config から部屋寸法・聴取オフセットを解決する。
+/// 注: listener_dx/dy のどちらか一方だけ指定した場合、もう一方は config 値ではなく 0 になる。
 pub fn resolve_room_geometry(scene: &SceneConfig, er: &EarlyConfig, fallback_room_size: f64) -> RoomGeometry {
     let dims = match (scene.room_w, scene.room_d, scene.room_h) {
         (Some(w), Some(d), Some(h)) => [w, d, h],
@@ -57,7 +58,9 @@ pub fn compute_reverb_params(dims: [f64; 3], er: &EarlyConfig, sound_speed: f64,
     let rt60 = (0.161 * volume / total_absorption.max(1e-6)).clamp(0.05, 12.0);
 
     let mfp = 4.0 * volume / total_area.max(1e-6);
-    let pre_delay = ((sample_rate as f64) * (mfp / sound_speed)) as usize;
+    // プリディレイは知覚上 50ms 超でほぼ等価。大部屋での過大バッファを避けるため上限を設ける。
+    let pre_delay_s = (mfp / sound_speed).min(0.05);
+    let pre_delay = ((sample_rate as f64) * pre_delay_s) as usize;
 
     let avg_alpha = total_absorption / total_area.max(1e-6);
     let wet_base = (1.0 - avg_alpha).clamp(0.0, 1.0);
@@ -130,6 +133,14 @@ mod tests {
         let reflective = compute_reverb_params([10.0, 20.0, 5.0], &er_uniform(1.0), 340.0, 48000);
         assert!(absorptive.wet_base < 0.01, "全面吸音で wet_base≈0, got {}", absorptive.wet_base);
         assert!(reflective.wet_base > 0.99, "全面反射で wet_base≈1, got {}", reflective.wet_base);
+    }
+
+    #[test]
+    fn rt60_clamped_low_for_very_absorptive_room() {
+        // ほぼ全吸音(coeff=0.01)・極小部屋(1×1×1m) → Sabine値が0.05s未満になり下限クランプが効く
+        let er = er_uniform(0.01);
+        let rp = compute_reverb_params([1.0, 1.0, 1.0], &er, 340.0, 48000);
+        assert!((rp.rt60 - 0.05).abs() < 1e-9, "rt60 が下限0.05sにクランプされること, got {}", rp.rt60);
     }
 
     #[test]
