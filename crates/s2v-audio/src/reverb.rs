@@ -6,10 +6,10 @@ use rand::{SeedableRng, rngs::SmallRng};
 use rand_distr::{Distribution, StandardNormal};
 use realfft::RealFftPlanner;
 
-/// room_size をキーとした stereo IR キャッシュ ([ir_l, ir_r])
+/// (rt60, pre_delay) をキーとした stereo IR キャッシュ ([ir_l, ir_r])
 pub struct IrCache {
     sample_rate: u32,
-    cache: Mutex<HashMap<OrderedFloat<f64>, [Vec<f32>; 2]>>,
+    cache: Mutex<HashMap<(OrderedFloat<f64>, usize), [Vec<f32>; 2]>>,
 }
 
 impl IrCache {
@@ -20,43 +20,48 @@ impl IrCache {
         }
     }
 
-    pub fn prewarm(&self, room_sizes: &[f64]) {
-        for &rs in room_sizes {
-            self.compute_if_needed(rs);
+    pub fn prewarm(&self, params: &[(f64, usize)]) {
+        for &(rt60, pre_delay) in params {
+            self.compute_if_needed(rt60, pre_delay);
         }
     }
 
-    pub fn compute_if_needed(&self, room_size: f64) {
-        let key = OrderedFloat(round4(room_size));
+    pub fn compute_if_needed(&self, rt60: f64, pre_delay: usize) {
+        let key = (OrderedFloat(round4(rt60)), pre_delay);
         let mut cache = self.cache.lock().unwrap();
         if cache.contains_key(&key) {
             return;
         }
-        let ir = build_ir(room_size, self.sample_rate);
+        let ir = build_ir(rt60, pre_delay, self.sample_rate);
         cache.insert(key, ir);
     }
 
     /// IR を使って stereo バッファにリバーブをかける (in-place)
-    pub fn apply(&self, stereo: &mut Vec<[f32; 2]>, room_size: f64, reverb_wet: f64, avg_dist: f64, wet_distance_slope: f64) {
-        if reverb_wet <= 0.0 || stereo.is_empty() {
+    pub fn apply(
+        &self,
+        stereo: &mut Vec<[f32; 2]>,
+        rt60: f64,
+        pre_delay: usize,
+        reverb_wet: f64,
+        wet_base: f64,
+        avg_dist: f64,
+        wet_distance_slope: f64,
+    ) {
+        let actual_wet = (reverb_wet * wet_base * (1.0 + wet_distance_slope * avg_dist)).min(0.9) as f32;
+        if actual_wet <= 0.0 || stereo.is_empty() {
             return;
         }
-
-        let key = OrderedFloat(round4(room_size));
+        let key = (OrderedFloat(round4(rt60)), pre_delay);
         let cache = self.cache.lock().unwrap();
         let Some(ir) = cache.get(&key) else { return };
-
-        let actual_wet = (reverb_wet * (1.0 + wet_distance_slope * avg_dist)).min(0.9) as f32;
 
         for ch in 0..2 {
             let dry: Vec<f32> = stereo.iter().map(|s| s[ch]).collect();
             let wet = fft_convolve(&dry, &ir[ch]);
-
             let dry_peak = dry.iter().cloned().map(f32::abs).fold(0.0_f32, f32::max);
             let wet_slice = &wet[..dry.len()];
             let wet_peak = wet_slice.iter().cloned().map(f32::abs).fold(1e-6_f32, f32::max);
             let wet_norm_factor = if dry_peak > 0.0 { (dry_peak * 0.4) / wet_peak } else { 0.0 };
-
             for (i, s) in stereo.iter_mut().enumerate() {
                 let w = wet_slice[i] * wet_norm_factor;
                 s[ch] = (1.0 - actual_wet) * s[ch] + actual_wet * w;
@@ -137,30 +142,22 @@ pub(crate) fn sosfilt_single_section(sos: &[f64; 6], input: &[f64]) -> Vec<f64> 
 }
 
 /// シード固定の乱数でリバーブ IR を生成する
-fn build_ir(room_size: f64, sample_rate: u32) -> [Vec<f32>; 2] {
+fn build_ir(rt60: f64, pre_delay: usize, sample_rate: u32) -> [Vec<f32>; 2] {
     let fs = sample_rate as f64;
-    let rv_time = 0.05 + room_size * 3.0;
-    let pre_delay = (fs * (0.01 + 0.04 * room_size)) as usize;
+    let rv_time = rt60;
     let n = (fs * rv_time) as usize;
 
-    let seed = (round4(room_size) * 10000.0) as u64 & 0xFFFF_FFFF;
+    let seed = (round4(rt60) * 10000.0) as u64 & 0xFFFF_FFFF;
     let mut rng = SmallRng::seed_from_u64(seed);
 
-    // Python版 audio_processor.py:36 self._reverb_sos = signal.butter(2, 1800, 'lp', fs=fs, output='sos') 相当
     let sos = butterworth_lowpass_sos(1800.0, fs);
 
     let decay: Vec<f64> = (0..n)
-        .map(|i| {
-            let t = i as f64 / fs;
-            (-6.91 * t / rv_time).exp()
-        })
+        .map(|i| { let t = i as f64 / fs; (-6.91 * t / rv_time).exp() })
         .collect();
 
     std::array::from_fn(|_| {
-        let noise: Vec<f64> = StandardNormal
-            .sample_iter(&mut rng)
-            .take(n)
-            .collect();
+        let noise: Vec<f64> = StandardNormal.sample_iter(&mut rng).take(n).collect();
         let filtered = sosfilt_single_section(&sos, &noise);
         let mut ir: Vec<f32> = vec![0.0; pre_delay];
         ir.extend(filtered.iter().zip(decay.iter()).map(|(s, d)| (s * d) as f32));
@@ -175,15 +172,15 @@ mod tests {
     #[test]
     fn ir_cache_builds_entry() {
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.3);
+        cache.compute_if_needed(1.0, 240);
         let guard = cache.cache.lock().unwrap();
-        assert!(guard.contains_key(&OrderedFloat(0.3)));
+        assert!(guard.contains_key(&(OrderedFloat(round4(1.0)), 240)));
     }
 
     #[test]
     fn prewarm_fills_multiple_entries() {
         let cache = IrCache::new(48000);
-        cache.prewarm(&[0.1, 0.3, 0.8]);
+        cache.prewarm(&[(0.5, 240), (1.0, 240), (2.0, 480)]);
         let guard = cache.cache.lock().unwrap();
         assert_eq!(guard.len(), 3);
     }
@@ -191,9 +188,9 @@ mod tests {
     #[test]
     fn ir_has_two_channels() {
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.5);
+        cache.compute_if_needed(1.0, 240);
         let guard = cache.cache.lock().unwrap();
-        let ir = &guard[&OrderedFloat(0.5)];
+        let ir = &guard[&(OrderedFloat(round4(1.0)), 240)];
         assert!(!ir[0].is_empty());
         assert!(!ir[1].is_empty());
     }
@@ -201,10 +198,10 @@ mod tests {
     #[test]
     fn apply_with_zero_wet_leaves_signal_unchanged() {
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.3);
+        cache.compute_if_needed(1.0, 240);
         let original: Vec<[f32; 2]> = (0..100).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
         let mut signal = original.clone();
-        cache.apply(&mut signal, 0.3, 0.0, 1.0, 0.1);
+        cache.apply(&mut signal, 1.0, 240, 0.0, 0.8, 1.0, 0.1);
         for (a, b) in original.iter().zip(signal.iter()) {
             assert!((a[0] - b[0]).abs() < 1e-6);
         }
@@ -213,7 +210,7 @@ mod tests {
     #[test]
     fn apply_with_wet_modifies_signal() {
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.5);
+        cache.compute_if_needed(1.0, 240);
         let n = 2400_usize;
         let mut signal: Vec<[f32; 2]> = (0..n)
             .map(|i| {
@@ -222,7 +219,7 @@ mod tests {
             })
             .collect();
         let before = signal[100][0];
-        cache.apply(&mut signal, 0.5, 0.3, 1.0, 0.1);
+        cache.apply(&mut signal, 1.0, 240, 1.0, 0.8, 1.0, 0.1);
         // リバーブ後は少なくとも何らかの変化があるはず
         let changed = signal.iter().any(|s| (s[0] - before).abs() > 1e-4);
         assert!(changed, "apply should modify signal");
@@ -280,8 +277,8 @@ mod tests {
 
     #[test]
     fn build_ir_is_deterministic() {
-        let ir1 = build_ir(0.3, 48000);
-        let ir2 = build_ir(0.3, 48000);
+        let ir1 = build_ir(1.0, 240, 48000);
+        let ir2 = build_ir(1.0, 240, 48000);
         assert_eq!(ir1[0].len(), ir2[0].len());
         for (a, b) in ir1[0].iter().zip(ir2[0].iter()) {
             assert_eq!(a, b);
@@ -298,13 +295,13 @@ mod tests {
             }).collect()
         };
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.5);
+        cache.compute_if_needed(1.0, 240);
 
         let dry = make_signal();
         let mut s_small = make_signal();
         let mut s_large = make_signal();
-        cache.apply(&mut s_small, 0.5, 0.3, 5.0, 0.1);
-        cache.apply(&mut s_large, 0.5, 0.3, 5.0, 0.5);
+        cache.apply(&mut s_small, 1.0, 240, 0.3, 0.8, 5.0, 0.1);
+        cache.apply(&mut s_large, 1.0, 240, 0.3, 0.8, 5.0, 0.5);
 
         let dev = |sig: &Vec<[f32; 2]>| -> f64 {
             sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
@@ -322,17 +319,39 @@ mod tests {
             }).collect()
         };
         let cache = IrCache::new(48000);
-        cache.compute_if_needed(0.5);
+        cache.compute_if_needed(1.0, 240);
 
         let dry = make_signal();
         let mut s_near = make_signal();
         let mut s_far = make_signal();
-        cache.apply(&mut s_near, 0.5, 0.3, 1.0, 0.1);
-        cache.apply(&mut s_far, 0.5, 0.3, 5.0, 0.1);
+        cache.apply(&mut s_near, 1.0, 240, 0.3, 0.8, 1.0, 0.1);
+        cache.apply(&mut s_far, 1.0, 240, 0.3, 0.8, 5.0, 0.1);
 
         let dev = |sig: &Vec<[f32; 2]>| -> f64 {
             sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
         };
         assert!(dev(&s_far) > dev(&s_near), "遠い音源ほど wet 寄与が大きいこと");
+    }
+
+    #[test]
+    fn compute_and_apply_with_rt60_predelay_key() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(1.5, 480);
+        let mut signal: Vec<[f32; 2]> = (0..4800)
+            .map(|i| { let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5; [v, v] })
+            .collect();
+        let before = signal[2000][0];
+        cache.apply(&mut signal, 1.5, 480, 1.0, 0.8, 1.0, 0.1);
+        assert!(signal.iter().any(|s| (s[0] - before).abs() > 1e-4), "apply は信号を変化させること");
+    }
+
+    #[test]
+    fn apply_wet_base_zero_leaves_signal_unchanged() {
+        let cache = IrCache::new(48000);
+        cache.compute_if_needed(1.0, 240);
+        let original: Vec<[f32; 2]> = (0..200).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
+        let mut signal = original.clone();
+        cache.apply(&mut signal, 1.0, 240, 1.0, 0.0, 1.0, 0.1);
+        for (a, b) in original.iter().zip(signal.iter()) { assert!((a[0] - b[0]).abs() < 1e-6); }
     }
 }

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use s2v_core::{AudioConfig, Cast, SceneConfig};
 
+use crate::acoustics::{compute_reverb_params, resolve_room_geometry, ReverbParams, RoomGeometry};
 use crate::early::build_early_taps;
 use crate::geometry::{calc_geometry, directivity_pattern};
 use crate::resampler::resample_mono;
@@ -41,8 +42,16 @@ impl AudioProcessor {
         self.config.room_size
     }
 
-    pub fn prewarm_ir_cache(&self, room_sizes: &[f64]) {
-        self.ir_cache.prewarm(room_sizes);
+    /// scene と解決済み room_size から拡散リバーブの (rt60, pre_delay) を算出する。
+    pub fn reverb_params_for(&self, scene: &SceneConfig, fallback_room_size: f64) -> (f64, usize) {
+        let geo = resolve_room_geometry(scene, &self.config.early_reflections, fallback_room_size);
+        let rp = compute_reverb_params(geo.dims, &self.config.early_reflections, self.config.sound_speed, self.config.sample_rate);
+        (rp.rt60, rp.pre_delay)
+    }
+
+    /// (rt60, pre_delay) の集合で IR キャッシュを事前計算する。
+    pub fn prewarm_reverb(&self, params: &[(f64, usize)]) {
+        self.ir_cache.prewarm(params);
     }
 
     /// WAV ファイルを読み込み、DSP 処理を施して stereo WAV として書き出す。
@@ -50,8 +59,9 @@ impl AudioProcessor {
     pub fn process(&self, input: &Path, output: &Path, cast: &Cast, scene: &SceneConfig) -> anyhow::Result<usize> {
         // --- パラメータ決定 (Cast > Scene > AudioConfig デフォルト) ---
         let (room_size, reverb_wet) = resolve_reverb_params(cast, scene, self.config.room_size, self.config.reverb_wet);
-
-        self.ir_cache.compute_if_needed(room_size);
+        let room_geo: RoomGeometry = resolve_room_geometry(scene, &self.config.early_reflections, room_size);
+        let rp: ReverbParams = compute_reverb_params(room_geo.dims, &self.config.early_reflections, self.config.sound_speed, self.config.sample_rate);
+        self.ir_cache.compute_if_needed(rp.rt60, rp.pre_delay);
 
         // --- WAV 読み込み ---
         let mut reader = hound::WavReader::open(input)?;
@@ -132,15 +142,17 @@ impl AudioProcessor {
             vol_factor,
             &self.config,
             &self.config.early_reflections,
-            room_size,
+            &room_geo,
             self.config.sample_rate,
             min_delay,
         );
         let early_max_rel = early_taps.iter().map(|t| t.rel_l.max(t.rel_r)).max().unwrap_or(0);
 
         // --- ステレオバッファ構築 ---
-        let rv_time = 0.05 + room_size * 3.0;
-        let rv_samples = if reverb_wet > 0.0 { (self.config.sample_rate as f64 * rv_time) as usize } else { 0 };
+        let reverb_active = reverb_wet > 0.0 && rp.wet_base > 0.0;
+        let rv_samples = if reverb_active {
+            (self.config.sample_rate as f64 * rp.rt60) as usize + rp.pre_delay
+        } else { 0 };
         let out_len = mono.len() + rel_l.max(rel_r).max(early_max_rel) + rv_samples;
         let mut stereo: Vec<[f32; 2]> = vec![[0.0, 0.0]; out_len];
 
@@ -158,7 +170,7 @@ impl AudioProcessor {
         }
 
         // リバーブ
-        self.ir_cache.apply(&mut stereo, room_size, reverb_wet, cast.distance, self.config.early_reflections.wet_distance_slope);
+        self.ir_cache.apply(&mut stereo, rp.rt60, rp.pre_delay, reverb_wet, rp.wet_base, cast.distance, self.config.early_reflections.wet_distance_slope);
 
         // リミッター
         let peak_out = stereo.iter().flat_map(|s| s.iter()).cloned().map(f32::abs).fold(0.0_f32, f32::max);
@@ -426,8 +438,13 @@ mod tests {
         write_test_wav(&input, 48000, 880.0, 0.1);
 
         let proc = AudioProcessor::new(default_audio_config());
-        proc.prewarm_ir_cache(&[0.1, 0.3, 0.8]);
-        let n = proc.process(&input, &output, &dummy_cast(30.0, 2.0), &default_scene()).unwrap();
+        let scene = default_scene();
+        let params: Vec<(f64, usize)> = [0.1_f64, 0.3, 0.8]
+            .iter()
+            .map(|&rs| proc.reverb_params_for(&scene, rs))
+            .collect();
+        proc.prewarm_reverb(&params);
+        let n = proc.process(&input, &output, &dummy_cast(30.0, 2.0), &scene).unwrap();
         assert!(n > 0);
     }
 
@@ -487,5 +504,33 @@ mod tests {
         let e_off = energy_for(false);
         let e_on = energy_for(true);
         assert!(e_on > e_off * 1.01, "早期反射ありで総エネルギー増加(ノイズ入力): off={e_off}, on={e_on}");
+    }
+
+    #[test]
+    fn outdoor_scene_processes_with_near_dry_reverb() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        write_noise_wav(&input, 48000, 0.1);
+        let mut cfg = default_audio_config();
+        cfg.early_reflections.enabled = false;
+        cfg.early_reflections.ceiling.reflection_coeff = 0.0;
+        cfg.early_reflections.front_wall.reflection_coeff = 0.0;
+        cfg.early_reflections.back_wall.reflection_coeff = 0.0;
+        cfg.early_reflections.side_walls.reflection_coeff = 0.0;
+        cfg.early_reflections.floor.reflection_coeff = 0.5;
+        let proc = AudioProcessor::new(cfg);
+        let scene = SceneConfig { room_w: Some(30.0), room_d: Some(30.0), room_h: Some(15.0), reverb_wet: Some(1.0), ..SceneConfig::new("屋外") };
+        let n = proc.process(&input, &dir.path().join("outdoor.wav"), &dummy_cast(0.0, 1.0), &scene).unwrap();
+        assert!(n > 0, "屋外 scene でも処理が成功し出力が生成されること");
+    }
+
+    #[test]
+    fn scene_room_dims_affect_reverb_params() {
+        let proc = AudioProcessor::new(default_audio_config());
+        let small = SceneConfig { room_w: Some(4.0), room_d: Some(5.0), room_h: Some(3.0), ..SceneConfig::new("小") };
+        let big = SceneConfig { room_w: Some(25.0), room_d: Some(45.0), room_h: Some(18.0), ..SceneConfig::new("大") };
+        let (rt_small, _) = proc.reverb_params_for(&small, 0.1);
+        let (rt_big, _) = proc.reverb_params_for(&big, 0.1);
+        assert!(rt_big > rt_small, "大きい部屋ほど残響長が長い: small={rt_small}, big={rt_big}");
     }
 }

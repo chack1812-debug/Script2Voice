@@ -113,14 +113,15 @@ impl Producer {
 
         // ── Phase 2: 並列合成 + 音響処理 ──────────────────────────────────
         // IRキャッシュ事前ウォームアップ
-        let room_sizes: Vec<f64> = tasks.iter()
+        let reverb_params: Vec<(f64, usize)> = tasks.iter()
             .map(|(_, _, t)| {
-                t.cast.params.get("room_size").and_then(|v| v.as_f64())
+                let rs = t.cast.params.get("room_size").and_then(|v| v.as_f64())
                     .or(t.scene_config.room_size)
-                    .unwrap_or(self.audio_processor.config_room_size())
+                    .unwrap_or(self.audio_processor.config_room_size());
+                self.audio_processor.reverb_params_for(&t.scene_config, rs)
             })
             .collect();
-        self.audio_processor.prewarm_ir_cache(&room_sizes);
+        self.audio_processor.prewarm_reverb(&reverb_params);
 
         // Semaphore 設定
         let sems: HashMap<String, Arc<Semaphore>> = {

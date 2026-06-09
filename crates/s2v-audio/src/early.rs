@@ -2,7 +2,8 @@
 
 use s2v_core::{AudioConfig, EarlyConfig, MaterialConfig};
 
-use crate::geometry::{calc_geometry, directivity_pattern, image_position, room_dims, Surface};
+use crate::acoustics::RoomGeometry;
+use crate::geometry::{calc_geometry, directivity_pattern, image_position, Surface};
 use crate::processor::apply_air_absorption;
 use crate::reverb::{butterworth_lowpass_sos, sosfilt_single_section};
 
@@ -25,20 +26,20 @@ pub fn build_early_taps(
     vol_factor: f64,
     audio: &AudioConfig,
     er: &EarlyConfig,
-    room_size: f64,
+    geo: &RoomGeometry,
     sample_rate: u32,
     min_delay_direct: usize,
 ) -> Vec<EarlyTap> {
     if !er.enabled {
         return Vec::new();
     }
-    let dims = room_dims(room_size, er.room_dims_min, er.room_dims_max);
+    let dims = geo.dims;
     let [w, d, h] = dims;
     let eps = 0.05_f64;
 
     // 聴取者(マイクペア中心) L と音源 S を箱座標で配置(同高 ear_height)。
-    let lx = (w / 2.0 + er.listener_offset[0]).clamp(eps, w - eps);
-    let ly = (d / 2.0 + er.listener_offset[1]).clamp(eps, d - eps);
+    let lx = (w / 2.0 + geo.listener_offset[0]).clamp(eps, w - eps);
+    let ly = (d / 2.0 + geo.listener_offset[1]).clamp(eps, d - eps);
     let lz = er.ear_height.clamp(eps, h - eps);
     let sx = (lx + distance * pan_rad.sin()).clamp(eps, w - eps);
     let sy = (ly + distance * pan_rad.cos()).clamp(eps, d - eps);
@@ -117,6 +118,13 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    fn geo_for(room_size: f64, er: &EarlyConfig) -> RoomGeometry {
+        RoomGeometry {
+            dims: crate::geometry::room_dims(room_size, er.room_dims_min, er.room_dims_max),
+            listener_offset: er.listener_offset,
+        }
+    }
+
     fn audio_cfg() -> AudioConfig {
         AudioConfig {
             sample_rate: 48000,
@@ -140,7 +148,7 @@ mod tests {
         let mut er = EarlyConfig::default();
         er.enabled = false;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), 48000, 0);
         assert!(taps.is_empty());
     }
 
@@ -152,7 +160,7 @@ mod tests {
         er.back_wall.reflection_coeff = 0.0;
         er.side_walls.reflection_coeff = 0.0;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), 48000, 0);
         assert_eq!(taps.len(), 1, "床のみ → 1タップ");
     }
 
@@ -161,7 +169,7 @@ mod tests {
         let er = EarlyConfig::default();
         let mono = vec![1.0_f32; 2000];
         // pan=+30度(右)。少なくとも1タップで gain_l != gain_r または rel_l != rel_r になること。
-        let taps = build_early_taps(&mono, 2.0, 30.0_f64.to_radians(), 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+        let taps = build_early_taps(&mono, 2.0, 30.0_f64.to_radians(), 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), 48000, 0);
         assert!(!taps.is_empty());
         let asym = taps.iter().any(|t| (t.gain_l - t.gain_r).abs() > 1e-6 || t.rel_l != t.rel_r);
         assert!(asym, "パンした音源は左右非対称なタップを生むこと");
@@ -175,7 +183,7 @@ mod tests {
         er.back_wall.reflection_coeff = 0.0;
         er.side_walls.reflection_coeff = 0.0;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), 48000, 0);
         let expected = ((2.0_f64.powi(2) + (2.0 * 1.2_f64).powi(2)).sqrt() / 340.0 * 48000.0) as i64;
         let rel = taps[0].rel_l as i64;
         assert!((rel - expected).abs() <= 5, "床タップ遅延 rel={rel}, expected≈{expected}");
@@ -192,7 +200,7 @@ mod tests {
             er.back_wall.reflection_coeff = 0.0;
             er.side_walls.reflection_coeff = 0.0;
             er.front_wall.reflection_coeff = coeff;
-            let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, 0.1, 48000, 0);
+            let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), 48000, 0);
             assert_eq!(taps.len(), 1, "前壁のみ → 1タップ");
             taps[0].gain_l
         };
