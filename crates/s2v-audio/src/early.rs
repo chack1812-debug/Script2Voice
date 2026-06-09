@@ -72,15 +72,15 @@ pub fn build_early_taps(
         let dz = img[2] - lz;
         let hdist = (dx * dx + dy * dy).sqrt();
         let azimuth = dx.atan2(dy);
-        let geo = calc_geometry(audio.microphone_spacing, hdist, azimuth);
+        let mic_geo = calc_geometry(audio.microphone_spacing, hdist, azimuth);
 
         // 各マイクへの 3D 経路(高さ迂回 dz を加味)
-        let path_l = (geo.dist_l.powi(2) + dz * dz).sqrt();
-        let path_r = (geo.dist_r.powi(2) + dz * dz).sqrt();
+        let path_l = (mic_geo.dist_l.powi(2) + dz * dz).sqrt();
+        let path_r = (mic_geo.dist_r.powi(2) + dz * dz).sqrt();
 
         // 指向性パターン(外開きORTF: Lは+mic_angle, Rは-mic_angle)
-        let pat_l = directivity_pattern(geo.angle_l, k, mic_angle_rad);
-        let pat_r = directivity_pattern(geo.angle_r, k, -mic_angle_rad);
+        let pat_l = directivity_pattern(mic_geo.angle_l, k, mic_angle_rad);
+        let pat_r = directivity_pattern(mic_geo.angle_r, k, -mic_angle_rad);
 
         let coeff = mat.reflection_coeff * er.early_level;
         let gain_l = (vol_factor * (audio.reference_dist / path_l.max(0.1)) * pat_l * coeff) as f32;
