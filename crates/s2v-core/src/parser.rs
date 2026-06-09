@@ -153,6 +153,7 @@ impl ScriptParser {
         let pan = raw.remove("pan").unwrap_or(0.0);
         let distance = raw.remove("distance").unwrap_or(1.0);
         let volume = raw.remove("volume").unwrap_or(1.0);
+        let height = raw.remove("height");
 
         let mut params: HashMap<String, Value> = raw
             .into_iter()
@@ -162,7 +163,7 @@ impl ScriptParser {
 
         self.casts.insert(
             name.clone(),
-            Cast { name, speaker_name, engine_type, pan, distance, volume, params },
+            Cast { name, speaker_name, engine_type, pan, distance, volume, params, height, height_offset: 0.0 },
         );
     }
 
@@ -519,5 +520,15 @@ A(pan=15,distance=2):セリフ
         assert_eq!(sc.listener_z, Some(1.1));
         let sc2 = p.parse_scene_header("小部屋 room_size=0.1");
         assert_eq!(sc2.listener_z, None);
+    }
+
+    #[test]
+    fn cast_line_parses_height_into_field() {
+        let scenes = ScriptParser::new()
+            .parse_str("@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0,height=1.7\n@script\nA: こんにちは\n")
+            .unwrap();
+        let cast = scenes[0].casts.get("A").unwrap();
+        assert_eq!(cast.height, Some(1.7));
+        assert!((cast.height_offset - 0.0).abs() < 1e-10);
     }
 }

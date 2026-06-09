@@ -130,6 +130,8 @@ mod tests {
             distance: 1.0,
             volume: 1.0,
             params: HashMap::new(),
+            height: None,
+            height_offset: 0.0,
         }
     }
 

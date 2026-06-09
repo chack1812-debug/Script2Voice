@@ -12,6 +12,12 @@ pub struct Cast {
     pub distance: f64,
     pub volume: f64,
     pub params: HashMap<String, Value>,
+    /// 話者の床面からの絶対高さ[m]の基準値。None = 聴取者と同じ高さ。
+    #[serde(default)]
+    pub height: Option<f64>,
+    /// 行内臨時パラメータで加算される、その行限定の高さオフセット[m]。
+    #[serde(default)]
+    pub height_offset: f64,
 }
 
 impl Cast {
@@ -24,6 +30,7 @@ impl Cast {
                 "pan" => cast.pan += v,
                 "distance" => cast.distance += v,
                 "volume" => cast.volume += v,
+                "height" => cast.height_offset += v,
                 other => {
                     if let Some(neutral) = engine_param_neutral_default(other) {
                         let base = self.params.get(other).and_then(|v| v.as_f64()).unwrap_or(neutral);
@@ -66,6 +73,8 @@ mod tests {
                 m.insert("speedScale".to_string(), serde_json::json!(1.0));
                 m
             },
+            height: None,
+            height_offset: 0.0,
         }
     }
 
@@ -148,5 +157,16 @@ mod tests {
         let effective = cast.with_offsets(&offsets);
         let room_size = effective.params["room_size"].as_f64().unwrap();
         assert!((room_size - 0.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn with_offsets_height_accumulates_into_offset() {
+        // 行内 height はその行限定の加算として height_offset に積まれる(基準 height は不変)
+        let cast = base_cast(); // height=None, height_offset=0.0
+        let mut offsets = HashMap::new();
+        offsets.insert("height".to_string(), 0.5_f64);
+        let eff = cast.with_offsets(&offsets);
+        assert!((eff.height_offset - 0.5).abs() < 1e-10);
+        assert_eq!(eff.height, cast.height);
     }
 }

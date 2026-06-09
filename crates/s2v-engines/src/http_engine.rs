@@ -195,6 +195,8 @@ mod tests {
                 m.insert("style".to_string(), Value::String("ノーマル".to_string()));
                 m
             },
+            height: None,
+            height_offset: 0.0,
         }
     }
 
