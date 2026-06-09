@@ -111,6 +111,23 @@ impl Producer {
         }
         info!("Phase1完了: {} 件の speech アイテムを登録しました。", tasks.len());
 
+        // ── 出力ロック対策: 生成一式の共通連番サフィックスを決定 ───────────
+        let default_files: Vec<PathBuf> = tasks.iter()
+            .map(|(_, _, t)| t.final_path.clone())
+            .chain([
+                self.project_root.join("timeline").join("subtitles.srt"),
+                self.project_root.join("timeline").join("timeline.fcpxml"),
+                self.project_root.join("full_dialogue.wav"),
+            ])
+            .collect();
+        let suffix = s2v_export::resolve_generation_suffix(&default_files, 100)?;
+        if !suffix.is_empty() {
+            warn!("出力ファイルのいずれかが使用中のため、今回の生成一式を連番 {suffix} で保存します。");
+        }
+        for (_, _, t) in tasks.iter_mut() {
+            t.final_path = s2v_export::with_suffix(&t.final_path, &suffix);
+        }
+
         // ── Phase 2: 並列合成 + 音響処理 ──────────────────────────────────
         // IRキャッシュ事前ウォームアップ
         let reverb_params: Vec<(f64, usize)> = tasks.iter()
@@ -273,9 +290,9 @@ impl Producer {
         // エクスポート
         let events = timeline.into_events();
         let exporter = Exporter::new(&events, &self.project_root, self.sample_rate, self.bgm_config.clone());
-        exporter.generate_srt("")?;
-        exporter.generate_fcpxml("")?;
-        exporter.generate_combined_audio("")?;
+        exporter.generate_srt(&suffix)?;
+        exporter.generate_fcpxml(&suffix)?;
+        exporter.generate_combined_audio(&suffix)?;
         info!("--- Export Finished: {} ---", self.project_root.display());
         Ok(())
     }
