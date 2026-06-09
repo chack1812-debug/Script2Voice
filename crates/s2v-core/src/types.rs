@@ -108,6 +108,11 @@ mod tests {
         assert_eq!(sc.name, "居間");
         assert_eq!(sc.room_size, None);
         assert_eq!(sc.reverb_wet, None);
+        assert_eq!(sc.room_w, None);
+        assert_eq!(sc.room_d, None);
+        assert_eq!(sc.room_h, None);
+        assert_eq!(sc.listener_dx, None);
+        assert_eq!(sc.listener_dy, None);
     }
 
     #[test]

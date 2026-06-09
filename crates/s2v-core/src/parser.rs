@@ -504,7 +504,10 @@ A(pan=15,distance=2):セリフ
         let p = ScriptParser::new();
         let sc = p.parse_scene_header("小部屋 room_size=0.1");
         assert_eq!(sc.room_w, None);
+        assert_eq!(sc.room_d, None);
+        assert_eq!(sc.room_h, None);
         assert_eq!(sc.listener_dx, None);
+        assert_eq!(sc.listener_dy, None);
         assert_eq!(sc.room_size, Some(0.1));
     }
 }
