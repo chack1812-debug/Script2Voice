@@ -54,8 +54,9 @@ s2v-gui (egui/eframe, 単一exe)
 
 - CLI `script2voice` は現状のまま共存。GUI は既存パイプラインの「別の入口」。
 - 主要依存: `eframe`/`egui`（GUI。日本語**表示**のみで編集入力はしない）、
-  `rfd`（Windows 標準ファイルダイアログ）、`notify`（台本ファイル監視）、
-  `rodio`（試聴再生）、`hound`（WAV 読込）。
+  `rfd`（Windows 標準ファイルダイアログ）、`rodio`（試聴再生）。
+  台本ファイル監視は **mtime ポーリング（500ms）**で行う（notify は使わない。
+  エディタの「一時ファイル→リネーム」型保存にも単純・確実に追従できるため）。
 - TTS エンジンは行プレビュー初回に自動起動（既存 exe_path 機構）し、**GUI 終了まで
   起動を維持**（毎回の起動待ち回避）。終了時は既存の Job Object 機構で確実に停止。
 - GUI 異常終了時もエンジンは Job Object（KILL_ON_JOB_CLOSE）で OS が回収する。
@@ -130,29 +131,32 @@ reverb_wet = 1.0
 ## 既存ライブラリへの改修（最小・CLI の挙動は不変）
 
 1. **script2voice lib**: 進捗イベント送信＋キャンセルフラグ付きの新関数
-   （例 `produce_with_events(scenes, events: Sender<ProduceEvent>, cancel: &AtomicBool)`）。
-   既存 `produce()` は従来挙動のまま（内部で新関数を呼ぶ形に整理可）。
-   イベント: Phase 開始/完了、行完了 (n/total)、警告、エラー。
-2. **s2v-audio**: バッファ入出力の公開 API `process_buffer`
-   （現状はファイルパス入出力のみ）。任意 WAV 処理・履歴機能の土台。
-   既存パス版と同一入力で出力一致を TDD で保証。
+   `produce_with_events(scenes, events: Option<Sender<ProduceEvent>>, cancel: Option<Arc<AtomicBool>>)`。
+   既存 `produce()` は従来挙動のまま（内部で新関数を呼ぶ）。
+   イベント: Phase 開始、行完了 (n/total)、完了。
+2. **script2voice lib**: `resolve_config_path` / `build_engine_manager` を main.rs から
+   lib へ移設（GUI と CLI で設定解決・エンジン登録を共用するための純粋な移動リファクタ）。
 3. **s2v-core**: パース警告の構造化（現状は warn! ログ＋該当行の暗黙破棄のみ）。
-   未定義キャスト等を `Vec<ParseWarning>`（行番号・内容）で返す軽い追加。
-   GUI の書式チェック表示に使用。
+   未定義キャスト等を `ParseWarning`（行番号・内容）として `ScriptParser::warnings()` で
+   取得できるようにする。GUI の書式チェック表示に使用。
+
+（計画策定時の変更）当初挙げていた s2v-audio の `process_buffer` API は**追加しない**。
+ラボ・行プレビューとも既存のパスベース `AudioProcessor::process()`（WAV読込→正規化→
+リサンプル→DSP→書出し）で要件を満たすことが判明したため（YAGNI）。
 
 ## 対応エディタ・入力ファイルの前提
 
 - **エディタは任意**（メモ帳・VS Code・サクラエディタ等、上書き保存できるもの）。
 - 台本は **UTF-8 保存が前提**（パーサが UTF-8 読込）。**BOM 付き UTF-8 にも対応**
   （GUI 側で読込時に BOM を除去してからパーサへ渡す）。
-- VS Code 等の「一時ファイル→リネーム」型の保存にも notify のイベント＋デバウンスで追従。
+- VS Code 等の「一時ファイル→リネーム」型の保存にも mtime ポーリングで追従。
 
 ## エラー処理
 
 | 状況 | 挙動 |
 |---|---|
 | エンジン起動失敗 | タブ1にバナー表示。行プレビュー・一括実行を無効化（音響ラボの WAV 経路は使用可） |
-| 非対応 WAV（非PCM等） | メッセージ表示して中断。多chは L/R ミックスでモノラル化、サンプルレート相違は変換 |
+| 非対応 WAV（非PCM等） | メッセージ表示して中断。多ch・サンプルレート相違は既存 `process()` の挙動どおり（Lch 使用・自動リサンプル） |
 | presets.toml 破損 | 組込み既定プリセットで継続＋警告 |
 | 実行中の操作 | 一括実行中は実行ボタン無効・キャンセルのみ可。プレビューの二重実行防止 |
 | 台本の再解析失敗 | 直前の正常な解析結果を保持し、エラー内容を表示 |
