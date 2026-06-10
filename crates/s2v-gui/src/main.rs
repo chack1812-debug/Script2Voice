@@ -9,6 +9,7 @@ mod logbuf;
 mod presets;
 mod scene_line;
 mod script_model;
+mod tab_lab;
 mod tab_script;
 
 fn main() -> eframe::Result {

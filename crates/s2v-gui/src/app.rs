@@ -1,6 +1,7 @@
 use crate::audio_play::Player;
 use crate::jobs::{JobMsg, Jobs};
 use crate::logbuf::LogBuffer;
+use crate::tab_lab::LabTab;
 use crate::tab_script::ScriptTab;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -16,6 +17,7 @@ pub struct App {
     pub jobs_error: Option<String>,
     pub player: Option<Player>,
     pub script: ScriptTab,
+    pub lab: LabTab,
 }
 
 impl App {
@@ -39,6 +41,7 @@ impl App {
             jobs_error,
             player: Player::new(),
             script,
+            lab: LabTab::new(),
         }
     }
 
@@ -66,9 +69,13 @@ impl App {
                     Ok(dir) => self.script.last_project_dir = Some(dir),
                     Err(e) => self.script.run_error = Some(e),
                 },
-                JobMsg::LabReady { .. } | JobMsg::LabFailed { .. } => {
-                    // Task 11 で音響ラボに配線
+                JobMsg::LabReady { wav, params } => {
+                    self.lab.history.push(params, wav.clone());
+                    if let Some(p) = &mut self.player {
+                        let _ = p.play(&wav);
+                    }
                 }
+                JobMsg::LabFailed { error } => self.lab.error = Some(error),
             }
         }
     }
@@ -108,7 +115,10 @@ impl eframe::App for App {
                     }
                 }
                 Tab::Lab => {
-                    ui.label("(音響ラボ: Task 11 で実装)");
+                    if let Some(jobs) = &self.jobs {
+                        let preview_raw = self.script.preview_raw.clone();
+                        self.lab.ui(ui, jobs, &preview_raw, &mut self.player);
+                    }
                 }
             }
         });
