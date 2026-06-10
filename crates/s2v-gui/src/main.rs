@@ -4,6 +4,7 @@ mod app;
 mod fonts;
 mod logbuf;
 mod presets;
+mod scene_line;
 
 fn main() -> eframe::Result {
     let log = logbuf::LogBuffer::new(500);
