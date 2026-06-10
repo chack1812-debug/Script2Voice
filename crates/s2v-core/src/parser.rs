@@ -5,10 +5,19 @@ use serde_json::Value;
 use crate::cast::Cast;
 use crate::types::{PauseConfig, Scene, SceneConfig, ScriptCommand, ScriptItem};
 
+/// パース中に検出した非致命的な問題（行は無視されるがパース自体は続行）。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseWarning {
+    /// 1始まりの行番号
+    pub line_no: usize,
+    pub message: String,
+}
+
 pub struct ScriptParser {
     casts: HashMap<String, Cast>,
     pause_config: PauseConfig,
     asset_config: HashMap<String, String>,
+    warnings: Vec<ParseWarning>,
 }
 
 impl ScriptParser {
@@ -17,15 +26,23 @@ impl ScriptParser {
             casts: HashMap::new(),
             pause_config: PauseConfig::default(),
             asset_config: HashMap::new(),
+            warnings: Vec::new(),
         }
     }
 
+    /// パース中に検出した非致命的な警告（未定義キャストなど）を返す。
+    pub fn warnings(&self) -> &[ParseWarning] {
+        &self.warnings
+    }
+
     pub fn parse_str(&mut self, text: &str) -> anyhow::Result<Vec<Scene>> {
+        self.warnings.clear();
         let mut scenes: Vec<Scene> = Vec::new();
         let mut current_scene: Option<Scene> = None;
         let mut section = "";
 
-        for line in text.lines() {
+        for (idx, line) in text.lines().enumerate() {
+            let line_no = idx + 1;
             let line = line.trim();
             if line.is_empty() {
                 continue;
@@ -65,7 +82,7 @@ impl ScriptParser {
                 "@cast" => self.parse_cast_line(line),
                 "@script" => {
                     if let Some(ref mut scene) = current_scene {
-                        if let Some(item) = self.parse_script_line(line) {
+                        if let Some(item) = self.parse_script_line(line, line_no) {
                             scene.items.push(item);
                         }
                     }
@@ -180,7 +197,7 @@ impl ScriptParser {
         );
     }
 
-    fn parse_script_line(&self, line: &str) -> Option<ScriptItem> {
+    fn parse_script_line(&mut self, line: &str, line_no: usize) -> Option<ScriptItem> {
         // 数字のみ → Parallel
         if line.trim().chars().all(|c| c.is_ascii_digit()) && !line.trim().is_empty() {
             let n: usize = line.trim().parse().ok()?;
@@ -228,6 +245,10 @@ impl ScriptParser {
         };
 
         if !self.casts.contains_key(role) {
+            self.warnings.push(ParseWarning {
+                line_no,
+                message: format!("キャスト「{role}」が未定義です（この行は無視されます）"),
+            });
             return None;
         }
 
@@ -562,6 +583,31 @@ A(pan=15,distance=2):セリフ
         assert_eq!(sc.listener_z, Some(1.1));
         let sc2 = p.parse_scene_header("小部屋 room_size=0.1");
         assert_eq!(sc2.listener_z, None);
+    }
+
+    #[test]
+    fn unknown_cast_produces_warning_with_line_number() {
+        let mut p = ScriptParser::new();
+        let src = "@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n誰か:こんばんは\n";
+        let scenes = p.parse_str(src).unwrap();
+        // 未定義キャスト行は従来どおり無視される
+        let n = scenes[0].items.iter().filter(|i| matches!(i, ScriptItem::Speech { .. })).count();
+        assert_eq!(n, 1);
+        // 警告が行番号付きで記録される
+        let w = p.warnings();
+        assert_eq!(w.len(), 1);
+        assert_eq!(w[0].line_no, 6);
+        assert!(w[0].message.contains("誰か"));
+    }
+
+    #[test]
+    fn warnings_are_reset_per_parse() {
+        let mut p = ScriptParser::new();
+        let src = "@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\n誰か:こんばんは\n";
+        p.parse_str(src).unwrap();
+        assert_eq!(p.warnings().len(), 1);
+        p.parse_str(src).unwrap();
+        assert_eq!(p.warnings().len(), 1, "2回目のparseで累積しない");
     }
 
     #[test]
