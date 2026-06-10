@@ -6,6 +6,7 @@ mod history;
 mod logbuf;
 mod presets;
 mod scene_line;
+mod script_model;
 
 fn main() -> eframe::Result {
     let log = logbuf::LogBuffer::new(500);
