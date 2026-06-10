@@ -2,6 +2,7 @@
 
 mod app;
 mod fonts;
+mod history;
 mod logbuf;
 mod presets;
 mod scene_line;
