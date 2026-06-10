@@ -51,6 +51,8 @@ impl ScriptTab {
         let p = PathBuf::from(s.trim());
         if p.exists() {
             self.open(p);
+        } else {
+            tracing::debug!("前回の台本が見つかりません: {}", p.display());
         }
     }
 
@@ -83,6 +85,9 @@ impl ScriptTab {
                 Ok(new_model) => {
                     self.model = Some(new_model);
                     self.load_error = None;
+                    // 行の増減で番号がずれるため、選択とプレビュー音源は無効化する
+                    self.selected = None;
+                    self.preview_raw = None;
                     tracing::info!("台本を再読込しました: {}", path.display());
                 }
                 Err(e) => self.load_error = Some(e),
