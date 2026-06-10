@@ -70,6 +70,7 @@ impl App {
                     Err(e) => self.script.run_error = Some(e),
                 },
                 JobMsg::LabReady { wav, params } => {
+                    self.lab.error = None;
                     self.lab.history.push(params, wav.clone());
                     if let Some(p) = &mut self.player {
                         let _ = p.play(&wav);

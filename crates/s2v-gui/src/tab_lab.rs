@@ -197,6 +197,7 @@ impl LabTab {
         let mut recall: Option<LabParams> = None;
         let mut play: Option<PathBuf> = None;
         let mut toggle: Option<usize> = None;
+        let mut export_error: Option<String> = None;
         egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
             egui::Grid::new("history").striped(true).num_columns(5).show(ui, |ui| {
                 for e in self.history.entries() {
@@ -229,6 +230,7 @@ impl LabTab {
                         {
                             if let Err(err) = std::fs::copy(&e.wav, &dest) {
                                 tracing::warn!("書き出し失敗: {err}");
+                                export_error = Some(format!("書き出し失敗: {err}"));
                             }
                         }
                     }
@@ -238,6 +240,9 @@ impl LabTab {
         });
         if let Some(id) = toggle {
             self.history.toggle_select(id);
+        }
+        if let Some(e) = export_error {
+            self.error = Some(e);
         }
         if let Some(p) = recall {
             self.params = p;
