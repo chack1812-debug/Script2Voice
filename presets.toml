@@ -1,0 +1,19 @@
+# Script2Voice 音響ラボのプリセット定義。
+# 実行ファイル（s2v-gui.exe）と同じフォルダに置く。
+# すべての項目は省略可（省略項目は現在のスライダー値を維持）。
+
+[[preset]]
+name = "ライブハウス"
+room_w = 15.0
+room_d = 20.0
+room_h = 6.0
+listener_dy = -6.0
+listener_z = 1.6
+reverb_wet = 1.2
+
+[[preset]]
+name = "浴室（強い残響）"
+room_w = 2.5
+room_d = 3.0
+room_h = 2.4
+reverb_wet = 2.0

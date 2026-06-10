@@ -144,6 +144,7 @@
           <li class="leaf"><a href="#cli">3.1 コマンドラインの使い方</a></li>
           <li class="leaf"><a href="#flow">3.2 処理の流れ</a></li>
           <li class="leaf"><a href="#output">3.3 出力されるファイル</a></li>
+          <li class="leaf"><a href="#gui">3.4 GUI（ランチャー＋音響ラボ）</a></li>
         </ul>
       </details>
     </li>
@@ -384,6 +385,20 @@ script2voice .\scripts\episode01.txt --config .\my_config.toml</code></pre>
   FCPXML は Final Cut Pro やそれに対応した編集ソフトに読み込むことで、
   台詞・BGM・SE がタイムライン上に自動配置された状態から動画編集を開始できます。
 </div>
+
+<h3 id="gui">3.4 GUI（ランチャー＋音響ラボ）</h3>
+<p>
+  <code>s2v-gui.exe</code>（<code>cargo build --release -p s2v-gui</code> で生成）を起動すると、
+  コマンドラインなしで台本の実行・確認ができます。<code>config.toml</code>・<code>presets.toml</code> は
+  実行ファイルと同じフォルダに置いてください。
+</p>
+<ul>
+  <li><strong>台本タブ</strong>: 台本を開くと行リストが表示され、保存のたびに自動再読込されます（編集はお使いのエディタで。UTF-8 保存）。
+    行の「▶試聴」でその1行だけを合成・音響処理して確認できます。「▶一括実行」は CLI と同一の出力を生成します。</li>
+  <li><strong>音響ラボタブ</strong>: 部屋寸法・聴取位置・残響倍率・話者位置をスライダーで変えながら、
+    台本の行または任意の WAV に音響処理をかけて試聴できます。結果はパラメータとペアで履歴に残り、
+    2件を選んで A/B 交互再生できます。決まった値は <code>@scene</code> 行としてコピーできます。</li>
+</ul>
 
 <h2 id="script-format">4. 台本ファイルの書き方</h2>
 <p>
