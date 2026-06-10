@@ -3,6 +3,7 @@
 mod app;
 mod fonts;
 mod logbuf;
+mod presets;
 
 fn main() -> eframe::Result {
     let log = logbuf::LogBuffer::new(500);
