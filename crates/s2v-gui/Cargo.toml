@@ -1,0 +1,21 @@
+[package]
+name = "s2v-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+script2voice = { path = "../.." }
+s2v-core = { path = "../s2v-core" }
+s2v-engines = { path = "../s2v-engines" }
+s2v-audio = { path = "../s2v-audio" }
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+serde.workspace = true
+eframe = "0.29"
+egui = "0.29"
+rfd = "0.15"
+rodio = "0.19"
+toml = "0.8"
+tempfile = "3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
