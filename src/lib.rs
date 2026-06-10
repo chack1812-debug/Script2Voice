@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 
 use reqwest::Client;
@@ -45,6 +47,27 @@ pub fn build_engine_manager(config: &Config) -> EngineManager {
         )),
     );
     em
+}
+
+/// produce_with_events が送出する進捗イベント。
+#[derive(Debug, Clone)]
+pub enum ProduceEvent {
+    /// フェーズの開始（"準備" / "合成" / "タイムライン" / "書き出し"）
+    Phase(String),
+    /// 1行の合成＋音響処理が完了
+    ItemFinished { done: usize, total: usize },
+    /// 全処理完了
+    Finished,
+}
+
+fn emit(events: &Option<Sender<ProduceEvent>>, ev: ProduceEvent) {
+    if let Some(tx) = events {
+        let _ = tx.send(ev); // 受信側が閉じていても処理は続行
+    }
+}
+
+fn is_cancelled(cancel: &Option<Arc<AtomicBool>>) -> bool {
+    cancel.as_ref().map(|c| c.load(Ordering::SeqCst)).unwrap_or(false)
 }
 
 pub struct Producer {
@@ -118,6 +141,16 @@ impl Producer {
     }
 
     pub async fn produce(&self, scenes: &[Scene]) -> anyhow::Result<()> {
+        self.produce_with_events(scenes, None, None).await
+    }
+
+    pub async fn produce_with_events(
+        &self,
+        scenes: &[Scene],
+        events: Option<Sender<ProduceEvent>>,
+        cancel: Option<Arc<AtomicBool>>,
+    ) -> anyhow::Result<()> {
+        emit(&events, ProduceEvent::Phase("準備".into()));
         // ── Phase 1: パス割り当て ─────────────────────────────────────────
         let mut tasks: Vec<(usize, usize, SynthTask)> = Vec::new(); // (scene_idx, item_idx, task)
         let mut counter = 1usize;
@@ -148,6 +181,10 @@ impl Producer {
             }
         }
         info!("Phase1完了: {} 件の speech アイテムを登録しました。", tasks.len());
+
+        let total = tasks.len();
+        let done = Arc::new(AtomicUsize::new(0));
+        emit(&events, ProduceEvent::Phase("合成".into()));
 
         // ── 出力ロック対策: 生成一式の共通連番サフィックスを決定 ───────────
         let default_files: Vec<PathBuf> = tasks.iter()
@@ -198,8 +235,15 @@ impl Producer {
             let proc_sem = Arc::clone(&proc_sem);
             let em = Arc::clone(&engine_manager);
             let ap = Arc::clone(&audio_processor);
+            let ev_tx = events.clone();
+            let cancel_flag = cancel.clone();
+            let done = Arc::clone(&done);
 
             let handle = tokio::spawn(async move {
+                if is_cancelled(&cancel_flag) {
+                    return (si, ii, task); // 合成せず即返す
+                }
+
                 let engine_sem = sems.get(&task.cast.engine_type)
                     .cloned()
                     .unwrap_or_else(|| Arc::new(Semaphore::new(2)));
@@ -232,6 +276,8 @@ impl Producer {
                     Ok(Ok(n)) => {
                         task.duration_ms = n as f64 / ap.config_sample_rate() as f64 * 1000.0;
                         info!("完了: {} ({:.0}ms)", task.final_path.display(), task.duration_ms);
+                        let d = done.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                        emit(&ev_tx, ProduceEvent::ItemFinished { done: d, total });
                     }
                     Ok(Err(e)) => error!("音響処理失敗: {e}"),
                     Err(e) => error!("spawn_blocking パニック: {e}"),
@@ -249,9 +295,13 @@ impl Producer {
                 Err(e) => error!("タスクパニック: {e}"),
             }
         }
+        if is_cancelled(&cancel) {
+            anyhow::bail!("ユーザーによりキャンセルされました");
+        }
         info!("Phase2完了: 全音声の合成・処理が終わりました。");
 
         // ── Phase 3: タイムライン構築 ──────────────────────────────────────
+        emit(&events, ProduceEvent::Phase("タイムライン".into()));
         let pause_config = scenes.first().map(|s| s.pause_config.clone()).unwrap_or_default();
         let mut timeline = TimelineProcessor::new(&pause_config);
         let mut last_cast: Option<String> = None;
@@ -326,13 +376,49 @@ impl Producer {
         info!("Phase3完了: タイムライン構築が終わりました。");
 
         // エクスポート
-        let events = timeline.into_events();
-        let exporter = Exporter::new(&events, &self.project_root, self.sample_rate, self.bgm_config.clone());
+        emit(&events, ProduceEvent::Phase("書き出し".into()));
+        let timeline_events = timeline.into_events();
+        let exporter = Exporter::new(&timeline_events, &self.project_root, self.sample_rate, self.bgm_config.clone());
         exporter.generate_srt(&suffix)?;
         exporter.generate_fcpxml(&suffix)?;
         exporter.generate_combined_audio(&suffix)?;
         info!("--- Export Finished: {} ---", self.project_root.display());
+        emit(&events, ProduceEvent::Finished);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod produce_events_tests {
+    use super::*;
+    use std::sync::atomic::AtomicBool;
+
+    fn test_config() -> Config {
+        // リポジトリ同梱の実 config.toml をそのまま使う（接続はしない）
+        toml::from_str(include_str!("../config.toml")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn cancel_flag_aborts_produce_without_synthesis() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config();
+        let em = std::sync::Arc::new(s2v_engines::EngineManager::new()); // エンジン未登録
+        let producer = Producer::new(std::sync::Arc::clone(&em), &config, tmp.path()).unwrap();
+
+        let mut parser = s2v_core::ScriptParser::new();
+        let scenes = parser
+            .parse_str("@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n")
+            .unwrap();
+
+        let cancel = std::sync::Arc::new(AtomicBool::new(true)); // 最初からキャンセル済み
+        let (tx, rx) = std::sync::mpsc::channel();
+        let result = producer.produce_with_events(&scenes, Some(tx), Some(cancel)).await;
+
+        let err = result.expect_err("キャンセル時は Err");
+        assert!(err.to_string().contains("キャンセル"), "実際: {err}");
+        // 合成はスキップされるので ItemFinished は1件も来ない
+        let events: Vec<ProduceEvent> = rx.try_iter().collect();
+        assert!(!events.iter().any(|e| matches!(e, ProduceEvent::ItemFinished { .. })));
     }
 }
 
