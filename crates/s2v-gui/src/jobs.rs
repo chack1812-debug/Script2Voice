@@ -35,8 +35,11 @@ pub struct Jobs {
     pub busy_run: Arc<AtomicBool>,
     pub busy_preview: Arc<AtomicBool>,
     pub busy_lab: Arc<AtomicBool>,
+    /// プレビュー・ラボ出力の一時 WAV 置き場。Jobs の drop でディレクトリごと削除されるため、
+    /// 履歴(History)等がここのファイルを参照する場合は Jobs より先に手放すこと。
     tmp: tempfile::TempDir,
     lab_seq: std::sync::atomic::AtomicUsize,
+    preview_seq: std::sync::atomic::AtomicUsize,
 }
 
 impl Jobs {
@@ -62,6 +65,7 @@ impl Jobs {
             busy_lab: Arc::new(AtomicBool::new(false)),
             tmp: tempfile::tempdir()?,
             lab_seq: std::sync::atomic::AtomicUsize::new(0),
+            preview_seq: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -97,8 +101,9 @@ impl Jobs {
             Arc::clone(&self.activated),
             Arc::clone(&self.busy_preview),
         );
-        let raw = self.tmp.path().join(format!("preview_{:04}_raw.wav", line.no));
-        let out = self.tmp.path().join(format!("preview_{:04}.wav", line.no));
+        let seq = self.preview_seq.fetch_add(1, Ordering::SeqCst);
+        let raw = self.tmp.path().join(format!("preview_{:04}_{seq}_raw.wav", line.no));
+        let out = self.tmp.path().join(format!("preview_{:04}_{seq}.wav", line.no));
         self.rt.spawn(async move {
             let res: anyhow::Result<()> = async {
                 let mut req = HashSet::new();
