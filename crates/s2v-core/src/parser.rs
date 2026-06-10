@@ -35,6 +35,7 @@ impl ScriptParser {
                 if line.starts_with("@scene") {
                     if let Some(mut s) = current_scene.take() {
                         s.casts = self.casts.clone();
+                        Self::fill_items_scene_config(&mut s);
                         scenes.push(s);
                     }
                     let scene_raw = line["@scene".len()..].trim();
@@ -75,10 +76,22 @@ impl ScriptParser {
 
         if let Some(mut s) = current_scene {
             s.casts = self.casts.clone();
+            Self::fill_items_scene_config(&mut s);
             scenes.push(s);
         }
 
         Ok(scenes)
+    }
+
+    /// シーン確定時に、各 Speech アイテム埋め込みの scene_config へ Scene.config を転写する。
+    /// (parse_script_line の時点ではシーン文脈を持たないため、ここで確定値を反映する)
+    fn fill_items_scene_config(s: &mut Scene) {
+        let cfg = s.config.clone();
+        for item in s.items.iter_mut() {
+            if let crate::types::ScriptItem::Speech { scene_config, .. } = item {
+                *scene_config = cfg.clone();
+            }
+        }
     }
 
     pub fn parse_file(&mut self, path: &std::path::Path) -> anyhow::Result<Vec<Scene>> {
@@ -304,6 +317,35 @@ paragraph 1000
         let sc = &scenes[0].config;
         assert!((sc.room_size.unwrap() - 0.3).abs() < 1e-6);
         assert!((sc.reverb_wet.unwrap() - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn speech_items_carry_their_scene_config() {
+        // produce() は Speech アイテム埋め込みの scene_config を音響処理に渡すため、
+        // パーサがシーン確定時に Scene.config をアイテムへ転写していることを保証する。
+        let src = "@scene 一 room_size=0.8 reverb_wet=0.3\n\
+                   @cast\nA:話者:ノーマル,voicevox,pan=0\n\
+                   @script\nA:こんにちは\n\
+                   @scene 二 room_w=20 room_d=30 room_h=10 listener_z=1.5\n\
+                   @script\nA:こんばんは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        assert_eq!(scenes.len(), 2);
+
+        let ScriptItem::Speech { scene_config, .. } = &scenes[0].items[0] else {
+            panic!("scene0 items[0] が Speech ではない");
+        };
+        assert_eq!(scene_config.name, "一");
+        assert_eq!(scene_config.room_size, Some(0.8));
+        assert_eq!(scene_config.reverb_wet, Some(0.3));
+
+        let ScriptItem::Speech { scene_config, .. } = &scenes[1].items[0] else {
+            panic!("scene1 items[0] が Speech ではない");
+        };
+        assert_eq!(scene_config.name, "二");
+        assert_eq!(scene_config.room_w, Some(20.0));
+        assert_eq!(scene_config.room_d, Some(30.0));
+        assert_eq!(scene_config.room_h, Some(10.0));
+        assert_eq!(scene_config.listener_z, Some(1.5));
     }
 
     #[test]
