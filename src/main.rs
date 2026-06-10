@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use reqwest::Client;
 use s2v_core::{Config, ScriptParser};
-use s2v_engines::{EngineManager, HttpEngine, XttsEngine};
-use script2voice::Producer;
+use s2v_engines::EngineManager;
+use script2voice::{Producer, build_engine_manager, resolve_config_path};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
@@ -22,18 +21,6 @@ struct Cli {
     /// 設定ファイル (config.toml) のパス。省略時は実行ファイルと同じディレクトリの config.toml を使用する
     #[arg(short, long)]
     config: Option<PathBuf>,
-}
-
-/// `--config` 省略時に使用する設定ファイルパスを決定する。
-/// 明示指定があればそれを優先し、なければ実行ファイルと同じディレクトリの `config.toml` を返す。
-fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::path::Path>) -> PathBuf {
-    if let Some(path) = explicit {
-        return path;
-    }
-    exe_path
-        .and_then(|p| p.parent())
-        .map(|dir| dir.join("config.toml"))
-        .unwrap_or_else(|| PathBuf::from("config.toml"))
 }
 
 /// 実行ログを追記するファイルのパス（project_dir/run.log）を返す。
@@ -115,37 +102,7 @@ async fn main() -> anyhow::Result<()> {
         required_engines.iter().cloned().collect::<Vec<_>>().join(", ")
     );
 
-    let client = Arc::new(Client::new());
-    let mut engine_manager = EngineManager::new();
-    engine_manager.register(
-        "voicevox",
-        Arc::new(HttpEngine::with_exe_path(
-            "voicevox",
-            &config.voicevox.url,
-            Arc::clone(&client),
-            config.voicevox.exe_path.clone(),
-        )),
-    );
-    engine_manager.register(
-        "aivis",
-        Arc::new(HttpEngine::with_exe_path(
-            "aivis",
-            &config.aivis.url,
-            Arc::clone(&client),
-            config.aivis.exe_path.clone(),
-        )),
-    );
-    engine_manager.register(
-        "xtts",
-        Arc::new(XttsEngine::with_exe_path(
-            "xtts",
-            &config.xtts.url,
-            Arc::clone(&client),
-            config.xtts.exe_path.clone(),
-        )),
-    );
-
-    let engine_manager = Arc::new(engine_manager);
+    let engine_manager = Arc::new(build_engine_manager(&config));
 
     let result = run_pipeline(&engine_manager, &required_engines, &config, &project_dir, &scenes).await;
     engine_manager.shutdown_all();

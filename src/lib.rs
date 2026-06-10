@@ -2,12 +2,50 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use reqwest::Client;
 use s2v_audio::AudioProcessor;
 use s2v_core::{BgmConfig, Cast, Config, Scene, ScriptCommand, ScriptItem, TimelineProcessor};
-use s2v_engines::EngineManager;
+use s2v_engines::{EngineManager, HttpEngine, XttsEngine};
 use s2v_export::Exporter;
 use tokio::sync::Semaphore;
 use tracing::{info, warn, error};
+
+/// `--config` 省略時に使用する設定ファイルパスを決定する。
+/// 明示指定があればそれを優先し、なければ実行ファイルと同じディレクトリの `config.toml` を返す。
+pub fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::path::Path>) -> PathBuf {
+    if let Some(path) = explicit {
+        return path;
+    }
+    exe_path
+        .and_then(|p| p.parent())
+        .map(|dir| dir.join("config.toml"))
+        .unwrap_or_else(|| PathBuf::from("config.toml"))
+}
+
+/// config から3エンジン（voicevox/aivis/xtts）を登録した EngineManager を構築する。
+pub fn build_engine_manager(config: &Config) -> EngineManager {
+    let client = Arc::new(Client::new());
+    let mut em = EngineManager::new();
+    em.register(
+        "voicevox",
+        Arc::new(HttpEngine::with_exe_path(
+            "voicevox", &config.voicevox.url, Arc::clone(&client), config.voicevox.exe_path.clone(),
+        )),
+    );
+    em.register(
+        "aivis",
+        Arc::new(HttpEngine::with_exe_path(
+            "aivis", &config.aivis.url, Arc::clone(&client), config.aivis.exe_path.clone(),
+        )),
+    );
+    em.register(
+        "xtts",
+        Arc::new(XttsEngine::with_exe_path(
+            "xtts", &config.xtts.url, Arc::clone(&client), config.xtts.exe_path.clone(),
+        )),
+    );
+    em
+}
 
 pub struct Producer {
     engine_manager: Arc<EngineManager>,
