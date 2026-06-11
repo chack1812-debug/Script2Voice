@@ -93,6 +93,79 @@ impl ViewMap {
     }
 }
 
+/// 部屋の俯瞰図を描き、聴取者👤・話者🔊のドラッグを処理する。
+/// 値が変化したら true（呼び出し側で RT60 等を再計算）。
+pub fn room_view_ui(ui: &mut egui::Ui, p: &mut LabParams, front_wall_coeff: f64) -> bool {
+    let mut changed = false;
+    let avail = ui.available_size();
+    let size = egui::vec2(avail.x.max(220.0), (avail.y - 4.0).clamp(220.0, 420.0));
+    let (area, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let vm = ViewMap::new(area.shrink(14.0), p.room_w, p.room_d);
+    let painter = ui.painter_at(area);
+
+    // 部屋
+    painter.rect(
+        vm.rect(),
+        3.0,
+        egui::Color32::from_rgb(253, 246, 236),
+        egui::Stroke::new(1.5, egui::Color32::from_rgb(201, 168, 106)),
+    );
+    // 前壁（上辺）: 反射率が高いほど濃く太く
+    let a = (60.0 + 180.0 * front_wall_coeff.clamp(0.0, 1.0)) as u8;
+    painter.line_segment(
+        [vm.rect().left_top(), vm.rect().right_top()],
+        egui::Stroke::new(5.0, egui::Color32::from_rgba_unmultiplied(138, 109, 59, a)),
+    );
+    painter.text(
+        vm.rect().center_top() + egui::vec2(0.0, 8.0),
+        egui::Align2::CENTER_CENTER,
+        "前壁",
+        egui::FontId::proportional(10.0),
+        egui::Color32::from_rgb(138, 109, 59),
+    );
+
+    let lpos = vm.to_screen(listener_pos(p).0, listener_pos(p).1);
+    let spos = vm.to_screen(speaker_pos(p).0, speaker_pos(p).1);
+
+    // 経路（破線）
+    painter.add(egui::Shape::dashed_line(
+        &[lpos, spos],
+        egui::Stroke::new(1.5, egui::Color32::from_rgb(224, 138, 43)),
+        6.0,
+        4.0,
+    ));
+
+    // ドラッグ可能な2点（👤聴取者 / 🔊話者）
+    let drag_point = |ui: &mut egui::Ui, pos: egui::Pos2, id: &str, icon: &str| -> Option<egui::Pos2> {
+        let hit = egui::Rect::from_center_size(pos, egui::vec2(26.0, 26.0));
+        let resp = ui.interact(hit, egui::Id::new(id), egui::Sense::drag());
+        ui.painter_at(area).text(
+            pos,
+            egui::Align2::CENTER_CENTER,
+            icon,
+            egui::FontId::proportional(if resp.hovered() || resp.dragged() { 22.0 } else { 18.0 }),
+            egui::Color32::BLACK,
+        );
+        if resp.dragged() {
+            resp.interact_pointer_pos()
+        } else {
+            None
+        }
+    };
+
+    if let Some(np) = drag_point(ui, spos, "room_speaker", "🔊") {
+        let (x, y) = vm.to_room(np);
+        drag_speaker_to(p, x, y);
+        changed = true;
+    }
+    if let Some(np) = drag_point(ui, lpos, "room_listener", "👤") {
+        let (x, y) = vm.to_room(np);
+        drag_listener_to(p, x, y);
+        changed = true;
+    }
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
