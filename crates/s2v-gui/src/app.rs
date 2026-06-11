@@ -147,8 +147,10 @@ impl eframe::App for App {
                                             .model
                                             .as_ref()
                                             .and_then(|m| m.lines.iter().find(|l| l.no == line_no))
+                                            .cloned()
                                         {
-                                            jobs.preview(line.clone());
+                                            self.script.preview_error = None;
+                                            jobs.preview(line);
                                         }
                                     }
                                 }
