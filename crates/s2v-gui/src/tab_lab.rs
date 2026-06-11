@@ -56,6 +56,7 @@ impl LabTab {
         ui: &mut egui::Ui,
         jobs: &Jobs,
         preview_raw: &Option<(usize, PathBuf)>,
+        preview_pending: Option<usize>,
         transport: &mut Transport,
         player: &mut Option<crate::audio_play::Player>,
         audio_cfg: Option<&s2v_core::AudioConfig>,
@@ -76,9 +77,10 @@ impl LabTab {
                     has_line,
                     egui::RadioButton::new(
                         matches!(self.source, LabSource::ScriptLine),
-                        match preview_raw {
-                            Some((no, _)) => format!("台本の行 {no}（試聴済み）"),
-                            None => "台本の行（先にタブ1で試聴）".to_string(),
+                        match (preview_raw, preview_pending) {
+                            (_, Some(no)) => format!("台本の行 {no}（合成中…）"),
+                            (Some((no, _)), None) => format!("台本の行 {no}（試聴済み）"),
+                            (None, None) => "台本の行（先にタブ1で試聴）".to_string(),
                         },
                     ),
                 )
