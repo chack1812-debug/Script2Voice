@@ -19,6 +19,8 @@ pub struct App {
     pub player: Option<Player>,
     pub script: ScriptTab,
     pub lab: LabTab,
+    /// S2V_GUI_PROBE 設定時、最初のフレームで先頭行を自動試聴する（診断用）
+    probe_preview: bool,
     pub transport: Transport,
     pub audio_cfg: Option<s2v_core::AudioConfig>,
 }
@@ -50,6 +52,7 @@ impl App {
             script,
             lab: LabTab::new(),
             transport: Transport::new(),
+            probe_preview: std::env::var_os("S2V_GUI_PROBE").is_some(),
             audio_cfg,
         }
     }
@@ -90,6 +93,17 @@ impl App {
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.pump_messages();
+
+        if self.probe_preview {
+            if let (Some(jobs), Some(line)) = (
+                &self.jobs,
+                self.script.model.as_ref().and_then(|m| m.lines.first()).cloned(),
+            ) {
+                tracing::info!("PROBE: 行{} を自動試聴します", line.no);
+                jobs.preview(line);
+                self.probe_preview = false;
+            }
+        }
 
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.horizontal(|ui| {

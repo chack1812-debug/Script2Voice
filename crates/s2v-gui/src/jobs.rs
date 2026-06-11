@@ -105,11 +105,13 @@ impl Jobs {
         let raw = self.tmp.path().join(format!("preview_{:04}_{seq}_raw.wav", line.no));
         let out = self.tmp.path().join(format!("preview_{:04}_{seq}.wav", line.no));
         self.rt.spawn(async move {
+            tracing::info!("試聴: 行{} の合成を開始します", line.no);
             let res: anyhow::Result<()> = async {
                 let mut req = HashSet::new();
                 req.insert(line.cast.engine_type.clone());
                 Self::ensure_engines(&engines, &activated, req).await?;
                 engines.synthesize(&line.text, &line.cast, &raw).await?;
+                tracing::info!("試聴: 行{} 合成完了、音響処理中", line.no);
                 let (p, r, o, c, s) = (
                     Arc::clone(&processor), raw.clone(), out.clone(),
                     line.cast.clone(), line.scene_config.clone(),
@@ -120,8 +122,14 @@ impl Jobs {
             .await;
             busy.store(false, Ordering::SeqCst);
             let _ = match res {
-                Ok(()) => tx.send(JobMsg::PreviewReady { line_no: line.no, wav: out, raw }),
-                Err(e) => tx.send(JobMsg::PreviewFailed { line_no: line.no, error: format!("{e:#}") }),
+                Ok(()) => {
+                    tracing::info!("試聴: 行{} 準備完了", line.no);
+                    tx.send(JobMsg::PreviewReady { line_no: line.no, wav: out, raw })
+                }
+                Err(e) => {
+                    tracing::error!("試聴失敗: 行{} {e:#}", line.no);
+                    tx.send(JobMsg::PreviewFailed { line_no: line.no, error: format!("{e:#}") })
+                }
             };
         });
     }

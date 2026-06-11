@@ -18,10 +18,13 @@ impl Transport {
         let Some(pl) = player.as_mut() else {
             return Err("音声出力デバイスがありません".into());
         };
-        pl.play(path).map_err(|e| e.to_string())?;
-        self.now_playing = Some(
-            path.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string(),
-        );
+        pl.play(path).map_err(|e| {
+            tracing::error!("再生失敗: {} ({e})", path.display());
+            e.to_string()
+        })?;
+        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        tracing::info!("再生開始: {name}");
+        self.now_playing = Some(name);
         self.last_wav = Some(path.to_path_buf());
         Ok(())
     }

@@ -63,6 +63,7 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for BufMakeWriter {
 }
 
 /// tracing をこのバッファへ向ける（GUI起動時に1回だけ呼ぶ）。
+/// 環境変数 S2V_GUI_DEBUG が設定されている場合は stderr にも出力する（診断用）。
 pub fn init_tracing(buf: LogBuffer) {
     use tracing_subscriber::prelude::*;
     let layer = tracing_subscriber::fmt::layer()
@@ -73,7 +74,13 @@ pub fn init_tracing(buf: LogBuffer) {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         );
-    tracing_subscriber::registry().with(layer).init();
+    let stderr_layer = std::env::var_os("S2V_GUI_DEBUG").map(|_| {
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(std::io::stderr)
+            .with_filter(tracing_subscriber::EnvFilter::new("info"))
+    });
+    tracing_subscriber::registry().with(layer).with(stderr_layer).init();
 }
 
 #[cfg(test)]
