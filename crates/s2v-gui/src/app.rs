@@ -159,7 +159,15 @@ impl eframe::App for App {
                 Tab::Lab => {
                     if let Some(jobs) = &self.jobs {
                         let preview_raw = self.script.preview_raw.clone();
-                        self.lab.ui(ui, jobs, &preview_raw, &mut self.player);
+                        let cfg = self.audio_cfg.clone();
+                        self.lab.ui(
+                            ui,
+                            jobs,
+                            &preview_raw,
+                            &mut self.transport,
+                            &mut self.player,
+                            cfg.as_ref(),
+                        );
                     }
                 }
             }
