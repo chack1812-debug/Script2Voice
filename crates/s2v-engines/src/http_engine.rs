@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use reqwest::Client;
@@ -10,7 +11,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
 use crate::engine::Engine;
-use crate::process::{ensure_running, terminate_process, EngineProcess};
+use crate::process::{ensure_running, terminate_process, EngineProcess, DEFAULT_STARTUP_TIMEOUT};
 
 /// スピーカーキャッシュの型: speaker_name -> style_name -> style_id
 type SpeakerCache = HashMap<String, HashMap<String, u32>>;
@@ -21,6 +22,7 @@ pub struct HttpEngine {
     client: Arc<Client>,
     cache: Arc<RwLock<SpeakerCache>>,
     exe_path: Option<String>,
+    startup_timeout: Duration,
     process: Mutex<Option<EngineProcess>>,
 }
 
@@ -41,8 +43,15 @@ impl HttpEngine {
             client,
             cache: Arc::new(RwLock::new(HashMap::new())),
             exe_path,
+            startup_timeout: DEFAULT_STARTUP_TIMEOUT,
             process: Mutex::new(None),
         }
+    }
+
+    /// 自動起動の待機時間を設定する（省略時は [`DEFAULT_STARTUP_TIMEOUT`]）。
+    pub fn with_startup_timeout(mut self, timeout: Duration) -> Self {
+        self.startup_timeout = timeout;
+        self
     }
 
     async fn is_alive(&self) -> bool {
@@ -100,7 +109,7 @@ impl HttpEngine {
 #[async_trait]
 impl Engine for HttpEngine {
     async fn activate(&self) -> anyhow::Result<()> {
-        ensure_running(&self.name, self.exe_path.as_deref(), &self.process, || self.is_alive()).await?;
+        ensure_running(&self.name, self.exe_path.as_deref(), self.startup_timeout, &self.process, || self.is_alive()).await?;
         info!("[{}] 接続確認 OK", self.name);
         self.refresh_cache().await?;
         Ok(())

@@ -26,25 +26,27 @@ pub fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::pat
 
 /// config から3エンジン（voicevox/aivis/xtts）を登録した EngineManager を構築する。
 pub fn build_engine_manager(config: &Config) -> EngineManager {
+    use std::time::Duration;
+    let timeout = |secs: Option<u64>| Duration::from_secs(secs.unwrap_or(60));
     let client = Arc::new(Client::new());
     let mut em = EngineManager::new();
     em.register(
         "voicevox",
         Arc::new(HttpEngine::with_exe_path(
             "voicevox", &config.voicevox.url, Arc::clone(&client), config.voicevox.exe_path.clone(),
-        )),
+        ).with_startup_timeout(timeout(config.voicevox.startup_timeout_s))),
     );
     em.register(
         "aivis",
         Arc::new(HttpEngine::with_exe_path(
             "aivis", &config.aivis.url, Arc::clone(&client), config.aivis.exe_path.clone(),
-        )),
+        ).with_startup_timeout(timeout(config.aivis.startup_timeout_s))),
     );
     em.register(
         "xtts",
         Arc::new(XttsEngine::with_exe_path(
             "xtts", &config.xtts.url, Arc::clone(&client), config.xtts.exe_path.clone(),
-        )),
+        ).with_startup_timeout(timeout(config.xtts.startup_timeout_s))),
     );
     em
 }

@@ -7,9 +7,11 @@ use tracing::{info, warn};
 
 use crate::job::EngineJob;
 
-/// 起動待機のポーリング間隔と最大試行回数（Python 版の `for i in range(30): await sleep(1)` に合わせる）。
+/// 起動待機のポーリング間隔。Python 版の `await sleep(1)` に合わせて 1 秒固定。
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
-const POLL_RETRIES: usize = 30;
+
+/// 自動起動の既定待機時間。AivisSpeech の初回モデルロードが 30 秒で足りない事例を受け 60 秒。
+pub const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// 自動起動したエンジンプロセスと、その後始末用に割り当てた Job Object をまとめて保持する。
 ///
@@ -25,6 +27,7 @@ pub(crate) struct EngineProcess {
 pub(crate) async fn ensure_running<F, Fut>(
     name: &str,
     exe_path: Option<&str>,
+    timeout: Duration,
     process: &Mutex<Option<EngineProcess>>,
     is_alive: F,
 ) -> anyhow::Result<()>
@@ -62,14 +65,15 @@ where
 
     *process.lock().unwrap() = Some(EngineProcess { child, job });
 
-    for _ in 0..POLL_RETRIES {
+    let retries = timeout.as_secs().max(1);
+    for _ in 0..retries {
         tokio::time::sleep(POLL_INTERVAL).await;
         if is_alive().await {
             info!("[{name}] エンジンの起動を確認しました。");
             return Ok(());
         }
     }
-    anyhow::bail!("{name}: 起動待機がタイムアウトしました")
+    anyhow::bail!("{name}: 起動待機が {} 秒でタイムアウトしました", retries)
 }
 
 /// activate() でプロセスを起動していた場合、それを終了する。起動していなければ何もしない。
@@ -129,7 +133,7 @@ mod tests {
 
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
-        ensure_running("test", launcher.to_str(), &process, move || {
+        ensure_running("test", launcher.to_str(), Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })
@@ -166,7 +170,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls2 = Arc::clone(&calls);
 
-        ensure_running("test", None, &process, move || {
+        ensure_running("test", None, Duration::from_secs(30), &process, move || {
             calls2.fetch_add(1, Ordering::SeqCst);
             async { true }
         })
@@ -181,7 +185,7 @@ mod tests {
     async fn ensure_running_errors_when_not_alive_and_no_exe_path() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", None, &process, || async { false }).await;
+        let result = ensure_running("test", None, Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
     }
@@ -190,7 +194,7 @@ mod tests {
     async fn ensure_running_errors_when_exe_path_does_not_exist() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", Some("C:/no/such/engine.exe"), &process, || async { false }).await;
+        let result = ensure_running("test", Some("C:/no/such/engine.exe"), Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
         assert!(process.lock().unwrap().is_none());
@@ -206,7 +210,7 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
 
-        ensure_running("test", script.to_str(), &process, move || {
+        ensure_running("test", script.to_str(), Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })

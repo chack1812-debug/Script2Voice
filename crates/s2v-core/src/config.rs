@@ -19,6 +19,9 @@ pub struct EngineUrl {
     /// 未起動時に自動起動する実行ファイルのパス（省略可）
     #[serde(default)]
     pub exe_path: Option<String>,
+    /// 自動起動の待機秒数（省略時は既定 60 秒）。モデルロードが遅い場合に増やす。
+    #[serde(default)]
+    pub startup_timeout_s: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -202,6 +205,20 @@ se_fade_out_s = 0.05
         );
         let cfg = Config::from_toml(&toml_with_exe).unwrap();
         assert_eq!(cfg.voicevox.exe_path.as_deref(), Some("C:\\VOICEVOX\\run.exe"));
+    }
+
+    #[test]
+    fn engine_startup_timeout_parses_and_defaults() {
+        let toml_with_timeout = SAMPLE_TOML.replacen(
+            r#"url = "http://127.0.0.1:50021""#,
+            "url = \"http://127.0.0.1:50021\"\nstartup_timeout_s = 90",
+            1,
+        );
+        let cfg = Config::from_toml(&toml_with_timeout).unwrap();
+        assert_eq!(cfg.voicevox.startup_timeout_s, Some(90));
+
+        let cfg2 = Config::from_toml(SAMPLE_TOML).unwrap();
+        assert_eq!(cfg2.voicevox.startup_timeout_s, None);
     }
 
     #[test]

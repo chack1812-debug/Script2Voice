@@ -1,5 +1,6 @@
 # exe_path: 未起動時に自動起動する実行ファイルのパス（省略可）。
 # 設定すると、接続確認に失敗した場合に自動的に起動し、終了時に停止します。
+# startup_timeout_s: 自動起動の待機秒数（省略時 60。モデルロードが遅い場合は増やす）。
 [voicevox]
 url = "http://127.0.0.1:50021"
 exe_path = "C:/Program Files/VOICEVOX/vv-engine/run.exe"
