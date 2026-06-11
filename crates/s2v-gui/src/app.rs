@@ -127,7 +127,33 @@ impl eframe::App for App {
             match self.tab {
                 Tab::Script => {
                     if let Some(jobs) = &self.jobs {
-                        self.script.ui(ui, jobs);
+                        if let Some(action) = self.script.ui(ui, jobs) {
+                            match action {
+                                crate::tab_script::ScriptAction::OpenLab { line_no } => {
+                                    self.tab = Tab::Lab;
+                                    self.lab.source = crate::tab_lab::LabSource::ScriptLine;
+                                    // raw 未取得（または別の行）なら自動でプレビュー合成
+                                    let has_raw = self
+                                        .script
+                                        .preview_raw
+                                        .as_ref()
+                                        .map(|(no, _)| *no == line_no)
+                                        .unwrap_or(false);
+                                    if !has_raw
+                                        && !jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst)
+                                    {
+                                        if let Some(line) = self
+                                            .script
+                                            .model
+                                            .as_ref()
+                                            .and_then(|m| m.lines.iter().find(|l| l.no == line_no))
+                                        {
+                                            jobs.preview(line.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 Tab::Lab => {

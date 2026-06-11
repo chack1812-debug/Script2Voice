@@ -36,6 +36,12 @@ impl Default for ScriptTab {
     }
 }
 
+/// タブ1から App へ依頼するアクション。
+pub enum ScriptAction {
+    /// 選択行を音響ラボで調整する（タブ切替＋音源設定。raw 未取得なら自動プレビュー）
+    OpenLab { line_no: usize },
+}
+
 impl ScriptTab {
     /// 前回開いた台本パスの保存先（exe と同じフォルダの s2v-gui.last）。
     fn last_path_file() -> Option<PathBuf> {
@@ -95,7 +101,8 @@ impl ScriptTab {
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, jobs: &Jobs) {
+    pub fn ui(&mut self, ui: &mut egui::Ui, jobs: &Jobs) -> Option<ScriptAction> {
+        let mut action = None;
         self.reload_if_changed();
 
         ui.horizontal(|ui| {
@@ -122,7 +129,7 @@ impl ScriptTab {
 
         let Some(model) = &self.model else {
             ui.label("台本ファイルを開いてください。");
-            return;
+            return None;
         };
 
         for w in &model.warnings {
@@ -135,41 +142,89 @@ impl ScriptTab {
         ui.separator();
 
         let busy = jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst);
-        let mut to_preview: Option<usize> = None;
-        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-            egui::Grid::new("lines").striped(true).num_columns(5).show(ui, |ui| {
-                ui.strong("No");
-                ui.strong("シーン");
-                ui.strong("キャスト");
-                ui.strong("台詞");
-                ui.strong("");
-                ui.end_row();
-                for line in &model.lines {
-                    let sel = self.selected == Some(line.no);
-                    ui.label(line.no.to_string());
-                    ui.label(&line.scene_name);
-                    ui.label(&line.cast_name);
-                    let text: String = line.display_text.chars().take(30).collect();
-                    if ui.selectable_label(sel, text).clicked() {
-                        self.selected = Some(line.no);
+        let panes_h = (ui.available_height() - 84.0).max(160.0); // 下部の実行ストリップ分を確保
+        let left_w = ui.available_width() * 0.38;
+
+        ui.horizontal_top(|ui| {
+            // ── 左: 行リスト ──
+            ui.vertical(|ui| {
+                ui.set_width(left_w);
+                ui.strong("行リスト");
+                egui::ScrollArea::vertical()
+                    .id_salt("line_list")
+                    .max_height(panes_h)
+                    .show(ui, |ui| {
+                        for line in &model.lines {
+                            let sel = self.selected == Some(line.no);
+                            let head: String = line.display_text.chars().take(22).collect();
+                            if ui
+                                .selectable_label(sel, format!("{:>3} {} {}", line.no, line.cast_name, head))
+                                .clicked()
+                            {
+                                self.selected = Some(line.no);
+                            }
+                        }
+                    });
+            });
+
+            ui.separator();
+
+            // ── 右: 選択行の詳細 ──
+            ui.vertical(|ui| {
+                let Some(line) = self
+                    .selected
+                    .and_then(|no| model.lines.iter().find(|l| l.no == no))
+                    .cloned()
+                else {
+                    ui.label("← 行を選択してください");
+                    return;
+                };
+                ui.strong(format!("行 {} ／ {}（{}）", line.no, line.cast_name, line.scene_name));
+                egui::ScrollArea::vertical()
+                    .id_salt("line_detail")
+                    .max_height(panes_h * 0.45)
+                    .show(ui, |ui| {
+                        ui.label(egui::RichText::new(&line.display_text));
+                    });
+                let sc = &line.scene_config;
+                let dims = match (sc.room_w, sc.room_d, sc.room_h) {
+                    (Some(w), Some(d), Some(h)) => format!("{w}×{d}×{h}m"),
+                    _ => format!(
+                        "room_size={}",
+                        sc.room_size.map_or("既定".to_string(), |v| v.to_string())
+                    ),
+                };
+                ui.label(format!(
+                    "シーン: {dims} ／ listener z={} reverb_wet={}",
+                    sc.listener_z.map_or("既定".to_string(), |v| v.to_string()),
+                    sc.reverb_wet.map_or("既定".to_string(), |v| v.to_string()),
+                ));
+                ui.label(format!(
+                    "cast: pan {:+.1}° ／ 距離 {:.2}m ／ 高さ {} ／ 音量 {:.2}",
+                    line.cast.pan,
+                    line.cast.distance,
+                    line.cast.height.map_or("聴取者と同じ".to_string(), |h| format!("{h}m")),
+                    line.cast.volume,
+                ));
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(!busy, egui::Button::new("▶ この行を試聴"))
+                        .clicked()
+                    {
+                        self.preview_error = None;
+                        jobs.preview(line.clone());
                     }
-                    if ui.add_enabled(!busy, egui::Button::new("▶ 試聴")).clicked() {
-                        self.selected = Some(line.no);
-                        to_preview = Some(line.no);
+                    if ui.button("🎛 ラボでこの行を調整 →").clicked() {
+                        action = Some(ScriptAction::OpenLab { line_no: line.no });
                     }
-                    ui.end_row();
-                }
+                });
             });
         });
-        if let Some(no) = to_preview {
-            if let Some(line) = model.lines.iter().find(|l| l.no == no) {
-                self.preview_error = None;
-                jobs.preview(line.clone());
-            }
-        }
 
         ui.separator();
 
+        // ── 下部: 一括実行ストリップ（全幅）──
         let running = jobs.busy_run.load(std::sync::atomic::Ordering::SeqCst);
         ui.horizontal(|ui| {
             if ui.add_enabled(!running, egui::Button::new("▶ 一括実行")).clicked() {
@@ -184,6 +239,12 @@ impl ScriptTab {
             if running {
                 ui.label(format!("実行中: {}", self.run_phase));
             }
+            if let Some(dir) = self.last_project_dir.clone() {
+                ui.label("✅ 完了");
+                if ui.button("📁 出力フォルダを開く").clicked() {
+                    let _ = std::process::Command::new("explorer").arg(&dir).spawn();
+                }
+            }
         });
         if let Some((done, total)) = self.run_progress {
             ui.add(
@@ -194,13 +255,6 @@ impl ScriptTab {
         if let Some(e) = &self.run_error {
             ui.colored_label(egui::Color32::RED, format!("⚠ {e}"));
         }
-        if let Some(dir) = self.last_project_dir.clone() {
-            ui.horizontal(|ui| {
-                ui.label("✅ 完了");
-                if ui.button("📁 出力フォルダを開く").clicked() {
-                    let _ = std::process::Command::new("explorer").arg(&dir).spawn();
-                }
-            });
-        }
+        action
     }
 }
