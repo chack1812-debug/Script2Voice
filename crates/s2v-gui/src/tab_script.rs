@@ -12,6 +12,8 @@ pub struct ScriptTab {
     /// 直近プレビューの raw（音響ラボの「台本の行」音源）
     pub preview_raw: Option<(usize, PathBuf)>,
     pub preview_error: Option<String>,
+    /// 試聴中の行番号（タブ非依存で進行状況を表示するため）
+    pub preview_pending: Option<usize>,
     pub run_phase: String,
     pub run_progress: Option<(usize, usize)>,
     pub run_error: Option<String>,
@@ -28,6 +30,7 @@ impl Default for ScriptTab {
             selected: None,
             preview_raw: None,
             preview_error: None,
+            preview_pending: None,
             run_phase: String::new(),
             run_progress: None,
             run_error: None,
@@ -213,6 +216,7 @@ impl ScriptTab {
                         .clicked()
                     {
                         self.preview_error = None;
+                        self.preview_pending = Some(line.no);
                         jobs.preview(line.clone());
                     }
                     if ui.button("🎛 ラボでこの行を調整 →").clicked() {

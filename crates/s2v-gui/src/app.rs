@@ -63,12 +63,14 @@ impl App {
         for msg in msgs {
             match msg {
                 JobMsg::PreviewReady { line_no, wav, raw } => {
+                    self.script.preview_pending = None;
                     self.script.preview_raw = Some((line_no, raw));
                     if let Err(e) = self.transport.play(&mut self.player, &wav) {
                         self.script.preview_error = Some(e);
                     }
                 }
                 JobMsg::PreviewFailed { error, .. } => {
+                    self.script.preview_pending = None;
                     self.script.preview_error = Some(error);
                 }
                 JobMsg::RunPhase(p) => self.script.run_phase = p,
@@ -100,6 +102,7 @@ impl eframe::App for App {
                 self.script.model.as_ref().and_then(|m| m.lines.first()).cloned(),
             ) {
                 tracing::info!("PROBE: 行{} を自動試聴します", line.no);
+                self.script.preview_pending = Some(line.no);
                 jobs.preview(line);
                 self.probe_preview = false;
             }
@@ -124,6 +127,18 @@ impl eframe::App for App {
                 });
             });
         egui::TopBottomPanel::bottom("transport").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(no) = self.script.preview_pending {
+                    ui.spinner();
+                    ui.label(format!("行{no} を合成中…（エンジン初回起動時は30秒以上かかります）"));
+                }
+                if let Some(e) = &self.script.preview_error {
+                    ui.colored_label(egui::Color32::RED, format!("⚠ 試聴失敗: {e}"));
+                }
+                if let Some(e) = &self.lab.error {
+                    ui.colored_label(egui::Color32::RED, format!("⚠ {e}"));
+                }
+            });
             let (a, b) = {
                 let h = &self.lab.history;
                 (
@@ -164,6 +179,7 @@ impl eframe::App for App {
                                             .cloned()
                                         {
                                             self.script.preview_error = None;
+                                            self.script.preview_pending = Some(line.no);
                                             jobs.preview(line);
                                         }
                                     }
