@@ -12,6 +12,7 @@ mod scene_line;
 mod script_model;
 mod tab_lab;
 mod tab_script;
+mod transport;
 
 fn main() -> eframe::Result {
     let log = logbuf::LogBuffer::new(500);

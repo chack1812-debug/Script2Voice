@@ -3,6 +3,7 @@ use crate::jobs::{JobMsg, Jobs};
 use crate::logbuf::LogBuffer;
 use crate::tab_lab::LabTab;
 use crate::tab_script::ScriptTab;
+use crate::transport::Transport;
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum Tab {
@@ -18,6 +19,8 @@ pub struct App {
     pub player: Option<Player>,
     pub script: ScriptTab,
     pub lab: LabTab,
+    pub transport: Transport,
+    pub audio_cfg: Option<s2v_core::AudioConfig>,
 }
 
 impl App {
@@ -25,11 +28,15 @@ impl App {
         // config.toml は CLI と同じ規約（exe と同じフォルダ）で解決
         let exe = std::env::current_exe().ok();
         let config_path = script2voice::resolve_config_path(None, exe.as_deref());
+        let mut audio_cfg: Option<s2v_core::AudioConfig> = None;
         let (jobs, jobs_error) = match s2v_core::Config::from_file(&config_path) {
-            Ok(cfg) => match Jobs::new(cfg) {
-                Ok(j) => (Some(j), None),
-                Err(e) => (None, Some(format!("初期化失敗: {e}"))),
-            },
+            Ok(cfg) => {
+                audio_cfg = Some(cfg.audio.clone());
+                match Jobs::new(cfg) {
+                    Ok(j) => (Some(j), None),
+                    Err(e) => (None, Some(format!("初期化失敗: {e}"))),
+                }
+            }
             Err(e) => (None, Some(format!("config.toml を読めません ({}): {e}", config_path.display()))),
         };
         let mut script = ScriptTab::default();
@@ -42,6 +49,8 @@ impl App {
             player: Player::new(),
             script,
             lab: LabTab::new(),
+            transport: Transport::new(),
+            audio_cfg,
         }
     }
 
@@ -52,10 +61,8 @@ impl App {
             match msg {
                 JobMsg::PreviewReady { line_no, wav, raw } => {
                     self.script.preview_raw = Some((line_no, raw));
-                    if let Some(p) = &mut self.player {
-                        if let Err(e) = p.play(&wav) {
-                            self.script.preview_error = Some(e.to_string());
-                        }
+                    if let Err(e) = self.transport.play(&mut self.player, &wav) {
+                        self.script.preview_error = Some(e);
                     }
                 }
                 JobMsg::PreviewFailed { error, .. } => {
@@ -72,9 +79,7 @@ impl App {
                 JobMsg::LabReady { wav, params } => {
                     self.lab.error = None;
                     self.lab.history.push(params, wav.clone());
-                    if let Some(p) = &mut self.player {
-                        let _ = p.play(&wav);
-                    }
+                    let _ = self.transport.play(&mut self.player, &wav);
                 }
                 JobMsg::LabFailed { error } => self.lab.error = Some(error),
             }
@@ -104,6 +109,16 @@ impl eframe::App for App {
                     });
                 });
             });
+        egui::TopBottomPanel::bottom("transport").show(ctx, |ui| {
+            let (a, b) = {
+                let h = &self.lab.history;
+                (
+                    h.sel_a.and_then(|id| h.get(id)).map(|e| e.wav.clone()),
+                    h.sel_b.and_then(|id| h.get(id)).map(|e| e.wav.clone()),
+                )
+            };
+            self.transport.ui(ui, &mut self.player, a, b);
+        });
         egui::CentralPanel::default().show(ctx, |ui| {
             if let Some(e) = &self.jobs_error {
                 ui.colored_label(egui::Color32::RED, format!("⚠ {e}"));
