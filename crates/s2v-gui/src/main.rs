@@ -7,6 +7,7 @@ mod jobs;
 mod history;
 mod logbuf;
 mod presets;
+mod room_view;
 mod scene_line;
 mod script_model;
 mod tab_lab;
