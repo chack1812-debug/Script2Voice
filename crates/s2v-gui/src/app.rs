@@ -23,6 +23,9 @@ pub struct App {
     probe_preview: bool,
     pub transport: Transport,
     pub audio_cfg: Option<s2v_core::AudioConfig>,
+    /// 🎛 でラボを開く際、別の試聴が実行中で後回しにした行番号。
+    /// 実行中の試聴完了時に pump_messages が拾って自動でプレビューを起動する。
+    pending_lab_line: Option<usize>,
 }
 
 impl App {
@@ -54,12 +57,39 @@ impl App {
             transport: Transport::new(),
             probe_preview: std::env::var_os("S2V_GUI_PROBE").is_some(),
             audio_cfg,
+            pending_lab_line: None,
+        }
+    }
+
+    /// `pending_lab_line` の行のプレビューを、試聴が空いていれば起動する。
+    /// 実行中なら何もしない（完了時に pump_messages から再試行される）。
+    fn try_dispatch_pending_preview(&mut self) {
+        let Some(line_no) = self.pending_lab_line else { return };
+        let Some(jobs) = &self.jobs else { return };
+        if jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        if let Some(line) = self
+            .script
+            .model
+            .as_ref()
+            .and_then(|m| m.lines.iter().find(|l| l.no == line_no))
+            .cloned()
+        {
+            self.script.preview_error = None;
+            self.script.preview_pending = Some(line.no);
+            jobs.preview(line);
+        } else {
+            self.pending_lab_line = None; // 行が消えた（再読込等）
         }
     }
 
     fn pump_messages(&mut self) {
-        let Some(jobs) = &self.jobs else { return };
-        let msgs: Vec<JobMsg> = jobs.rx.try_iter().collect();
+        // jobs の借用は受信だけに留め、メッセージ処理中は &mut self を自由に使えるようにする。
+        let msgs: Vec<JobMsg> = match &self.jobs {
+            Some(jobs) => jobs.rx.try_iter().collect(),
+            None => return,
+        };
         for msg in msgs {
             match msg {
                 JobMsg::PreviewReady { line_no, wav, raw } => {
@@ -68,10 +98,20 @@ impl App {
                     if let Err(e) = self.transport.play(&mut self.player, &wav) {
                         self.script.preview_error = Some(e);
                     }
+                    if self.pending_lab_line == Some(line_no) {
+                        self.pending_lab_line = None;
+                    } else {
+                        self.try_dispatch_pending_preview();
+                    }
                 }
-                JobMsg::PreviewFailed { error, .. } => {
+                JobMsg::PreviewFailed { line_no, error } => {
                     self.script.preview_pending = None;
                     self.script.preview_error = Some(error);
+                    if self.pending_lab_line == Some(line_no) {
+                        self.pending_lab_line = None; // 後回しにした行自身が失敗→諦める
+                    } else {
+                        self.try_dispatch_pending_preview();
+                    }
                 }
                 JobMsg::RunPhase(p) => self.script.run_phase = p,
                 JobMsg::RunProgress { done, total } => {
@@ -155,47 +195,39 @@ impl eframe::App for App {
             }
             match self.tab {
                 Tab::Script => {
-                    if let Some(jobs) = &self.jobs {
-                        if let Some(action) = self.script.ui(ui, jobs) {
-                            match action {
-                                crate::tab_script::ScriptAction::OpenLab { line_no } => {
-                                    self.tab = Tab::Lab;
-                                    self.lab.source = crate::tab_lab::LabSource::ScriptLine;
-                                    // raw 未取得（または別の行）なら自動でプレビュー合成
-                                    let has_raw = self
-                                        .script
-                                        .preview_raw
-                                        .as_ref()
-                                        .map(|(no, _)| *no == line_no)
-                                        .unwrap_or(false);
-                                    if !has_raw
-                                        && !jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst)
-                                    {
-                                        if let Some(line) = self
-                                            .script
-                                            .model
-                                            .as_ref()
-                                            .and_then(|m| m.lines.iter().find(|l| l.no == line_no))
-                                            .cloned()
-                                        {
-                                            self.script.preview_error = None;
-                                            self.script.preview_pending = Some(line.no);
-                                            jobs.preview(line);
-                                        }
-                                    }
-                                }
-                            }
+                    // action を取り出してから処理する（jobs 借用を閉じ、try_dispatch を呼べるように）。
+                    let action = if let Some(jobs) = &self.jobs {
+                        self.script.ui(ui, jobs)
+                    } else {
+                        None
+                    };
+                    if let Some(crate::tab_script::ScriptAction::OpenLab { line_no }) = action {
+                        self.tab = Tab::Lab;
+                        self.lab.source = crate::tab_lab::LabSource::ScriptLine;
+                        // raw 未取得（または別の行）なら自動でプレビュー合成。
+                        // 別の試聴が実行中なら pending に積み、完了後に pump が継続実行する。
+                        let has_raw = self
+                            .script
+                            .preview_raw
+                            .as_ref()
+                            .map(|(no, _)| *no == line_no)
+                            .unwrap_or(false);
+                        if !has_raw {
+                            self.pending_lab_line = Some(line_no);
+                            self.try_dispatch_pending_preview();
                         }
                     }
                 }
                 Tab::Lab => {
                     if let Some(jobs) = &self.jobs {
                         let preview_raw = self.script.preview_raw.clone();
+                        let preview_pending = self.script.preview_pending;
                         let cfg = self.audio_cfg.clone();
                         self.lab.ui(
                             ui,
                             jobs,
                             &preview_raw,
+                            preview_pending,
                             &mut self.transport,
                             &mut self.player,
                             cfg.as_ref(),
