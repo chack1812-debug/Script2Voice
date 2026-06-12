@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -112,6 +112,54 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// 台本引数を展開する。
+/// - ファイル: そのまま採用。
+/// - ディレクトリ: 直下の拡張子 `.txt`（大文字小文字無視）を名前順に採用（再帰しない）。
+/// - 存在しないパス: エラー。
+/// 採用後に canonicalize した実体パスで重複を除去（出現順は維持）。0 件ならエラー。
+fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
+    fn push_unique(p: &Path, out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) -> anyhow::Result<()> {
+        let canon = std::fs::canonicalize(p)
+            .with_context(|| format!("パスを解決できません: {}", p.display()))?;
+        if seen.insert(canon.clone()) {
+            out.push(canon);
+        }
+        Ok(())
+    }
+
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::new();
+
+    for arg in args {
+        if arg.is_dir() {
+            let mut entries: Vec<PathBuf> = std::fs::read_dir(arg)
+                .with_context(|| format!("フォルダを読めません: {}", arg.display()))?
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| {
+                    p.is_file()
+                        && p.extension()
+                            .and_then(|e| e.to_str())
+                            .map(|e| e.eq_ignore_ascii_case("txt"))
+                            .unwrap_or(false)
+                })
+                .collect();
+            entries.sort();
+            for p in entries {
+                push_unique(&p, &mut out, &mut seen)?;
+            }
+        } else if arg.is_file() {
+            push_unique(arg, &mut out, &mut seen)?;
+        } else {
+            anyhow::bail!("台本パスが見つかりません: {}", arg.display());
+        }
+    }
+
+    if out.is_empty() {
+        anyhow::bail!("処理対象の台本が見つかりません（.txt が 0 件）");
+    }
+    Ok(out)
+}
+
 async fn run_pipeline(
     engine_manager: &Arc<EngineManager>,
     required_engines: &HashSet<String>,
@@ -176,5 +224,42 @@ mod tests {
         let p = log_file_path(std::path::Path::new("/tmp/proj"));
         assert_eq!(p.file_name().unwrap(), "run.log");
         assert_eq!(p.parent().unwrap(), std::path::Path::new("/tmp/proj"));
+    }
+
+    #[test]
+    fn expand_collects_txt_in_directory_sorted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("b.txt"), "x").unwrap();
+        std::fs::write(dir.path().join("a.txt"), "x").unwrap();
+        std::fs::write(dir.path().join("note.md"), "x").unwrap();
+        let out = expand_script_args(&[dir.path().to_path_buf()]).unwrap();
+        let names: Vec<String> = out
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn expand_accepts_files_and_dedups() {
+        let dir = tempfile::tempdir().unwrap();
+        let f = dir.path().join("s.txt");
+        std::fs::write(&f, "x").unwrap();
+        let out = expand_script_args(&[f.clone(), f.clone()]).unwrap();
+        assert_eq!(out.len(), 1);
+    }
+
+    #[test]
+    fn expand_errors_on_missing_path() {
+        let res = expand_script_args(&[PathBuf::from("definitely_not_here_12345.txt")]);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn expand_errors_when_directory_has_no_txt() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("note.md"), "x").unwrap();
+        let res = expand_script_args(&[dir.path().to_path_buf()]);
+        assert!(res.is_err());
     }
 }
