@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context;
 use clap::Parser;
 use s2v_core::{Config, Scene, ScriptParser};
-use s2v_engines::{Engine, EngineManager};
-use script2voice::{Producer, build_engine_manager, resolve_config_path};
+use s2v_engines::EngineManager;
+use script2voice::{build_engine_manager, resolve_config_path, Producer};
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -14,8 +14,9 @@ use tracing_subscriber::{fmt, EnvFilter};
 #[derive(Parser)]
 #[command(name = "script2voice", version, about = "台本から音声・字幕・タイムラインを生成する")]
 struct Cli {
-    /// 台本ファイルのパス
-    script: PathBuf,
+    /// 台本ファイルまたはフォルダ（複数指定可。フォルダは直下の .txt を名前順に処理）
+    #[arg(required = true, num_args = 1..)]
+    scripts: Vec<PathBuf>,
 
     /// 設定ファイル (config.toml) のパス。省略時は実行ファイルと同じディレクトリの config.toml を使用する
     #[arg(short, long)]
@@ -108,53 +109,54 @@ fn open_run_log(project_dir: &Path) -> anyhow::Result<std::fs::File> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+    let log_file = init_logging();
 
-    let script_path = std::fs::canonicalize(&cli.script)
-        .with_context(|| format!("台本ファイルが見つかりません: {}", cli.script.display()))?;
-
-    let project_name = script_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow::anyhow!("台本ファイル名が不正です: {}", script_path.display()))?
-        .to_string();
-    let project_dir = script_path
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join(&project_name);
-    std::fs::create_dir_all(&project_dir)?;
-
-    let _log_file = init_logging();
-
-    tracing::info!("--- Project: {project_name} ---");
-    tracing::info!("Output Directory: {}", project_dir.display());
+    let scripts = expand_script_args(&cli.scripts)?;
+    tracing::info!("処理対象: {} 台本", scripts.len());
 
     let exe_path = std::env::current_exe().ok();
-    let config_path = resolve_config_path(cli.config, exe_path.as_deref());
+    let config_path = resolve_config_path(cli.config.clone(), exe_path.as_deref());
     tracing::info!("設定ファイル: {}", config_path.display());
     let config = Config::from_file(&config_path)
         .with_context(|| format!("設定ファイルの読み込みに失敗しました: {}", config_path.display()))?;
 
-    let mut parser = ScriptParser::new();
-    let scenes = parser.parse_file(&script_path)?;
+    // 事前パース（失敗は継続）
+    let (parsed, parse_failures) = parse_all(&scripts);
 
-    let mut required_engines: HashSet<String> = HashSet::new();
-    for scene in &scenes {
-        for cast in scene.casts.values() {
-            required_engines.insert(cast.engine_type.clone());
-        }
-    }
+    // 必要エンジンを1回だけ起動（失敗は継続）
+    let required = required_engines(&parsed);
     tracing::info!(
         "使用予定のエンジン: {}",
-        required_engines.iter().cloned().collect::<Vec<_>>().join(", ")
+        required.iter().cloned().collect::<Vec<_>>().join(", ")
     );
-
     let engine_manager = Arc::new(build_engine_manager(&config));
+    activate_each(&engine_manager, &required).await;
 
-    let result = run_pipeline(&engine_manager, &required_engines, &config, &project_dir, &scenes).await;
+    // 台本ごとに処理（暖まったエンジンを使い回し、失敗は継続）
+    let config_ref = &config;
+    let em_ref = &engine_manager;
+    let log_ref = &log_file;
+    let summary = run_each(parsed, parse_failures, |path, scenes| async move {
+        process_one(&path, &scenes, config_ref, em_ref, log_ref).await
+    })
+    .await;
+
+    // 全台本終了後にエンジンを停止
     engine_manager.shutdown_all();
-    result?;
 
-    tracing::info!("--- 完了: {project_name} ---");
+    // サマリ
+    tracing::info!(
+        "=== バッチ完了: 成功 {} / 失敗 {} (合計 {}) ===",
+        summary.succeeded,
+        summary.failures.len(),
+        summary.total()
+    );
+    for (path, reason) in &summary.failures {
+        tracing::warn!("失敗: {} — {}", path.display(), reason);
+    }
+    if summary.has_failure() {
+        anyhow::bail!("{} 台本が失敗しました", summary.failures.len());
+    }
     Ok(())
 }
 
@@ -333,18 +335,6 @@ async fn process_one(
     .await
 }
 
-async fn run_pipeline(
-    engine_manager: &Arc<EngineManager>,
-    required_engines: &HashSet<String>,
-    config: &Config,
-    project_dir: &std::path::Path,
-    scenes: &[s2v_core::Scene],
-) -> anyhow::Result<()> {
-    engine_manager.activate_required(required_engines).await?;
-    let producer = Producer::new(Arc::clone(engine_manager), config, project_dir)?;
-    producer.produce(scenes).await
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -389,9 +379,9 @@ mod tests {
     }
 
     #[test]
-    fn parses_script_path_with_no_explicit_config() {
-        let cli = Cli::try_parse_from(["script2voice", "script.txt"]).unwrap();
-        assert_eq!(cli.script, std::path::PathBuf::from("script.txt"));
+    fn parses_multiple_script_paths() {
+        let cli = Cli::try_parse_from(["script2voice", "a.txt", "b.txt"]).unwrap();
+        assert_eq!(cli.scripts, vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
         assert_eq!(cli.config, None);
     }
 
