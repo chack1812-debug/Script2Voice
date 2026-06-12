@@ -174,6 +174,24 @@ fn required_engines(parsed: &[(PathBuf, Vec<Scene>)]) -> HashSet<String> {
     set
 }
 
+/// 各台本をパースする。失敗しても止めず、成功分と失敗分(パス, 理由)を分けて返す。
+/// （`parse_file` はファイル読み込み/UTF-8 エラー時のみ Err。書式の崩れは警告扱いで Ok。）
+fn parse_all(scripts: &[PathBuf]) -> (Vec<(PathBuf, Vec<Scene>)>, Vec<(PathBuf, String)>) {
+    let mut parsed = Vec::new();
+    let mut failures = Vec::new();
+    for path in scripts {
+        let mut parser = ScriptParser::new();
+        match parser.parse_file(path) {
+            Ok(scenes) => parsed.push((path.clone(), scenes)),
+            Err(e) => {
+                tracing::error!("パース失敗 {}: {e:#}", path.display());
+                failures.push((path.clone(), format!("パース失敗: {e:#}")));
+            }
+        }
+    }
+    (parsed, failures)
+}
+
 async fn run_pipeline(
     engine_manager: &Arc<EngineManager>,
     required_engines: &HashSet<String>,
@@ -275,6 +293,25 @@ mod tests {
         std::fs::write(dir.path().join("note.md"), "x").unwrap();
         let res = expand_script_args(&[dir.path().to_path_buf()]);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn parse_all_continues_past_unreadable_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let good = dir.path().join("good.txt");
+        std::fs::write(
+            &good,
+            "@scene S\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n",
+        )
+        .unwrap();
+        let bad = dir.path().join("bad.txt");
+        std::fs::write(&bad, [0xff, 0xfe, 0x00, 0x01]).unwrap(); // 不正UTF-8 → read_to_string失敗
+
+        let (parsed, failures) = parse_all(&[good.clone(), bad.clone()]);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].0, good);
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].0, bad);
     }
 
     #[test]
