@@ -116,6 +116,7 @@ async fn main() -> anyhow::Result<()> {
 /// - ファイル: そのまま採用。
 /// - ディレクトリ: 直下の拡張子 `.txt`（大文字小文字無視）を名前順に採用（再帰しない）。
 /// - 存在しないパス: エラー。
+///
 /// 採用後に canonicalize した実体パスで重複を除去（出現順は維持）。0 件ならエラー。
 fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     fn push_unique(p: &Path, out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) -> anyhow::Result<()> {
