@@ -249,10 +249,10 @@ impl BatchSummary {
 async fn run_each<F, Fut>(
     parsed: Vec<(PathBuf, Vec<Scene>)>,
     mut prior_failures: Vec<(PathBuf, String)>,
-    process: F,
+    mut process: F,
 ) -> BatchSummary
 where
-    F: Fn(PathBuf, Vec<Scene>) -> Fut,
+    F: FnMut(PathBuf, Vec<Scene>) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<()>>,
 {
     let total = parsed.len();
