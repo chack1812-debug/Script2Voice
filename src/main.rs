@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::Context;
 use clap::Parser;
 use s2v_core::{Config, Scene, ScriptParser};
-use s2v_engines::EngineManager;
+use s2v_engines::{Engine, EngineManager};
 use script2voice::{Producer, build_engine_manager, resolve_config_path};
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
@@ -271,6 +271,57 @@ where
         }
     }
     BatchSummary { succeeded, failures: prior_failures }
+}
+
+/// 必要エンジンを個別に起動する。1つの失敗で全体を止めず、警告して継続する
+/// （起動に失敗したエンジンを使う台本は後段の合成で失敗扱いになる）。
+async fn activate_each(engine_manager: &Arc<EngineManager>, required: &HashSet<String>) {
+    for name in required {
+        let Some(engine) = engine_manager.get(name) else {
+            tracing::warn!("[{name}] 未登録のエンジンが要求されました。スキップします。");
+            continue;
+        };
+        match engine.activate().await {
+            Ok(()) => tracing::info!("[{name}] エンジン起動完了。"),
+            Err(e) => tracing::warn!(
+                "[{name}] エンジン起動に失敗しました（このエンジンを使う台本は失敗します）: {e:#}"
+            ),
+        }
+    }
+}
+
+/// 1台本を処理する。出力フォルダ（台本名）を決め、その run.log にログを向けてから
+/// 既存 `Producer` を実行する。ログ出力先は処理後に必ず外す。
+async fn process_one(
+    script_path: &Path,
+    scenes: &[Scene],
+    config: &Config,
+    engine_manager: &Arc<EngineManager>,
+    log_file: &SharedLogFile,
+) -> anyhow::Result<()> {
+    let project_name = script_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| anyhow::anyhow!("台本ファイル名が不正です: {}", script_path.display()))?
+        .to_string();
+    let project_dir = script_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(&project_name);
+    std::fs::create_dir_all(&project_dir)?;
+
+    log_file.set(Some(open_run_log(&project_dir)?));
+    let result = async {
+        tracing::info!("--- Project: {project_name} ---");
+        tracing::info!("Output Directory: {}", project_dir.display());
+        let producer = Producer::new(Arc::clone(engine_manager), config, &project_dir)?;
+        producer.produce(scenes).await?;
+        tracing::info!("--- 完了: {project_name} ---");
+        anyhow::Ok(())
+    }
+    .await;
+    log_file.set(None);
+    result
 }
 
 async fn run_pipeline(
