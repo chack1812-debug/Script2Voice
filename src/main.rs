@@ -1,13 +1,12 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::Parser;
 use s2v_core::{Config, Scene, ScriptParser};
 use s2v_engines::EngineManager;
 use script2voice::{Producer, build_engine_manager, resolve_config_path};
-use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -23,22 +22,49 @@ struct Cli {
     config: Option<PathBuf>,
 }
 
-/// 実行ログを追記するファイルのパス（project_dir/run.log）を返す。
-fn log_file_path(project_dir: &std::path::Path) -> PathBuf {
-    project_dir.join("run.log")
+/// 現在処理中の台本の run.log を指す差し替え可能なファイルハンドル。
+/// バッチでは subscriber を1つだけ使い回し、台本の境界でこのハンドルを差し替える。
+#[derive(Clone, Default)]
+struct SharedLogFile(Arc<Mutex<Option<std::fs::File>>>);
+
+impl SharedLogFile {
+    /// ファイル出力先を設定する（None でファイル出力を止める）。
+    fn set(&self, file: Option<std::fs::File>) {
+        *self.0.lock().unwrap() = file;
+    }
 }
 
-/// コンソール（stdout）と project_dir/run.log の両方へログを出力する subscriber を初期化する。
-/// 返した WorkerGuard は main 終了まで保持すること（drop でバッファを flush する）。
-fn init_logging(project_dir: &std::path::Path) -> anyhow::Result<WorkerGuard> {
-    let path = log_file_path(project_dir);
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("ログファイルを開けません: {}", path.display()))?;
-    let (file_writer, guard) = tracing_appender::non_blocking(file);
+/// `SharedLogFile` が現在指すファイルへ書き込む Writer。未設定時は破棄する。
+struct SharedLogWriter(Arc<Mutex<Option<std::fs::File>>>);
 
+impl std::io::Write for SharedLogWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let mut guard = self.0.lock().unwrap();
+        match guard.as_mut() {
+            Some(f) => f.write(buf),
+            None => Ok(buf.len()), // 出力先未設定時は破棄
+        }
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        let mut guard = self.0.lock().unwrap();
+        match guard.as_mut() {
+            Some(f) => f.flush(),
+            None => Ok(()),
+        }
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogFile {
+    type Writer = SharedLogWriter;
+    fn make_writer(&'a self) -> Self::Writer {
+        SharedLogWriter(self.0.clone())
+    }
+}
+
+/// コンソール + 差し替え可能ファイルの subscriber をプロセスで1回だけ初期化する。
+/// 返した `SharedLogFile` を台本の境界で `set` してファイル出力先を切り替える。
+fn init_logging() -> SharedLogFile {
+    let shared = SharedLogFile::default();
     let time_format = "%Y-%m-%d %H:%M:%S%.3f".to_string();
 
     let console_layer = fmt::layer()
@@ -47,7 +73,7 @@ fn init_logging(project_dir: &std::path::Path) -> anyhow::Result<WorkerGuard> {
 
     let file_layer = fmt::layer()
         .with_ansi(false)
-        .with_writer(file_writer)
+        .with_writer(shared.clone())
         .with_timer(ChronoLocal::new(time_format))
         .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
 
@@ -56,7 +82,17 @@ fn init_logging(project_dir: &std::path::Path) -> anyhow::Result<WorkerGuard> {
         .with(file_layer)
         .init();
 
-    Ok(guard)
+    shared
+}
+
+/// 台本の出力フォルダに run.log を追記オープンする。
+fn open_run_log(project_dir: &Path) -> anyhow::Result<std::fs::File> {
+    let path = project_dir.join("run.log");
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .with_context(|| format!("ログファイルを開けません: {}", path.display()))
 }
 
 #[tokio::main]
@@ -77,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
         .join(&project_name);
     std::fs::create_dir_all(&project_dir)?;
 
-    let _guard = init_logging(&project_dir)?;
+    let _log_file = init_logging();
 
     tracing::info!("--- Project: {project_name} ---");
     tracing::info!("Output Directory: {}", project_dir.display());
@@ -252,10 +288,36 @@ mod tests {
     }
 
     #[test]
-    fn log_file_path_is_run_log_in_project_dir() {
-        let p = log_file_path(std::path::Path::new("/tmp/proj"));
-        assert_eq!(p.file_name().unwrap(), "run.log");
-        assert_eq!(p.parent().unwrap(), std::path::Path::new("/tmp/proj"));
+    fn shared_log_writer_discards_when_unset_and_writes_when_set() {
+        use std::io::Write;
+        use tracing_subscriber::fmt::MakeWriter;
+
+        let shared = SharedLogFile::default();
+
+        // 未設定: 書いても捨てられ、エラーにならない
+        {
+            let mut w = shared.make_writer();
+            assert!(w.write(b"discarded\n").is_ok());
+        }
+
+        // 設定: ファイルに書かれる
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("run.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap();
+        shared.set(Some(file));
+        {
+            let mut w = shared.make_writer();
+            w.write_all(b"hello-log\n").unwrap();
+            w.flush().unwrap();
+        }
+        shared.set(None);
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("hello-log"));
     }
 
     #[test]
