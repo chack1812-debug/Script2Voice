@@ -228,6 +228,51 @@ fn parse_all(scripts: &[PathBuf]) -> (Vec<(PathBuf, Vec<Scene>)>, Vec<(PathBuf, 
     (parsed, failures)
 }
 
+/// バッチ処理の結果サマリ。
+struct BatchSummary {
+    succeeded: usize,
+    failures: Vec<(PathBuf, String)>,
+}
+
+impl BatchSummary {
+    fn total(&self) -> usize {
+        self.succeeded + self.failures.len()
+    }
+    fn has_failure(&self) -> bool {
+        !self.failures.is_empty()
+    }
+}
+
+/// パース済み台本を順に処理する。各台本の失敗で止めず、`prior_failures`（パース失敗等）に
+/// 積み増してサマリを返す。`process` は1台本ぶんの処理（成功で Ok、失敗で Err）。
+/// テスト容易化のためクロージャ注入にしている。
+async fn run_each<F, Fut>(
+    parsed: Vec<(PathBuf, Vec<Scene>)>,
+    mut prior_failures: Vec<(PathBuf, String)>,
+    process: F,
+) -> BatchSummary
+where
+    F: Fn(PathBuf, Vec<Scene>) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<()>>,
+{
+    let total = parsed.len();
+    let mut succeeded = 0usize;
+    for (i, (path, scenes)) in parsed.into_iter().enumerate() {
+        tracing::info!("[{}/{}] 処理開始: {}", i + 1, total, path.display());
+        match process(path.clone(), scenes).await {
+            Ok(()) => {
+                succeeded += 1;
+                tracing::info!("[{}/{}] 完了: {}", i + 1, total, path.display());
+            }
+            Err(e) => {
+                tracing::error!("処理失敗 {}: {e:#}", path.display());
+                prior_failures.push((path, format!("{e:#}")));
+            }
+        }
+    }
+    BatchSummary { succeeded, failures: prior_failures }
+}
+
 async fn run_pipeline(
     engine_manager: &Arc<EngineManager>,
     required_engines: &HashSet<String>,
@@ -243,6 +288,45 @@ async fn run_pipeline(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn run_each_continues_after_failure_and_counts() {
+        let mut parser = s2v_core::ScriptParser::new();
+        let scenes = parser.parse_str("@scene S\n@script\n").unwrap();
+        let parsed = vec![
+            (PathBuf::from("a.txt"), scenes.clone()),
+            (PathBuf::from("b.txt"), scenes.clone()),
+            (PathBuf::from("c.txt"), scenes.clone()),
+        ];
+
+        let summary = run_each(parsed, Vec::new(), |path, _scenes| async move {
+            if path == PathBuf::from("b.txt") {
+                anyhow::bail!("わざと失敗")
+            } else {
+                Ok(())
+            }
+        })
+        .await;
+
+        assert_eq!(summary.succeeded, 2);
+        assert_eq!(summary.failures.len(), 1);
+        assert_eq!(summary.failures[0].0, PathBuf::from("b.txt"));
+        assert!(summary.has_failure());
+        assert_eq!(summary.total(), 3);
+    }
+
+    #[tokio::test]
+    async fn run_each_keeps_prior_failures() {
+        let summary = run_each(
+            Vec::new(),
+            vec![(PathBuf::from("parsefail.txt"), "パース失敗".to_string())],
+            |_p, _s| async { Ok(()) },
+        )
+        .await;
+        assert_eq!(summary.succeeded, 0);
+        assert_eq!(summary.failures.len(), 1);
+        assert!(summary.has_failure());
+    }
 
     #[test]
     fn parses_script_path_with_no_explicit_config() {
