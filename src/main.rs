@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use clap::Parser;
-use s2v_core::{Config, ScriptParser};
+use s2v_core::{Config, Scene, ScriptParser};
 use s2v_engines::EngineManager;
 use script2voice::{Producer, build_engine_manager, resolve_config_path};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -161,6 +161,19 @@ fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// パース済み全台本から、使用される engine_type の和集合を作る。
+fn required_engines(parsed: &[(PathBuf, Vec<Scene>)]) -> HashSet<String> {
+    let mut set = HashSet::new();
+    for (_, scenes) in parsed {
+        for scene in scenes {
+            for cast in scene.casts.values() {
+                set.insert(cast.engine_type.clone());
+            }
+        }
+    }
+    set
+}
+
 async fn run_pipeline(
     engine_manager: &Arc<EngineManager>,
     required_engines: &HashSet<String>,
@@ -262,5 +275,22 @@ mod tests {
         std::fs::write(dir.path().join("note.md"), "x").unwrap();
         let res = expand_script_args(&[dir.path().to_path_buf()]);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn required_engines_unions_across_scripts() {
+        let mut p1 = s2v_core::ScriptParser::new();
+        let s1 = p1
+            .parse_str("@scene S\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:あ\n")
+            .unwrap();
+        let mut p2 = s2v_core::ScriptParser::new();
+        let s2 = p2
+            .parse_str("@scene S\n@cast\nB:話者:ノーマル,aivis,pan=0\n@script\nB:い\n")
+            .unwrap();
+        let parsed = vec![(PathBuf::from("1.txt"), s1), (PathBuf::from("2.txt"), s2)];
+        let req = required_engines(&parsed);
+        assert!(req.contains("voicevox"));
+        assert!(req.contains("aivis"));
+        assert_eq!(req.len(), 2);
     }
 }
