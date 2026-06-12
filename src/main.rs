@@ -61,6 +61,16 @@ impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for SharedLogFile {
     }
 }
 
+/// `process_one` の間だけ `SharedLogFile` に出力先を束縛し、スコープを抜けるとき
+/// （正常・エラー・パニックいずれでも）出力先を外す RAII ガード。
+struct LogScope<'a>(&'a SharedLogFile);
+
+impl Drop for LogScope<'_> {
+    fn drop(&mut self) {
+        self.0.set(None);
+    }
+}
+
 /// コンソール + 差し替え可能ファイルの subscriber をプロセスで1回だけ初期化する。
 /// 返した `SharedLogFile` を台本の境界で `set` してファイル出力先を切り替える。
 fn init_logging() -> SharedLogFile {
@@ -311,7 +321,8 @@ async fn process_one(
     std::fs::create_dir_all(&project_dir)?;
 
     log_file.set(Some(open_run_log(&project_dir)?));
-    let result = async {
+    let _scope = LogScope(log_file);
+    async {
         tracing::info!("--- Project: {project_name} ---");
         tracing::info!("Output Directory: {}", project_dir.display());
         let producer = Producer::new(Arc::clone(engine_manager), config, &project_dir)?;
@@ -319,9 +330,7 @@ async fn process_one(
         tracing::info!("--- 完了: {project_name} ---");
         anyhow::Ok(())
     }
-    .await;
-    log_file.set(None);
-    result
+    .await
 }
 
 async fn run_pipeline(
