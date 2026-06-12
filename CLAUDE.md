@@ -74,4 +74,28 @@ _Add a brief overview of your project architecture_
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+### 作業開始時にプロジェクトの記録を読み込む（必須）
+
+このプロジェクトで作業を始めるときは、まず **Obsidian と Beads の記録を読み込んで**現状を把握すること。
+コード・git 履歴だけでは分からない「なぜそうしたか」「どこで止まっているか」「過去の失敗・教訓」が
+これらに記録されている。
+
+- **Beads**: `bd ready` / `bd list` / `bd show <id>` / `bd stats` で課題状況を確認。
+  `bd prime` で詳細コンテキスト、`bd memories <keyword>` で永続知識を参照。
+- **Obsidian**（vault: `D:\Obsidianvault\ClaudeMemory\Projects\Script2Voice-Rust版\`）:
+  - 進捗ノート `進捗.md` — マイルストーン・完了内容・設計メモ・ハマりどころ
+  - 教訓ノート `失敗・教訓ログ.md` — 過去の失敗・エラー・「やれば良かったこと」
+  - Obsidian 起動中は `obsidian` CLI（`obsidian read path="..."` 等）で読む。
+
+### 失敗・教訓の記録（必須）
+
+プロジェクトの進行にあたって遭遇した**失敗・バグ・エラー・「やれば良かったこと」**は、
+発生のたびに Obsidian の専用ノートに記録すること。進捗そのものは進捗ノートに、
+うまくいかなかったことと次に活かす学びはこの教訓ノートに分けて蓄積する。
+
+- **記録先（Obsidian vault）**: `D:\Obsidianvault\ClaudeMemory\Projects\Script2Voice-Rust版\失敗・教訓ログ.md`
+  （新しい知見はノート先頭付近に追記）
+- **進捗ノート**: `D:\Obsidianvault\ClaudeMemory\Projects\Script2Voice-Rust版\進捗.md`
+- **1件あたりの記録項目**: ①何が起きたか（症状）②根本原因 ③やれば良かったこと/教訓（次回への一般化）
+  ④関連 Beads / コミット
+- Obsidian 起動中は `obsidian` CLI（append 等）が使える。未起動時は上記パスに直接書き込む。
