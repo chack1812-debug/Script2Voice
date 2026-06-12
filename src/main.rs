@@ -11,6 +11,11 @@ use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
+/// パース済み台本 1 件: (台本パス, シーン列)。
+type ParsedScript = (PathBuf, Vec<Scene>);
+/// 失敗した台本 1 件: (台本パス, 理由)。
+type ScriptFailure = (PathBuf, String);
+
 #[derive(Parser)]
 #[command(name = "script2voice", version, about = "台本から音声・字幕・タイムラインを生成する")]
 struct Cli {
@@ -210,7 +215,7 @@ fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
 }
 
 /// パース済み全台本から、使用される engine_type の和集合を作る。
-fn required_engines(parsed: &[(PathBuf, Vec<Scene>)]) -> HashSet<String> {
+fn required_engines(parsed: &[ParsedScript]) -> HashSet<String> {
     let mut set = HashSet::new();
     for (_, scenes) in parsed {
         for scene in scenes {
@@ -224,7 +229,7 @@ fn required_engines(parsed: &[(PathBuf, Vec<Scene>)]) -> HashSet<String> {
 
 /// 各台本をパースする。失敗しても止めず、成功分と失敗分(パス, 理由)を分けて返す。
 /// （`parse_file` はファイル読み込み/UTF-8 エラー時のみ Err。書式の崩れは警告扱いで Ok。）
-fn parse_all(scripts: &[PathBuf]) -> (Vec<(PathBuf, Vec<Scene>)>, Vec<(PathBuf, String)>) {
+fn parse_all(scripts: &[PathBuf]) -> (Vec<ParsedScript>, Vec<ScriptFailure>) {
     let mut parsed = Vec::new();
     let mut failures = Vec::new();
     for path in scripts {
@@ -243,7 +248,7 @@ fn parse_all(scripts: &[PathBuf]) -> (Vec<(PathBuf, Vec<Scene>)>, Vec<(PathBuf, 
 /// バッチ処理の結果サマリ。
 struct BatchSummary {
     succeeded: usize,
-    failures: Vec<(PathBuf, String)>,
+    failures: Vec<ScriptFailure>,
 }
 
 impl BatchSummary {
@@ -259,8 +264,8 @@ impl BatchSummary {
 /// 積み増してサマリを返す。`process` は1台本ぶんの処理（成功で Ok、失敗で Err）。
 /// テスト容易化のためクロージャ注入にしている。
 async fn run_each<F, Fut>(
-    parsed: Vec<(PathBuf, Vec<Scene>)>,
-    mut prior_failures: Vec<(PathBuf, String)>,
+    parsed: Vec<ParsedScript>,
+    mut prior_failures: Vec<ScriptFailure>,
     mut process: F,
 ) -> BatchSummary
 where
