@@ -290,15 +290,19 @@ where
     BatchSummary { succeeded, failures: prior_failures }
 }
 
-/// 必要エンジンを個別に起動する。1つの失敗で全体を止めず、警告して継続する
+/// 必要エンジンを並行に起動する。1つの失敗で全体を止めず（fail-fast しない）、
+/// 各エンジンの結果を個別に受けて警告し継続する
 /// （起動に失敗したエンジンを使う台本は後段の合成で失敗扱いになる）。
 async fn activate_each(engine_manager: &Arc<EngineManager>, required: &HashSet<String>) {
-    for name in required {
-        let Some(engine) = engine_manager.get(name) else {
+    let tasks = required.iter().filter_map(|name| match engine_manager.get(name) {
+        Some(engine) => Some(async move { (name.as_str(), engine.activate().await) }),
+        None => {
             tracing::warn!("[{name}] 未登録のエンジンが要求されました。スキップします。");
-            continue;
-        };
-        match engine.activate().await {
+            None
+        }
+    });
+    for (name, result) in futures::future::join_all(tasks).await {
+        match result {
             Ok(()) => tracing::info!("[{name}] エンジン起動完了。"),
             Err(e) => tracing::warn!(
                 "[{name}] エンジン起動に失敗しました（このエンジンを使う台本は失敗します）: {e:#}"
