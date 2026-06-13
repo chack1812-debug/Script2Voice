@@ -1,0 +1,40 @@
+@pause
+sentence 300
+cast 300
+paragraph 800
+
+@cast
+めたん:四国めたん:ノーマル,voicevox,pan=0,distance=1.0,volume=1.0
+
+@scene 01_小部屋_基準 room_size=0.1 reverb_wet=1.0
+@script
+めたん:テスト。この部屋の響きを確認します。以上です。
+
+@scene 02_小部屋_残響なし room_size=0.1 reverb_wet=0.0
+@script
+めたん:テスト。この部屋の響きを確認します。以上です。
+
+@scene 03_大ホール room_w=25 room_d=45 room_h=18 reverb_wet=1.0
+@script
+めたん:テスト。この部屋の響きを確認します。以上です。
+
+@scene 04_大ホール_残響強め room_w=25 room_d=45 room_h=18 reverb_wet=2.0
+@script
+めたん:テスト。この部屋の響きを確認します。以上です。
+
+@scene 05_距離比較_大ホール room_w=25 room_d=45 room_h=18 reverb_wet=1.0
+@script
+めたん:距離1メートルから話しています。
+めたん(distance=3.0):距離4メートルから話しています。
+めたん(distance=11.0):距離12メートルから話しています。
+
+@scene 06_定位比較_小部屋 room_size=0.1 reverb_wet=1.0
+@script
+めたん(pan=-30):左30度から話しています。
+めたん:正面から話しています。
+めたん(pan=30):右30度から話しています。
+
+@scene 07_高さ比較_小部屋 room_size=0.1 reverb_wet=1.0
+@script
+めたん(height=-0.9):床の近く、高さ0.3メートルから話しています。
+めたん(height=1.0):高い位置、高さ2.2メートルから話しています。
