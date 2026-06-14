@@ -344,15 +344,42 @@ cargo build --release</code></pre>
 <h2 id="usage">3. 基本操作</h2>
 
 <h3 id="cli">3.1 コマンドラインの使い方</h3>
-<pre><code>script2voice &lt;台本ファイルのパス&gt; [--config &lt;設定ファイルのパス&gt;]</code></pre>
+<pre><code>script2voice &lt;台本ファイル/フォルダ&gt; [&lt;台本ファイル/フォルダ&gt; ...] [--config &lt;設定ファイルのパス&gt;]</code></pre>
+<p>
+  台本は <strong>複数指定でき</strong>、ファイルとフォルダを混在させられます。
+  フォルダを指定すると、その<strong>直下にある <code>.txt</code> ファイル</strong>が
+  <strong>ファイル名の昇順</strong>でまとめて処理対象になります（サブフォルダは辿りません）。
+  同じ台本が重複して指定された場合は1回だけ処理されます。
+</p>
 <table>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
-  <tr><td><code>&lt;台本ファイルのパス&gt;</code>（必須）</td><td>処理対象の台本テキストファイルのパス</td></tr>
+  <tr><td><code>&lt;台本ファイル/フォルダ&gt;</code>（1個以上必須）</td><td>処理対象の台本テキストファイル、または台本（<code>.txt</code>）を格納したフォルダのパス。複数指定・混在可</td></tr>
   <tr><td><code>-c, --config &lt;パス&gt;</code></td><td>設定ファイル (config.toml) のパス。<strong>省略時は実行ファイルと同じフォルダの <code>config.toml</code></strong> が使用される</td></tr>
 </table>
 <p>実行例:</p>
-<pre><code>script2voice .\scripts\episode01.txt
-script2voice .\scripts\episode01.txt --config .\my_config.toml</code></pre>
+<pre><code># 台本を1つ処理（従来どおり）
+script2voice .\scripts\episode01.txt
+script2voice .\scripts\episode01.txt --config .\my_config.toml
+
+# 複数の台本をまとめて処理（バッチ）
+script2voice .\scripts\episode01.txt .\scripts\episode02.txt
+
+# フォルダ内の .txt を名前順に一括処理
+script2voice .\scripts
+
+# ファイルとフォルダの混在も可
+script2voice .\scripts 追加エピソード.txt</code></pre>
+<div class="tip">
+  <strong>複数台本のバッチ処理について</strong><br>
+  複数の台本を指定すると、Script2Voice は<strong>1回の起動で全台本を順番に処理</strong>します。
+  このとき音声合成エンジンは<strong>最初に1度だけ起動</strong>して全台本で使い回し、
+  すべての処理が終わってから停止します。台本ごとにエンジンを起動し直さないため、
+  エンジンの起動待ち（特に AivisSpeech の初回モデルロード）が<strong>バッチ全体で1回だけ</strong>になり、
+  多数の台本を処理するときに大幅に速くなります。<br>
+  途中の台本でエラーが発生しても<strong>処理は中断されず</strong>、残りの台本を最後まで処理します。
+  終了時に<strong>成功・失敗の件数と、失敗した台本名・理由のサマリ</strong>がログに出力されます
+  （失敗が1件でもあれば終了コードは非0になります）。
+</div>
 <p>設定ファイルの探索順序は次の通りです。</p>
 <ol>
   <li><code>--config</code> で明示的に指定したパス（最優先）</li>
@@ -368,6 +395,14 @@ script2voice .\scripts\episode01.txt --config .\my_config.toml</code></pre>
   <li><strong>タイムラインの構築</strong> — <code>@pause</code> の設定や同時発声指示（<code>#数字</code>）に従って、各台詞・BGM・SE の再生開始時刻を計算します。</li>
   <li><strong>各種ファイルの書き出し</strong> — 字幕(SRT)、編集タイムライン(FCPXML)、ミックス済み音声(WAV) を出力します。</li>
 </ol>
+<div class="note">
+  <strong>複数台本を指定した場合</strong>は、上記 1〜6 を<strong>台本ごとに繰り返します</strong>。
+  各台本はそれぞれ自分の名前のプロジェクトフォルダに出力されます。
+  音声合成エンジンの起動確認（手順 3）は<strong>バッチの最初に1回だけ</strong>行い、
+  全台本で必要なエンジン（各台本の <code>@cast</code> で使われているエンジンの和集合）を起動して使い回します。
+  ある台本の解析や処理が失敗しても、その台本を失敗として記録するだけで次の台本に進み、
+  全台本を処理しきってからエンジンを停止し、サマリを出力します。
+</div>
 
 <h3 id="output">3.3 出力されるファイル</h3>
 <p>
@@ -876,8 +911,8 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
 <table>
   <tr><th>症状</th><th>主な原因と対処</th></tr>
   <tr>
-    <td>「台本ファイルが見つかりません」と表示される</td>
-    <td>台本ファイルのパスが間違っています。実行コマンドに渡したパスとファイルの存在を確認してください。</td>
+    <td>「台本パスが見つかりません」「処理対象の台本が見つかりません」と表示される</td>
+    <td>渡した台本ファイル／フォルダのパスが間違っています。コマンドに渡したパスと存在を確認してください。フォルダを指定した場合は、その直下に <code>.txt</code> ファイルがあるか（サブフォルダ内の台本は対象外）も確認してください。</td>
   </tr>
   <tr>
     <td>「キャスト '○○' が未定義です。スキップします。」と表示される</td>
