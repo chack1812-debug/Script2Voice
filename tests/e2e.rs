@@ -44,6 +44,7 @@ paragraph 800
 
 @cast
 めたん:四国めたん:ノーマル,voicevox,pan=-30,distance=1.0,volume=1.0
+
 まい:まい:ノーマル,aivis,pan=30,distance=1.0,volume=1.0
 
 @scene 01_テスト
