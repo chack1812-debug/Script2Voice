@@ -1,6 +1,6 @@
 import json
 
-from scene_map import load_scene_map, resolve_images
+from scene_map import load_scene_map, resolve_assets
 
 
 def test_load_scene_map_reads_json_file(tmp_path):
@@ -17,7 +17,7 @@ def test_load_scene_map_reads_json_file(tmp_path):
     assert scene_map["default_image"] == "images/default.png"
 
 
-def test_resolve_images_maps_index_to_image_path():
+def test_resolve_assets_maps_index_to_image_path_legacy_form():
     scene_map = {
         "paragraphs": [
             {"index": 1, "image": "images/scene01.png"},
@@ -25,19 +25,33 @@ def test_resolve_images_maps_index_to_image_path():
         ],
         "default_image": "images/default.png",
     }
-    assert resolve_images(scene_map, segment_count=2) == [
-        "images/scene01.png",
-        "images/scene02.png",
+    assert resolve_assets(scene_map, segment_count=2) == [
+        {"type": "image", "path": "images/scene01.png"},
+        {"type": "image", "path": "images/scene02.png"},
     ]
 
 
-def test_resolve_images_falls_back_to_default_image_for_missing_index():
+def test_resolve_assets_supports_type_and_path_form_with_video():
+    scene_map = {
+        "paragraphs": [
+            {"index": 1, "type": "video", "path": "assets/p01.mp4"},
+            {"index": 2, "path": "assets/p02.png"},
+        ],
+        "default_image": "assets/default.png",
+    }
+    assert resolve_assets(scene_map, segment_count=2) == [
+        {"type": "video", "path": "assets/p01.mp4"},
+        {"type": "image", "path": "assets/p02.png"},
+    ]
+
+
+def test_resolve_assets_falls_back_to_default_image_for_missing_index():
     scene_map = {
         "paragraphs": [{"index": 1, "image": "images/scene01.png"}],
         "default_image": "images/default.png",
     }
-    assert resolve_images(scene_map, segment_count=3) == [
-        "images/scene01.png",
-        "images/default.png",
-        "images/default.png",
+    assert resolve_assets(scene_map, segment_count=3) == [
+        {"type": "image", "path": "images/scene01.png"},
+        {"type": "image", "path": "images/default.png"},
+        {"type": "image", "path": "images/default.png"},
     ]

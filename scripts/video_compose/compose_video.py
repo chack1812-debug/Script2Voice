@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from ffmpeg_cmd import build_command
-from scene_map import load_scene_map, resolve_images
+from scene_map import load_scene_map, resolve_assets
 from srt_timing import compute_segments, parse_paragraph_markers
 
 
@@ -78,13 +78,16 @@ def main(argv: list[str] | None = None) -> int:
     segments = compute_segments(markers, total_duration)
 
     scene_map = load_scene_map(scene_map_path)
-    images = resolve_images(scene_map, segment_count=len(segments))
+    assets = resolve_assets(scene_map, segment_count=len(segments))
+    for asset in assets:
+        if asset["type"] == "video":
+            asset["source_duration"] = probe_duration_seconds(Path(asset["path"]))
     durations = [end - start for start, end in segments]
 
     burn_subtitle_path = srt_path if args.burn_subtitle else None
     cmd = build_command(
         audio_path=audio_path,
-        images=images,
+        assets=assets,
         durations=durations,
         output_path=output_path,
         burn_subtitle_path=burn_subtitle_path,
