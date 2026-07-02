@@ -92,6 +92,15 @@ impl ScriptParser {
                 "@asset" => self.parse_asset_line(line),
                 "@cast" => {
                     if self.pending_cast_name.is_some() {
+                        if Self::looks_like_cast_definition(line) {
+                            self.warnings.push(ParseWarning {
+                                line_no,
+                                message: format!(
+                                    "キャスト定義行に見える行が自由記述として読み込まれました。前のキャスト定義との間に空行がないか確認してください: {}",
+                                    line
+                                ),
+                            });
+                        }
                         self.pending_cast_appearance.push(line.to_string());
                     } else {
                         self.parse_cast_line(line);
@@ -206,6 +215,16 @@ impl ScriptParser {
         if let Some((k, v)) = line.split_once('=') {
             self.asset_config.insert(k.trim().to_string(), v.trim().to_string());
         }
+    }
+
+    /// 収集中のキャストがある状態で読んだ行が、キャスト定義行の書式
+    /// (`役名:話者名:style,engine,...`、コロン2つ以上・3番目の要素にカンマを含む)に
+    /// 一致するかどうかを判定する。一致する場合、空行区切りの付け忘れによって
+    /// 定義行が自由記述に誤って飲み込まれた可能性が高いため、呼び出し側で
+    /// 警告を出す判定に使う(この判定自体は自由記述として収集する挙動を変えない)。
+    fn looks_like_cast_definition(line: &str) -> bool {
+        let parts: Vec<&str> = line.splitn(3, ':').collect();
+        parts.len() == 3 && parts[2].contains(',')
     }
 
     fn parse_cast_line(&mut self, line: &str) {
@@ -708,6 +727,43 @@ A(pan=15,distance=2):セリフ
         assert_eq!(
             cast_a.appearance.as_deref(),
             Some("B:話者B:ノーマル,voicevox,pan=10")
+        );
+    }
+
+    #[test]
+    fn swallowed_cast_definition_line_produces_warning() {
+        let src = "@cast\n\
+                   A:話者A:ノーマル,voicevox,pan=0\n\
+                   B:話者B:ノーマル,voicevox,pan=10\n\
+                   \n\
+                   @script\n\
+                   A:こんにちは\n";
+        let mut parser = ScriptParser::new();
+        let _ = parser.parse_str(src).unwrap();
+        assert!(
+            parser
+                .warnings()
+                .iter()
+                .any(|w| w.message.contains("B:話者B:ノーマル,voicevox,pan=10")),
+            "expected a warning about the swallowed B definition, got: {:?}",
+            parser.warnings()
+        );
+    }
+
+    #[test]
+    fn genuine_free_text_does_not_produce_swallow_warning() {
+        let src = "@cast\n\
+                   A:話者A:ノーマル,voicevox,pan=0\n\
+                   小柄で緑髪の元気なキャラクター。\n\
+                   \n\
+                   @script\n\
+                   A:こんにちは\n";
+        let mut parser = ScriptParser::new();
+        let _ = parser.parse_str(src).unwrap();
+        assert!(
+            parser.warnings().is_empty(),
+            "genuine free text should not trigger the swallow warning: {:?}",
+            parser.warnings()
         );
     }
 
