@@ -91,6 +91,7 @@ impl LabParams {
             params: HashMap::new(),
             height: Some(self.height),
             height_offset: 0.0,
+            appearance: None,
         }
     }
 

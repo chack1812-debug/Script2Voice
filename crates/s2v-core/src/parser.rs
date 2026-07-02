@@ -193,7 +193,7 @@ impl ScriptParser {
 
         self.casts.insert(
             name.clone(),
-            Cast { name, speaker_name, engine_type, pan, distance, volume, params, height, height_offset: 0.0 },
+            Cast { name, speaker_name, engine_type, pan, distance, volume, params, height, height_offset: 0.0, appearance: None },
         );
     }
 

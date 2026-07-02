@@ -262,6 +262,7 @@ mod tests {
             params: HashMap::new(),
             height: None,
             height_offset: 0.0,
+            appearance: None,
         }
     }
 

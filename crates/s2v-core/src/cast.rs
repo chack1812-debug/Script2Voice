@@ -18,6 +18,10 @@ pub struct Cast {
     /// 行内臨時パラメータで加算される、その行限定の高さオフセット[m]。
     #[serde(default)]
     pub height_offset: f64,
+    /// 役の外見・特徴の自由記述（画像/動画生成プロンプト作成用）。
+    /// 台本の`@cast`セクションで定義行の次に書かれた自由記述行から設定される。
+    #[serde(default)]
+    pub appearance: Option<String>,
 }
 
 impl Cast {
@@ -75,7 +79,21 @@ mod tests {
             },
             height: None,
             height_offset: 0.0,
+            appearance: None,
         }
+    }
+
+    #[test]
+    fn base_cast_has_no_appearance_by_default() {
+        let cast = base_cast();
+        assert_eq!(cast.appearance, None);
+    }
+
+    #[test]
+    fn appearance_field_stores_free_text() {
+        let mut cast = base_cast();
+        cast.appearance = Some("小柄で緑髪の元気なキャラクター。".to_string());
+        assert_eq!(cast.appearance.as_deref(), Some("小柄で緑髪の元気なキャラクター。"));
     }
 
     #[test]

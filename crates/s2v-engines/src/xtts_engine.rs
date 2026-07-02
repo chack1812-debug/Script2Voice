@@ -168,6 +168,7 @@ mod tests {
             params: std::collections::HashMap::new(),
             height: None,
             height_offset: 0.0,
+            appearance: None,
         }
     }
 
