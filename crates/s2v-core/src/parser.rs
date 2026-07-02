@@ -18,6 +18,11 @@ pub struct ScriptParser {
     pause_config: PauseConfig,
     asset_config: HashMap<String, String>,
     warnings: Vec<ParseWarning>,
+    /// `@cast`セクションで定義行を読んだ直後から、空行または次のセクションが来るまでの間、
+    /// 収集中のキャスト名を保持する（自由記述の宛先を追跡するための状態）。
+    pending_cast_name: Option<String>,
+    /// `pending_cast_name`が`Some`の間に集めた自由記述の行（順序どおり）。
+    pending_cast_appearance: Vec<String>,
 }
 
 impl ScriptParser {
@@ -27,6 +32,8 @@ impl ScriptParser {
             pause_config: PauseConfig::default(),
             asset_config: HashMap::new(),
             warnings: Vec::new(),
+            pending_cast_name: None,
+            pending_cast_appearance: Vec::new(),
         }
     }
 
@@ -37,6 +44,8 @@ impl ScriptParser {
 
     pub fn parse_str(&mut self, text: &str) -> anyhow::Result<Vec<Scene>> {
         self.warnings.clear();
+        self.pending_cast_name = None;
+        self.pending_cast_appearance.clear();
         let mut scenes: Vec<Scene> = Vec::new();
         let mut current_scene: Option<Scene> = None;
         let mut section = "";
@@ -45,10 +54,12 @@ impl ScriptParser {
             let line_no = idx + 1;
             let line = line.trim();
             if line.is_empty() {
+                self.flush_pending_cast();
                 continue;
             }
 
             if line.starts_with('@') {
+                self.flush_pending_cast();
                 if line.starts_with("@scene") {
                     if let Some(mut s) = current_scene.take() {
                         s.casts = self.casts.clone();
@@ -79,7 +90,13 @@ impl ScriptParser {
             match section {
                 "@pause" => self.parse_pause_line(line),
                 "@asset" => self.parse_asset_line(line),
-                "@cast" => self.parse_cast_line(line),
+                "@cast" => {
+                    if self.pending_cast_name.is_some() {
+                        self.pending_cast_appearance.push(line.to_string());
+                    } else {
+                        self.parse_cast_line(line);
+                    }
+                }
                 "@script" => {
                     if let Some(ref mut scene) = current_scene {
                         if let Some(item) = self.parse_script_line(line, line_no) {
@@ -90,6 +107,8 @@ impl ScriptParser {
                 _ => {}
             }
         }
+
+        self.flush_pending_cast();
 
         if let Some(mut s) = current_scene {
             s.casts = self.casts.clone();
@@ -108,6 +127,19 @@ impl ScriptParser {
             if let crate::types::ScriptItem::Speech { scene_config, .. } = item {
                 *scene_config = cfg.clone();
             }
+        }
+    }
+
+    /// 収集中のキャストの自由記述をバッファから確定させ、`Cast.appearance`へ書き込む。
+    /// 何も収集していない場合は何もしない(空行・セクション境界のたびに無条件で呼んでよい)。
+    fn flush_pending_cast(&mut self) {
+        if let Some(name) = self.pending_cast_name.take() {
+            if !self.pending_cast_appearance.is_empty() {
+                if let Some(cast) = self.casts.get_mut(&name) {
+                    cast.appearance = Some(self.pending_cast_appearance.join("\n"));
+                }
+            }
+            self.pending_cast_appearance.clear();
         }
     }
 
@@ -191,10 +223,12 @@ impl ScriptParser {
             .collect();
         params.insert("style".to_string(), Value::String(style));
 
+        let cast_key = name.clone();
         self.casts.insert(
-            name.clone(),
+            cast_key.clone(),
             Cast { name, speaker_name, engine_type, pan, distance, volume, params, height, height_offset: 0.0, appearance: None },
         );
+        self.pending_cast_name = Some(cast_key);
     }
 
     fn parse_script_line(&mut self, line: &str, line_no: usize) -> Option<ScriptItem> {
@@ -315,6 +349,7 @@ paragraph 1000
 
 @cast
 ずんだもん:ずんだもん:ノーマル,voicevox,pan=-30,distance=1.0
+
 四国めたん:四国めたん:ノーマル,voicevox,pan=30
 
 @script
@@ -618,5 +653,63 @@ A(pan=15,distance=2):セリフ
         let cast = scenes[0].casts.get("A").unwrap();
         assert_eq!(cast.height, Some(1.7));
         assert!((cast.height_offset - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn cast_appearance_collected_until_blank_line() {
+        let src = "@scene テスト room_size=0.1\n\
+                   @cast\n\
+                   ずんだもん:ずんだもん:ノーマル,voicevox,pan=0\n\
+                   小柄で緑髪の元気なキャラクター。\n\
+                   ずんだ餅のイメージカラーの服を着ている。\n\
+                   \n\
+                   @script\n\
+                   ずんだもん:こんにちは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        let cast = scenes[0].casts.get("ずんだもん").unwrap();
+        assert_eq!(
+            cast.appearance.as_deref(),
+            Some("小柄で緑髪の元気なキャラクター。\nずんだ餅のイメージカラーの服を着ている。")
+        );
+    }
+
+    #[test]
+    fn cast_without_free_text_has_no_appearance() {
+        let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
+        let cast = scenes[0].casts.get("ずんだもん").unwrap();
+        assert_eq!(cast.appearance, None);
+    }
+
+    #[test]
+    fn cast_entries_without_blank_line_separator_merge_into_appearance() {
+        // 空行を挟まないと、次のキャスト定義行が前のキャストの自由記述として飲み込まれる(仕様どおりの制約)
+        let src = "@scene テスト room_size=0.1\n\
+                   @cast\n\
+                   A:話者A:ノーマル,voicevox,pan=0\n\
+                   B:話者B:ノーマル,voicevox,pan=10\n\
+                   \n\
+                   @script\n\
+                   A:こんにちは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        assert!(scenes[0].casts.contains_key("A"));
+        assert!(!scenes[0].casts.contains_key("B"));
+        let cast_a = scenes[0].casts.get("A").unwrap();
+        assert_eq!(
+            cast_a.appearance.as_deref(),
+            Some("B:話者B:ノーマル,voicevox,pan=10")
+        );
+    }
+
+    #[test]
+    fn cast_appearance_flushes_without_trailing_blank_line_before_next_section() {
+        let src = "@scene テスト room_size=0.1\n\
+                   @cast\n\
+                   A:話者A:ノーマル,voicevox,pan=0\n\
+                   眼鏡をかけた青年。\n\
+                   @script\n\
+                   A:こんにちは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        let cast = scenes[0].casts.get("A").unwrap();
+        assert_eq!(cast.appearance.as_deref(), Some("眼鏡をかけた青年。"));
     }
 }
