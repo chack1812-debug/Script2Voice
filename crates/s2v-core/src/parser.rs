@@ -97,6 +97,17 @@ impl ScriptParser {
                         self.parse_cast_line(line);
                     }
                 }
+                "@scene" => {
+                    if let Some(ref mut s) = current_scene {
+                        match s.config.description {
+                            Some(ref mut desc) => {
+                                desc.push('\n');
+                                desc.push_str(line);
+                            }
+                            None => s.config.description = Some(line.to_string()),
+                        }
+                    }
+                }
                 "@script" => {
                     if let Some(ref mut scene) = current_scene {
                         if let Some(item) = self.parse_script_line(line, line_no) {
@@ -711,5 +722,46 @@ A(pan=15,distance=2):セリフ
         let scenes = ScriptParser::new().parse_str(src).unwrap();
         let cast = scenes[0].casts.get("A").unwrap();
         assert_eq!(cast.appearance.as_deref(), Some("眼鏡をかけた青年。"));
+    }
+
+    #[test]
+    fn scene_description_collected_until_next_section() {
+        let src = "@scene 教室 room_size=0.3\n\
+                   放課後の静かな教室。窓から夕日が差し込んでいる。\n\
+                   黒板には日直の名前が書かれている。\n\
+                   @pause\n\
+                   sentence 200\n\
+                   @cast\n\
+                   A:A:ノーマル,voicevox\n\
+                   @script\n\
+                   A:こんにちは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        assert_eq!(
+            scenes[0].config.description.as_deref(),
+            Some("放課後の静かな教室。窓から夕日が差し込んでいる。\n黒板には日直の名前が書かれている。")
+        );
+    }
+
+    #[test]
+    fn scene_without_free_text_has_no_description() {
+        let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
+        assert_eq!(scenes[0].config.description, None);
+    }
+
+    #[test]
+    fn scene_description_ignores_blank_lines_within_block() {
+        let src = "@scene 教室 room_size=0.3\n\
+                   一行目の描写。\n\
+                   \n\
+                   二行目の描写。\n\
+                   @cast\n\
+                   A:A:ノーマル,voicevox\n\
+                   @script\n\
+                   A:こんにちは\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        assert_eq!(
+            scenes[0].config.description.as_deref(),
+            Some("一行目の描写。\n二行目の描写。")
+        );
     }
 }
