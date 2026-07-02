@@ -26,6 +26,10 @@ pub struct SceneConfig {
     /// 聴取者(マイクペア中心)の床面からの絶対高さ[m]。省略時は config の ear_height。
     #[serde(default)]
     pub listener_z: Option<f64>,
+    /// 場面の情景・雰囲気の自由記述（画像/動画生成プロンプト作成用）。
+    /// 台本の`@scene`ヘッダー行の後に書かれた自由記述行から設定される。
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 impl SceneConfig {
@@ -40,6 +44,7 @@ impl SceneConfig {
             listener_dx: None,
             listener_dy: None,
             listener_z: None,
+            description: None,
         }
     }
 }
@@ -118,12 +123,19 @@ mod tests {
         assert_eq!(sc.listener_dx, None);
         assert_eq!(sc.listener_dy, None);
         assert_eq!(sc.listener_z, None);
+        assert_eq!(sc.description, None);
     }
 
     #[test]
     fn scene_config_custom_values() {
         let sc = SceneConfig { room_size: Some(0.8), reverb_wet: Some(0.3), ..SceneConfig::new("広場") };
         assert_eq!(sc.room_size, Some(0.8));
+    }
+
+    #[test]
+    fn scene_config_can_hold_description() {
+        let sc = SceneConfig { description: Some("放課後の静かな教室。".to_string()), ..SceneConfig::new("教室") };
+        assert_eq!(sc.description.as_deref(), Some("放課後の静かな教室。"));
     }
 
     #[test]
