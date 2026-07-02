@@ -9,7 +9,9 @@ se_dir = ./assets/se
 
 @cast
 司会:ずんだもん:ノーマル,voicevox,pan=-25,distance=0.5,volumeScale=1.0
+
 解説:四国めたん:ノーマル,voicevox,pan=25,distance=0.5,volumeScale=1.0
+
 開発者:阿井田 茂:ノーマル,aivis,pan=70,distance=2.0,volumeScale=1.0
 
 @scene 01_オープニング room_w=24 room_d=40 room_h=15 listener_dx=0 listener_dy=15 listener_z=3.0 reverb_wet=0.45
