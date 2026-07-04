@@ -77,6 +77,18 @@ def test_build_command_uses_libx264_crf18_and_shortest_for_high_quality_output()
     assert cmd[-1] == "out.mp4"
 
 
+def test_build_command_forces_yuv420p_and_faststart_for_player_compatibility():
+    cmd = build_command(
+        audio_path=Path("a.wav"),
+        assets=[_image("s1.png")],
+        durations=[5.0],
+        output_path=Path("out.mp4"),
+    )
+    assert cmd[cmd.index("-pix_fmt") + 1] == "yuv420p"
+    assert "-movflags" in cmd
+    assert cmd[cmd.index("-movflags") + 1] == "+faststart"
+
+
 def test_build_command_raises_when_assets_and_durations_length_mismatch():
     with pytest.raises(ValueError):
         build_command(

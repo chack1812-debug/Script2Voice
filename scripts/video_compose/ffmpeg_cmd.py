@@ -73,6 +73,7 @@ def build_command(
 
     cmd += ["-filter_complex", ";".join(filter_parts)]
     cmd += ["-map", final_video_label, "-map", "0:a"]
-    cmd += ["-c:v", "libx264", "-crf", str(crf), "-c:a", "aac", "-shortest"]
+    cmd += ["-c:v", "libx264", "-crf", str(crf), "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest"]
+    cmd += ["-movflags", "+faststart"]
     cmd += [str(output_path)]
     return cmd
