@@ -116,4 +116,13 @@ mod tests {
         let e = compute_segments(&[0.0, 5.0], 10.0).unwrap_err();
         assert!(e.to_string().contains("単調増加"));
     }
+
+    #[test]
+    fn parse_handles_crlf_line_endings() {
+        // 本プロジェクトは Windows/CRLF 環境。正規表現の \r?\n 分岐を検証する。
+        let srt = "1\r\n00:00:00,000 --> 00:00:01,500\r\nこんにちは\r\n\r\n\
+                   2\r\n00:00:01,500 --> 00:00:01,500\r\n[PARAGRAPH]\r\n\r\n\
+                   3\r\n00:01:05,250 --> 00:01:05,250\r\n[PARAGRAPH]\r\n\r\n";
+        assert_eq!(parse_paragraph_markers(srt), vec![1.5, 65.25]);
+    }
 }

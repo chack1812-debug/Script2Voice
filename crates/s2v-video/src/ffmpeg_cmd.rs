@@ -237,4 +237,29 @@ mod tests {
         let cmd = build_command(Path::new("a.wav"), &[img("s1.png"), vid("assets/p02.mp4", 8.0)], &[1.0, 2.0], Path::new("out.mp4"), None).unwrap();
         assert!(filter_of(&cmd).contains("[v1][v2]concat=n=2:v=1:a=0[vout]"));
     }
+
+    #[test]
+    fn escapes_windows_drive_letter_colon_in_subtitle_path() {
+        // 名指しのグローバル制約: Windowsドライブレターのコロンをエスケープする
+        // (バックスラッシュ→/、コロン→\: 、単一引用符包み)。文字列処理なので全プラットフォームで同一。
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png")],
+            &[5.0],
+            Path::new("out.mp4"),
+            Some(Path::new(r"C:\proj\timeline\subtitles.srt")),
+        )
+        .unwrap();
+        let f = filter_of(&cmd);
+        assert!(
+            f.contains(r"subtitles='C\:/proj/timeline/subtitles.srt'"),
+            "escaped subtitles path が不正: {f}"
+        );
+    }
+
+    #[test]
+    fn errors_on_empty_assets() {
+        let e = build_command(Path::new("a.wav"), &[], &[], Path::new("out.mp4"), None).unwrap_err();
+        assert!(e.to_string().contains("空"));
+    }
 }
