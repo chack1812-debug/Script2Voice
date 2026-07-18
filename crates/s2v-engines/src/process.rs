@@ -27,6 +27,7 @@ pub(crate) struct EngineProcess {
 pub(crate) async fn ensure_running<F, Fut>(
     name: &str,
     exe_path: Option<&str>,
+    args: &[String],
     timeout: Duration,
     process: &Mutex<Option<EngineProcess>>,
     is_alive: F,
@@ -43,19 +44,25 @@ where
     let path = exe_path.ok_or_else(|| {
         anyhow::anyhow!("{name}: サーバーに接続できず、exe_path も未設定のため起動できません")
     })?;
-    if !std::path::Path::new(path).exists() {
-        anyhow::bail!("{name}: 実行ファイルが見つかりません: {path}");
-    }
 
     let job = EngineJob::new()
         .map_err(|e| anyhow::anyhow!("{name}: Job Object の作成に失敗しました: {e}"))?;
 
-    info!("[{name}] 起動を確認できません。プロセスを起動します: {path}");
+    info!("[{name}] 起動を確認できません。プロセスを起動します: {path} {}", args.join(" "));
+    // `path` は絶対パス（実行ファイル）と PATH 上のコマンド名（例: "python"）の両方を許容する。
+    // 事前の存在チェックはせず、OS の解決結果を spawn() のエラーでそのまま扱う。
     let child = Command::new(path)
+        .args(args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| anyhow::anyhow!("{name}: プロセスの起動に失敗しました: {e}"))?;
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("{name}: 実行ファイルが見つかりません: {path}")
+            } else {
+                anyhow::anyhow!("{name}: プロセスの起動に失敗しました: {e}")
+            }
+        })?;
 
     if let Err(e) = job.assign(&child) {
         warn!(
@@ -133,7 +140,7 @@ mod tests {
 
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
-        ensure_running("test", launcher.to_str(), Duration::from_secs(30), &process, move || {
+        ensure_running("test", launcher.to_str(), &[], Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })
@@ -170,7 +177,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls2 = Arc::clone(&calls);
 
-        ensure_running("test", None, Duration::from_secs(30), &process, move || {
+        ensure_running("test", None, &[], Duration::from_secs(30), &process, move || {
             calls2.fetch_add(1, Ordering::SeqCst);
             async { true }
         })
@@ -185,7 +192,7 @@ mod tests {
     async fn ensure_running_errors_when_not_alive_and_no_exe_path() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", None, Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running("test", None, &[], Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
     }
@@ -194,10 +201,36 @@ mod tests {
     async fn ensure_running_errors_when_exe_path_does_not_exist() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", Some("C:/no/such/engine.exe"), Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running("test", Some("C:/no/such/engine.exe"), &[], Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
         assert!(process.lock().unwrap().is_none());
+    }
+
+    /// XTTS の同梱設定は `exe_path = "python"` のように PATH 上のコマンド名だけを指定し、
+    /// 実引数は `args` で渡す想定。"python" は cwd 相対の実在ファイルではないため、
+    /// 単純な `Path::new(path).exists()` 判定では常に「見つからない」扱いになってしまう
+    /// （これが実際の同梱 config.toml の起動失敗の原因だった）。
+    #[tokio::test]
+    async fn ensure_running_spawns_path_resolved_command_with_args() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = write_marker_script(dir.path());
+        let marker = dir.path().join("marker.txt");
+        assert!(!marker.exists());
+
+        let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
+        let marker_for_check = marker.clone();
+        let args = vec!["/c".to_string(), script.to_str().unwrap().to_string()];
+
+        ensure_running("test", Some("cmd"), &args, Duration::from_secs(30), &process, move || {
+            let marker = marker_for_check.clone();
+            async move { marker.exists() }
+        })
+        .await
+        .unwrap();
+
+        assert!(marker.exists(), "PATH解決コマンド('cmd')にargsを渡して起動できること");
+        terminate_process("test", &process);
     }
 
     #[tokio::test]
@@ -210,7 +243,7 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
 
-        ensure_running("test", script.to_str(), Duration::from_secs(30), &process, move || {
+        ensure_running("test", script.to_str(), &[], Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })

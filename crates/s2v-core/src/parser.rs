@@ -43,6 +43,12 @@ impl ScriptParser {
     }
 
     pub fn parse_str(&mut self, text: &str) -> anyhow::Result<Vec<Scene>> {
+        // 台本固有の状態を全消去する。casts/pause_config/asset_configは
+        // 同一パース内ではシーンをまたいで引き継がれる仕様だが、
+        // 別の台本(parse_strの再呼び出し)に持ち越してはいけない。
+        self.casts.clear();
+        self.pause_config = PauseConfig::default();
+        self.asset_config.clear();
         self.warnings.clear();
         self.pending_cast_name = None;
         self.pending_cast_appearance.clear();
@@ -648,6 +654,31 @@ A(pan=15,distance=2):セリフ
         assert_eq!(sc.listener_z, Some(1.1));
         let sc2 = p.parse_scene_header("小部屋 room_size=0.1");
         assert_eq!(sc2.listener_z, None);
+    }
+
+    #[test]
+    fn reusing_parser_across_scripts_does_not_leak_casts_or_pause_config() {
+        let mut parser = ScriptParser::new();
+        let _ = parser.parse_str(SIMPLE_SCRIPT).unwrap(); // ずんだもん/四国めたんを定義, pause 200/500/1000
+
+        let second_script = "@scene 別の台本\n@script\nずんだもん:これは前の台本のキャストのはず\n";
+        let scenes = parser.parse_str(second_script).unwrap();
+
+        // 前の台本のキャストが漏れて有効な話者として扱われてはいけない
+        let speeches: Vec<_> = scenes[0].items.iter()
+            .filter(|i| matches!(i, ScriptItem::Speech { .. }))
+            .collect();
+        assert_eq!(speeches.len(), 0, "前の台本のキャストが引き継がれてはいけない");
+        assert!(
+            parser.warnings().iter().any(|w| w.message.contains("ずんだもん")),
+            "未定義キャストとして警告が出るべき: {:?}", parser.warnings()
+        );
+
+        // pause_configも既定値(500/300/1500)に戻っているべき(前の台本は200/500/1000)
+        let pc = &scenes[0].pause_config;
+        assert!((pc.sentence_ms - 500.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.sentence_ms);
+        assert!((pc.cast_ms - 300.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.cast_ms);
+        assert!((pc.paragraph_ms - 1500.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.paragraph_ms);
     }
 
     #[test]

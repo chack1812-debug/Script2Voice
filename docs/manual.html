@@ -283,7 +283,8 @@ cargo build --release</code></pre>
     <td>XTTS (Coqui TTS)</td>
     <td><code>xtts</code></td>
     <td><code>http://localhost:8020</code></td>
-    <td><code>python -m xtts_api_server --port 8020 --lowvram --model-version v2.0.2 --speaker-folder ./assets/speakers</code></td>
+    <td><code>python -m xtts_api_server --port 8020 --lowvram --model-version v2.0.2 --speaker-folder ./assets/speakers</code>
+      （<code>exe_path</code>/<code>args</code> で自動起動する場合は次項参照）</td>
   </tr>
 </table>
 <p>
@@ -305,12 +306,28 @@ cargo build --release</code></pre>
   <tr>
     <td><code>[voicevox] / [aivis] / [xtts] exe_path</code></td>
     <td>
-      （省略可）各エンジンの実行ファイルのパス。指定すると、未起動時に
-      Script2Voice が自動的に起動し、終了時に自動的に停止します
+      （省略可）各エンジンの実行ファイルのパス。絶対パス（例: VOICEVOX/AivisSpeech の
+      <code>run.exe</code>）と、PATH 上のコマンド名（例: <code>"python"</code>）の
+      どちらも指定できます。指定すると、未起動時に Script2Voice が自動的に起動し、
+      終了時に自動的に停止します
       （例: <code>exe_path = "C:\\VOICEVOX\\run.exe"</code>。
       TOML 内ではバックスラッシュを <code>\\</code> と二重に書くか、
       <code>'C:\VOICEVOX\run.exe'</code> のようにシングルクォートで囲みます）。
       省略した場合は、これまで通り事前に手動で起動しておく必要があります。
+    </td>
+  </tr>
+  <tr>
+    <td><code>[voicevox] / [aivis] / [xtts] args</code></td>
+    <td>
+      （省略可、既定は空配列）<code>exe_path</code> に渡す引数。
+      コマンドライン全体を1つの文字列に詰め込まず、トークンごとに配列要素として
+      分けてください。この形式ならパスに空白を含んでいてもクォート不要です
+      （例: XTTS を <code>python -m xtts_api_server --port 8020</code> で
+      起動する場合は次の通り）。
+      <pre>[xtts]
+url = "http://localhost:8020"
+exe_path = "python"
+args = ["-m", "xtts_api_server", "--port", "8020"]</pre>
     </td>
   </tr>
   <tr><td><code>[audio] sample_rate</code></td><td>出力音声のサンプリングレート (Hz)</td></tr>
@@ -323,8 +340,13 @@ cargo build --release</code></pre>
   <tr><td><code>[audio] mic_directivity / mic_angle</code></td><td>仮想マイクの指向性の強さと向き（外開き ORTF 配置）。値が大きいほど定位の広がりが強くなる</td></tr>
   <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照</td></tr>
   <tr><td><code>[audio.engine_volume_offsets]</code></td><td>エンジンごとの音量補正係数 (例: <code>voicevox = 1.2</code>)</td></tr>
-  <tr><td><code>[concurrency]</code></td><td>エンジンごとの同時合成数、音響処理の並列数（<code>0</code> = CPU コア数を自動使用）</td></tr>
+  <tr><td><code>[concurrency]</code></td><td>エンジンごとの同時合成数、音響処理の並列数（<code>0</code> = CPU コア数を自動使用）。
+    ただし XTTS はエンジン側がリクエスト単位ではなくグローバルな音声設定APIしか持たないため、
+    <code>xtts</code> の値に関わらず「設定更新→合成」は内部的に1台詞ずつ直列実行されます
+    （他の台詞の設定が混入するのを防ぐため）。</td></tr>
   <tr><td><code>[bgm] crossfade_s / se_fade_out_s</code></td><td>BGM のクロスフェード秒数、SE のフェードアウト秒数</td></tr>
+  <tr><td><code>[http] connect_timeout_s / request_timeout_s</code></td><td>（省略可、既定 10秒 / 180秒）エンジンへのHTTPリクエスト（バージョン確認・スピーカー一覧取得・音声合成）のタイムアウト。エンジンが接続だけ受け付けて応答しない場合に台詞の処理が無期限に待機するのを防ぐ</td></tr>
+  <tr><td><code>[export] fcpxml_2997fps</code></td><td>（省略可、既定 <code>false</code> = 30fps）FCPXMLを29.97fps(NTSCドロップフレーム相当)で出力するか。字幕ズレ調査により、SRT/WAVとの時間基準を合わせるには30fpsが正しいことが確定している。29.97fps前提の編集環境にのみ<code>true</code>にする</td></tr>
 </table>
 <div class="note">
   config.toml はプロジェクトルートに同梱のサンプル（<code>config.toml</code>）をコピーして、
@@ -355,6 +377,7 @@ cargo build --release</code></pre>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
   <tr><td><code>&lt;台本ファイル/フォルダ&gt;</code>（1個以上必須）</td><td>処理対象の台本テキストファイル、または台本（<code>.txt</code>）を格納したフォルダのパス。複数指定・混在可</td></tr>
   <tr><td><code>-c, --config &lt;パス&gt;</code></td><td>設定ファイル (config.toml) のパス。<strong>省略時は実行ファイルと同じフォルダの <code>config.toml</code></strong> が使用される</td></tr>
+  <tr><td><code>--strict</code></td><td>パース警告（未定義キャストの台詞や、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）が1件でもある台本を、その場で失敗として扱う。省略時は警告をコンソールと <code>run.log</code> に出力したうえで処理を続行する（台詞が静かに欠落する事態を避けたい場合に指定する）</td></tr>
 </table>
 <p>実行例:</p>
 <pre><code># 台本を1つ処理（従来どおり）

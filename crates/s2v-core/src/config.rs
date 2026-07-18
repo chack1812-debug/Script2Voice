@@ -11,14 +11,59 @@ pub struct Config {
     pub audio: AudioConfig,
     pub concurrency: ConcurrencyConfig,
     pub bgm: BgmConfig,
+    /// HTTPエンジン呼び出し(version/speakers/音声合成)のタイムアウト設定（省略可、既定値あり）。
+    #[serde(default)]
+    pub http: HttpConfig,
+    /// エクスポート形式の設定（省略可、既定値あり）。
+    #[serde(default)]
+    pub export: ExportConfig,
+}
+
+/// エクスポート（FCPXML等）に関する設定。
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ExportConfig {
+    /// FCPXMLを29.97fps(NTSCドロップフレーム相当)で出力するか（既定 false = 30fps）。
+    /// 字幕ズレ調査(Obsidian記録)により、SRT/WAVとの時間基準を合わせるには30fpsが正しいことが
+    /// 確定している。29.97fps前提の案件でのみ true にする。
+    #[serde(default)]
+    pub fcpxml_2997fps: bool,
+}
+
+/// エンジンへのHTTPリクエストのタイムアウト設定。
+/// 未設定の場合、エンジンが応答を返さないまま接続だけ握り続けると
+/// 1台詞の処理が無期限に待機してしまう（バッチ全体も終了しない）ため、既定値を必ず持つ。
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct HttpConfig {
+    #[serde(default = "default_connect_timeout_s")]
+    pub connect_timeout_s: u64,
+    #[serde(default = "default_request_timeout_s")]
+    pub request_timeout_s: u64,
+}
+
+fn default_connect_timeout_s() -> u64 { 10 }
+fn default_request_timeout_s() -> u64 { 180 }
+
+impl Default for HttpConfig {
+    fn default() -> Self {
+        Self {
+            connect_timeout_s: default_connect_timeout_s(),
+            request_timeout_s: default_request_timeout_s(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EngineUrl {
     pub url: String,
-    /// 未起動時に自動起動する実行ファイルのパス（省略可）
+    /// 未起動時に自動起動する実行ファイルのパス（省略可）。
+    /// 絶対パス（例: "C:/VOICEVOX/run.exe"）と、PATH上のコマンド名（例: "python"）の両方を指定できる。
     #[serde(default)]
     pub exe_path: Option<String>,
+    /// `exe_path` に渡す引数（省略可、既定は空）。
+    /// 例: XTTS を `python -m xtts_api_server --port 8020` で起動する場合、
+    /// `exe_path = "python"`、`args = ["-m", "xtts_api_server", "--port", "8020"]` のように分離する。
+    #[serde(default)]
+    pub args: Vec<String>,
     /// 自動起動の待機秒数（省略時は既定 60 秒）。モデルロードが遅い場合に増やす。
     #[serde(default)]
     pub startup_timeout_s: Option<u64>,
@@ -205,6 +250,53 @@ se_fade_out_s = 0.05
         );
         let cfg = Config::from_toml(&toml_with_exe).unwrap();
         assert_eq!(cfg.voicevox.exe_path.as_deref(), Some("C:\\VOICEVOX\\run.exe"));
+    }
+
+    #[test]
+    fn args_is_optional_and_defaults_to_empty() {
+        let cfg = Config::from_toml(SAMPLE_TOML).unwrap();
+        assert!(cfg.voicevox.args.is_empty());
+    }
+
+    #[test]
+    fn parses_args_when_present() {
+        // XTTS のように exe_path を PATH 上のコマンド名にし、実引数を args に分離する形式。
+        let toml_with_args = SAMPLE_TOML.replacen(
+            r#"url = "http://localhost:8020""#,
+            "url = \"http://localhost:8020\"\nexe_path = \"python\"\nargs = [\"-m\", \"xtts_api_server\", \"--port\", \"8020\"]",
+            1,
+        );
+        let cfg = Config::from_toml(&toml_with_args).unwrap();
+        assert_eq!(cfg.xtts.exe_path.as_deref(), Some("python"));
+        assert_eq!(cfg.xtts.args, vec!["-m", "xtts_api_server", "--port", "8020"]);
+    }
+
+    #[test]
+    fn http_config_is_optional_and_has_sane_defaults() {
+        let cfg = Config::from_toml(SAMPLE_TOML).unwrap();
+        assert_eq!(cfg.http.connect_timeout_s, 10);
+        assert_eq!(cfg.http.request_timeout_s, 180);
+    }
+
+    #[test]
+    fn http_config_can_be_overridden() {
+        let toml_with_http = format!("{SAMPLE_TOML}\n[http]\nconnect_timeout_s = 3\nrequest_timeout_s = 20\n");
+        let cfg = Config::from_toml(&toml_with_http).unwrap();
+        assert_eq!(cfg.http.connect_timeout_s, 3);
+        assert_eq!(cfg.http.request_timeout_s, 20);
+    }
+
+    #[test]
+    fn export_config_defaults_to_30fps() {
+        let cfg = Config::from_toml(SAMPLE_TOML).unwrap();
+        assert!(!cfg.export.fcpxml_2997fps);
+    }
+
+    #[test]
+    fn export_config_can_opt_into_2997fps() {
+        let toml_with_export = format!("{SAMPLE_TOML}\n[export]\nfcpxml_2997fps = true\n");
+        let cfg = Config::from_toml(&toml_with_export).unwrap();
+        assert!(cfg.export.fcpxml_2997fps);
     }
 
     #[test]

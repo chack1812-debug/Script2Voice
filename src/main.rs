@@ -4,15 +4,15 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use clap::Parser;
-use s2v_core::{Config, Scene, ScriptParser};
+use s2v_core::{Config, ParseWarning, Scene, ScriptParser};
 use s2v_engines::EngineManager;
 use script2voice::{build_engine_manager, resolve_config_path, Producer};
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 
-/// パース済み台本 1 件: (台本パス, シーン列)。
-type ParsedScript = (PathBuf, Vec<Scene>);
+/// パース済み台本 1 件: (台本パス, シーン列, パース警告)。
+type ParsedScript = (PathBuf, Vec<Scene>, Vec<ParseWarning>);
 /// 失敗した台本 1 件: (台本パス, 理由)。
 type ScriptFailure = (PathBuf, String);
 
@@ -26,6 +26,10 @@ struct Cli {
     /// 設定ファイル (config.toml) のパス。省略時は実行ファイルと同じディレクトリの config.toml を使用する
     #[arg(short, long)]
     config: Option<PathBuf>,
+
+    /// パース警告(未定義キャストの飲み込みなど)が1件でもある台本を失敗として扱う
+    #[arg(long)]
+    strict: bool,
 }
 
 /// 現在処理中の台本の run.log を指す差し替え可能なファイルハンドル。
@@ -126,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
         .with_context(|| format!("設定ファイルの読み込みに失敗しました: {}", config_path.display()))?;
 
     // 事前パース（失敗は継続）
-    let (parsed, parse_failures) = parse_all(&scripts);
+    let (parsed, parse_failures) = parse_all(&scripts, cli.strict);
 
     // 必要エンジンを1回だけ起動（失敗は継続）
     let required = required_engines(&parsed);
@@ -141,8 +145,8 @@ async fn main() -> anyhow::Result<()> {
     let config_ref = &config;
     let em_ref = &engine_manager;
     let log_ref = &log_file;
-    let summary = run_each(parsed, parse_failures, |path, scenes| async move {
-        process_one(&path, &scenes, config_ref, em_ref, log_ref).await
+    let summary = run_each(parsed, parse_failures, |path, scenes, warnings| async move {
+        process_one(&path, &scenes, &warnings, config_ref, em_ref, log_ref).await
     })
     .await;
 
@@ -217,7 +221,7 @@ fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
 /// パース済み全台本から、使用される engine_type の和集合を作る。
 fn required_engines(parsed: &[ParsedScript]) -> HashSet<String> {
     let mut set = HashSet::new();
-    for (_, scenes) in parsed {
+    for (_, scenes, _) in parsed {
         for scene in scenes {
             for cast in scene.casts.values() {
                 set.insert(cast.engine_type.clone());
@@ -229,13 +233,28 @@ fn required_engines(parsed: &[ParsedScript]) -> HashSet<String> {
 
 /// 各台本をパースする。失敗しても止めず、成功分と失敗分(パス, 理由)を分けて返す。
 /// （`parse_file` はファイル読み込み/UTF-8 エラー時のみ Err。書式の崩れは警告扱いで Ok。）
-fn parse_all(scripts: &[PathBuf]) -> (Vec<ParsedScript>, Vec<ScriptFailure>) {
+///
+/// `strict` が true の場合、パース警告(未定義キャストの飲み込みなど)が1件でもあれば
+/// その台本を成功扱いにせず失敗へ回す（既定は警告を出すだけで処理を続行する）。
+fn parse_all(scripts: &[PathBuf], strict: bool) -> (Vec<ParsedScript>, Vec<ScriptFailure>) {
     let mut parsed = Vec::new();
     let mut failures = Vec::new();
     for path in scripts {
         let mut parser = ScriptParser::new();
         match parser.parse_file(path) {
-            Ok(scenes) => parsed.push((path.clone(), scenes)),
+            Ok(scenes) => {
+                let warnings = parser.warnings().to_vec();
+                if strict && !warnings.is_empty() {
+                    let detail = warnings.iter()
+                        .map(|w| format!("{}行目: {}", w.line_no, w.message))
+                        .collect::<Vec<_>>()
+                        .join(" / ");
+                    tracing::error!("strictモードのためパース警告を失敗として扱います {}: {detail}", path.display());
+                    failures.push((path.clone(), format!("strict: パース警告あり ({detail})")));
+                } else {
+                    parsed.push((path.clone(), scenes, warnings));
+                }
+            }
             Err(e) => {
                 tracing::error!("パース失敗 {}: {e:#}", path.display());
                 failures.push((path.clone(), format!("パース失敗: {e:#}")));
@@ -269,14 +288,14 @@ async fn run_each<F, Fut>(
     mut process: F,
 ) -> BatchSummary
 where
-    F: FnMut(PathBuf, Vec<Scene>) -> Fut,
+    F: FnMut(PathBuf, Vec<Scene>, Vec<ParseWarning>) -> Fut,
     Fut: std::future::Future<Output = anyhow::Result<()>>,
 {
     let total = parsed.len();
     let mut succeeded = 0usize;
-    for (i, (path, scenes)) in parsed.into_iter().enumerate() {
+    for (i, (path, scenes, warnings)) in parsed.into_iter().enumerate() {
         tracing::info!("[{}/{}] 処理開始: {}", i + 1, total, path.display());
-        match process(path.clone(), scenes).await {
+        match process(path.clone(), scenes, warnings).await {
             Ok(()) => {
                 succeeded += 1;
                 tracing::info!("[{}/{}] 完了: {}", i + 1, total, path.display());
@@ -313,9 +332,12 @@ async fn activate_each(engine_manager: &Arc<EngineManager>, required: &HashSet<S
 
 /// 1台本を処理する。出力フォルダ（台本名）を決め、その run.log にログを向けてから
 /// 既存 `Producer` を実行する。ログ出力先は処理後に必ず外す。
+/// `warnings` はパース時の非致命的な警告で、run.log と同じログスコープ内で出力する
+/// （警告を見逃すと、飲み込まれた台詞が静かに欠落する）。
 async fn process_one(
     script_path: &Path,
     scenes: &[Scene],
+    warnings: &[ParseWarning],
     config: &Config,
     engine_manager: &Arc<EngineManager>,
     log_file: &SharedLogFile,
@@ -336,6 +358,9 @@ async fn process_one(
     async {
         tracing::info!("--- Project: {project_name} ---");
         tracing::info!("Output Directory: {}", project_dir.display());
+        for w in warnings {
+            tracing::warn!("パース警告 [{}行目]: {}", w.line_no, w.message);
+        }
         let producer = Producer::new(Arc::clone(engine_manager), config, &project_dir)?;
         producer.produce(scenes).await?;
         tracing::info!("--- 完了: {project_name} ---");
@@ -353,12 +378,12 @@ mod tests {
         let mut parser = s2v_core::ScriptParser::new();
         let scenes = parser.parse_str("@scene S\n@script\n").unwrap();
         let parsed = vec![
-            (PathBuf::from("a.txt"), scenes.clone()),
-            (PathBuf::from("b.txt"), scenes.clone()),
-            (PathBuf::from("c.txt"), scenes.clone()),
+            (PathBuf::from("a.txt"), scenes.clone(), Vec::new()),
+            (PathBuf::from("b.txt"), scenes.clone(), Vec::new()),
+            (PathBuf::from("c.txt"), scenes.clone(), Vec::new()),
         ];
 
-        let summary = run_each(parsed, Vec::new(), |path, _scenes| async move {
+        let summary = run_each(parsed, Vec::new(), |path, _scenes, _warnings| async move {
             if path == PathBuf::from("b.txt") {
                 anyhow::bail!("わざと失敗")
             } else {
@@ -379,7 +404,7 @@ mod tests {
         let summary = run_each(
             Vec::new(),
             vec![(PathBuf::from("parsefail.txt"), "パース失敗".to_string())],
-            |_p, _s| async { Ok(()) },
+            |_p, _s, _w| async { Ok(()) },
         )
         .await;
         assert_eq!(summary.succeeded, 0);
@@ -512,11 +537,55 @@ mod tests {
         let bad = dir.path().join("bad.txt");
         std::fs::write(&bad, [0xff, 0xfe, 0x00, 0x01]).unwrap(); // 不正UTF-8 → read_to_string失敗
 
-        let (parsed, failures) = parse_all(&[good.clone(), bad.clone()]);
+        let (parsed, failures) = parse_all(&[good.clone(), bad.clone()], false);
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].0, good);
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].0, bad);
+    }
+
+    /// 未定義キャストの台詞は従来どおりパース自体は成功するが、
+    /// CUIが警告を握りつぶしていると台詞が静かに欠落する(review.txt指摘)。
+    fn write_script_with_unknown_cast_warning(dir: &std::path::Path) -> PathBuf {
+        let path = dir.join("warns.txt");
+        std::fs::write(
+            &path,
+            "@scene S\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n誰か:こんばんは\n",
+        )
+        .unwrap();
+        path
+    }
+
+    #[test]
+    fn parse_all_collects_warnings_but_still_succeeds_without_strict() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_script_with_unknown_cast_warning(dir.path());
+
+        let (parsed, failures) = parse_all(&[path.clone()], false);
+        assert_eq!(failures.len(), 0, "strictでなければ警告があっても失敗にしない");
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].2.len(), 1, "パース警告がParsedScriptへ伝播しているべき");
+        assert!(parsed[0].2[0].message.contains("誰か"));
+    }
+
+    #[test]
+    fn parse_all_treats_warnings_as_failure_when_strict() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_script_with_unknown_cast_warning(dir.path());
+
+        let (parsed, failures) = parse_all(&[path.clone()], true);
+        assert_eq!(parsed.len(), 0, "strictモードでは警告のある台本を成功扱いにしない");
+        assert_eq!(failures.len(), 1);
+        assert_eq!(failures[0].0, path);
+        assert!(failures[0].1.contains("誰か"), "失敗理由に警告の詳細を含めるべき: {}", failures[0].1);
+    }
+
+    #[test]
+    fn strict_flag_defaults_to_false_and_can_be_set() {
+        let cli = Cli::try_parse_from(["script2voice", "a.txt"]).unwrap();
+        assert!(!cli.strict);
+        let cli = Cli::try_parse_from(["script2voice", "a.txt", "--strict"]).unwrap();
+        assert!(cli.strict);
     }
 
     #[test]
@@ -529,7 +598,7 @@ mod tests {
         let s2 = p2
             .parse_str("@scene S\n@cast\nB:話者:ノーマル,aivis,pan=0\n@script\nB:い\n")
             .unwrap();
-        let parsed = vec![(PathBuf::from("1.txt"), s1), (PathBuf::from("2.txt"), s2)];
+        let parsed = vec![(PathBuf::from("1.txt"), s1, Vec::new()), (PathBuf::from("2.txt"), s2, Vec::new())];
         let req = required_engines(&parsed);
         assert!(req.contains("voicevox"));
         assert!(req.contains("aivis"));

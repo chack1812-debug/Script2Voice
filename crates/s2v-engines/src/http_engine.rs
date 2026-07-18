@@ -22,6 +22,7 @@ pub struct HttpEngine {
     client: Arc<Client>,
     cache: Arc<RwLock<SpeakerCache>>,
     exe_path: Option<String>,
+    args: Vec<String>,
     startup_timeout: Duration,
     process: Mutex<Option<EngineProcess>>,
 }
@@ -43,9 +44,16 @@ impl HttpEngine {
             client,
             cache: Arc::new(RwLock::new(HashMap::new())),
             exe_path,
+            args: Vec::new(),
             startup_timeout: DEFAULT_STARTUP_TIMEOUT,
             process: Mutex::new(None),
         }
+    }
+
+    /// 自動起動コマンドの引数を設定する（省略時は空、`exe_path` を引数なしで起動）。
+    pub fn with_args(mut self, args: Vec<String>) -> Self {
+        self.args = args;
+        self
     }
 
     /// 自動起動の待機時間を設定する（省略時は [`DEFAULT_STARTUP_TIMEOUT`]）。
@@ -109,7 +117,7 @@ impl HttpEngine {
 #[async_trait]
 impl Engine for HttpEngine {
     async fn activate(&self) -> anyhow::Result<()> {
-        ensure_running(&self.name, self.exe_path.as_deref(), self.startup_timeout, &self.process, || self.is_alive()).await?;
+        ensure_running(&self.name, self.exe_path.as_deref(), &self.args, self.startup_timeout, &self.process, || self.is_alive()).await?;
         info!("[{}] 接続確認 OK", self.name);
         self.refresh_cache().await?;
         Ok(())

@@ -99,6 +99,26 @@ def test_build_command_raises_when_assets_and_durations_length_mismatch():
         )
 
 
+def test_build_command_raises_when_duration_is_zero_or_negative():
+    # 壊れたSRTのマーカーからdurationsを計算すると0以下の値が混入し得る
+    # (srt_timing.compute_segmentsで単調増加を検証しても、上流の入力次第では
+    # ここでも二重に検証しておくのが安全)。
+    with pytest.raises(ValueError, match="duration"):
+        build_command(
+            audio_path=Path("a.wav"),
+            assets=[_image("s1.png"), _image("s2.png")],
+            durations=[1.0, 0.0],
+            output_path=Path("out.mp4"),
+        )
+    with pytest.raises(ValueError, match="duration"):
+        build_command(
+            audio_path=Path("a.wav"),
+            assets=[_image("s1.png")],
+            durations=[-1.0],
+            output_path=Path("out.mp4"),
+        )
+
+
 def test_build_command_feeds_video_clip_without_loop_flag():
     cmd = build_command(
         audio_path=Path("a.wav"),

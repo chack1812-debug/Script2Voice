@@ -40,6 +40,9 @@ def build_command(
         raise ValueError("assets と durations は同じ長さでなければならない")
     if not assets:
         raise ValueError("assets が空です")
+    for i, duration in enumerate(durations):
+        if duration <= 0:
+            raise ValueError(f"durations[{i}] は0より大きくなければなりません: {duration}")
 
     cmd = ["ffmpeg", "-y", "-i", str(audio_path)]
     for asset, duration in zip(assets, durations):

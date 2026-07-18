@@ -97,6 +97,12 @@ impl AudioProcessor {
         // リサンプリング
         let mono = resample_mono(&mono, spec.sample_rate, self.config.sample_rate)?;
 
+        // 空の音声(0サンプル)は、この先のapply_air_absorption等がout[0]等で先頭要素に
+        // 直接アクセスするためワーカーパニックになり得る。ここで早期にErrへ変換する。
+        if mono.is_empty() {
+            anyhow::bail!("音声データが空です(0サンプル): {}", input.display());
+        }
+
         // --- 幾何学計算 ---
         let pan_rad = cast.pan.to_radians();
         let geo = calc_geometry(self.config.microphone_spacing, cast.distance, pan_rad);
@@ -335,6 +341,72 @@ mod tests {
             writer.write_sample((v * 32767.0) as i16).unwrap();
         }
         writer.finalize().unwrap();
+    }
+
+    #[test]
+    fn process_returns_error_instead_of_panicking_on_empty_wav() {
+        // エンジンが空の音声(0サンプル)を返した場合、apply_air_absorptionのout[0]参照で
+        // ワーカーがパニックしていた(review.txt指摘)。Errとして上位に伝わるべき。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("empty.wav");
+        write_test_wav(&input, 48000, 440.0, 0.0); // duration_s=0 → 0サンプル
+        let output = dir.path().join("out.wav");
+
+        let proc = AudioProcessor::new(default_audio_config());
+        let result = proc.process(&input, &output, &dummy_cast(0.0, 1.0), &default_scene());
+
+        assert!(result.is_err(), "空の音声データはErrにするべき(パニックしてはいけない)");
+    }
+
+    /// hound::WavWriter は channels=0 の書き出しをサポートしない(finalize時にパニックする)ため、
+    /// 壊れたWAVヘッダーを手組みしてchannels=0のファイルを直接作る。
+    fn write_raw_wav_header(path: &Path, channels: u16, sample_rate: u32, bits_per_sample: u16) {
+        let byte_rate = sample_rate * channels as u32 * (bits_per_sample as u32 / 8).max(1);
+        let block_align = channels.wrapping_mul(bits_per_sample / 8);
+        let mut buf = Vec::new();
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&36u32.to_le_bytes());
+        buf.extend_from_slice(b"WAVE");
+        buf.extend_from_slice(b"fmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        buf.extend_from_slice(&channels.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        buf.extend_from_slice(&byte_rate.to_le_bytes());
+        buf.extend_from_slice(&block_align.to_le_bytes());
+        buf.extend_from_slice(&bits_per_sample.to_le_bytes());
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&0u32.to_le_bytes());
+        std::fs::write(path, buf).unwrap();
+    }
+
+    #[test]
+    fn process_returns_error_instead_of_panicking_on_zero_channel_wav() {
+        // channels=0 の壊れたWAVは、mono変換の step_by(0) で即パニックしていた。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("zero_channel.wav");
+        write_raw_wav_header(&input, 0, 48000, 16);
+        let output = dir.path().join("out.wav");
+
+        let proc = AudioProcessor::new(default_audio_config());
+        let result = proc.process(&input, &output, &dummy_cast(0.0, 1.0), &default_scene());
+
+        assert!(result.is_err(), "channels=0のWAVはErrにするべき(パニックしてはいけない)");
+    }
+
+    #[test]
+    fn process_returns_error_instead_of_panicking_on_zero_bit_depth_wav() {
+        // bits_per_sample=0 の壊れたWAVは、`1i64 << (bits_per_sample - 1)` の減算で
+        // オーバーフローパニックし得る。
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("zero_bits.wav");
+        write_raw_wav_header(&input, 1, 48000, 0);
+        let output = dir.path().join("out.wav");
+
+        let proc = AudioProcessor::new(default_audio_config());
+        let result = proc.process(&input, &output, &dummy_cast(0.0, 1.0), &default_scene());
+
+        assert!(result.is_err(), "bits_per_sample=0のWAVはErrにするべき(パニックしてはいけない)");
     }
 
     #[test]

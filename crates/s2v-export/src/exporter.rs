@@ -3,11 +3,51 @@ use std::path::{Path, PathBuf};
 use s2v_core::{BgmConfig, EventType, TimelineEvent};
 use tracing::{info, warn};
 
+/// XML属性値へ埋め込む文字列をエスケープする(`&`, `<`, `>`, `"`)。
+/// `&`は他の置換で生成される実体参照とは無関係なので最初に処理する。
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// FCPXMLの`format`リソースが宣言するフレームレート。
+/// タイムラインの実時間（tick数, 30000分の1秒単位）自体はどちらでも共通のため、
+/// SRT/WAVとの時間基準のズレは生じない。ここで変わるのは NLE 側の
+/// フレームスナップ・表示上のフレームレート宣言のみ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FrameRate {
+    /// 字幕ズレ調査(Obsidian記録)で確定した、SRT/WAVと整合する既定値。
+    #[default]
+    Fps30,
+    /// NTSC ドロップフレーム相当(29.97fps)。この経路が必要な場合のみ明示的に指定する。
+    Fps2997,
+}
+
+impl FrameRate {
+    fn format_name(self) -> &'static str {
+        match self {
+            FrameRate::Fps30 => "FFVideoFormat1080p30",
+            FrameRate::Fps2997 => "FFVideoFormat1080p2997",
+        }
+    }
+
+    /// タイムベースは両者とも30000分の1秒で共通。1フレームぶんのtick数のみ異なる。
+    fn frame_duration_attr(self) -> &'static str {
+        match self {
+            FrameRate::Fps30 => "1000/30000s",
+            FrameRate::Fps2997 => "1001/30000s",
+        }
+    }
+}
+
 pub struct Exporter<'a> {
     events: &'a [TimelineEvent],
     output_dir: PathBuf,
     sample_rate: u32,
     bgm_config: BgmConfig,
+    fcpxml_fps: FrameRate,
 }
 
 impl<'a> Exporter<'a> {
@@ -22,7 +62,14 @@ impl<'a> Exporter<'a> {
             output_dir: output_dir.into(),
             sample_rate,
             bgm_config,
+            fcpxml_fps: FrameRate::default(),
         }
+    }
+
+    /// FCPXMLの`format`が宣言するフレームレートを変更する（既定は30fps）。
+    pub fn with_fcpxml_fps(mut self, fps: FrameRate) -> Self {
+        self.fcpxml_fps = fps;
+        self
     }
 
     pub fn generate_srt(&self, suffix: &str) -> anyhow::Result<()> {
@@ -82,12 +129,14 @@ impl<'a> Exporter<'a> {
         let resources = self.build_resource_tags();
         let clips = self.build_audio_clips();
 
+        let format_name = self.fcpxml_fps.format_name();
+        let frame_duration = self.fcpxml_fps.frame_duration_attr();
         let xml = format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE fcpxml>
 <fcpxml version="1.8">
     <resources>
-        <format id="r1" name="FFVideoFormat1080p2997" frameDuration="1001/30000s"/>
+        <format id="r1" name="{format_name}" frameDuration="{frame_duration}"/>
         {resources}
     </resources>
     <library>
@@ -278,7 +327,11 @@ impl<'a> Exporter<'a> {
                 let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
                 let uri = format!("file://{}", abs.display()).replace('\\', "/");
                 let name = p.file_name()?.to_string_lossy();
-                Some(format!(r#"<asset id="a{i}" name="{name}" src="{uri}"/>"#))
+                Some(format!(
+                    r#"<asset id="a{i}" name="{}" src="{}"/>"#,
+                    xml_escape(&name),
+                    xml_escape(&uri),
+                ))
             })
             .collect::<Vec<_>>()
             .join("\n        ")
@@ -427,17 +480,63 @@ pub fn is_path_writable(path: &Path) -> bool {
     std::fs::OpenOptions::new().write(true).open(path).is_ok()
 }
 
-/// 生成の既定名ファイル一式から世代サフィックスを決める。
-/// すべて書込可なら ""。いずれか使用中なら、一式の `_n` 版がすべて未存在になる最小の `_n`。
-pub fn resolve_generation_suffix(default_files: &[PathBuf], max: usize) -> anyhow::Result<String> {
+/// `resolve_generation_suffix` が返す、確保した世代サフィックスの占有を表すガード。
+/// Drop時にロックファイルを削除し、そのsuffixを他プロセスへ解放する。
+/// 生成が完了する（または失敗する）まで保持し続けること。
+pub struct GenerationLock {
+    lock_path: PathBuf,
+    _file: std::fs::File,
+}
+
+impl Drop for GenerationLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.lock_path);
+    }
+}
+
+fn lock_path_for(lock_dir: &Path, suffix: &str) -> PathBuf {
+    lock_dir.join(format!(".s2v_generation{suffix}.lock"))
+}
+
+/// 生成の既定名ファイル一式から世代サフィックスを決め、そのサフィックスを排他的に確保する。
+///
+/// `exists()`による事前チェックだけでは、チェックしてから実際にファイルを書き終えるまでの間に
+/// 別プロセスが同じ台本を処理して同じsuffixを選べてしまう(TOCTOU)。ここでは候補ごとに
+/// ロックファイルを`create_new`でアトミックに作成することで排他制御する
+/// （`create_new`はファイルが既に存在すればOS側で必ず失敗するため、2プロセスが
+/// 同じsuffixの確保に同時に成功することはない）。
+///
+/// すべて書込可なら ""。いずれか使用中なら、一式の `_n` 版がすべて未存在かつ
+/// ロック確保に成功する最小の `_n`。
+pub fn resolve_generation_suffix(
+    default_files: &[PathBuf],
+    lock_dir: &Path,
+    max: usize,
+) -> anyhow::Result<(String, GenerationLock)> {
+    fn try_claim(lock_dir: &Path, suffix: &str) -> anyhow::Result<Option<GenerationLock>> {
+        let lock_path = lock_path_for(lock_dir, suffix);
+        match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
+            Ok(file) => Ok(Some(GenerationLock { lock_path, _file: file })),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
     let needs_fallback = default_files.iter().any(|p| p.exists() && !is_path_writable(p));
     if !needs_fallback {
-        return Ok(String::new());
+        // 既存の同名ファイルが混じっていても、すべて書込可なら"" のまま上書きを許す
+        // （既存の仕様。ロック確保にだけ失敗した場合は _n フォールバックへ進む）。
+        if let Some(guard) = try_claim(lock_dir, "")? {
+            return Ok((String::new(), guard));
+        }
     }
     for n in 1..=max {
         let suffix = format!("_{n}");
-        if default_files.iter().all(|p| !with_suffix(p, &suffix).exists()) {
-            return Ok(suffix);
+        if !default_files.iter().all(|p| !with_suffix(p, &suffix).exists()) {
+            continue;
+        }
+        if let Some(guard) = try_claim(lock_dir, &suffix)? {
+            return Ok((suffix, guard));
         }
     }
     anyhow::bail!("使用中の出力を回避する空き連番({max}まで)が見つかりませんでした")
@@ -627,6 +726,35 @@ mod tests {
         assert!(content.contains("<resources>"));
         assert!(content.contains("<library>"));
         assert!(content.contains("dialogue"));
+    }
+
+    /// 字幕ズレ調査(Obsidian記録)により、Filmoraの30fps設定でSRT/WAVとの累積ドリフトが
+    /// 消えることが確定している。FCPXML経路だけ29.97fpsを自ら宣言していると同じドリフトを
+    /// 再導入するため、既定は30fpsにする(29.97が必要な場合は明示的に指定する)。
+    #[test]
+    fn fcpxml_defaults_to_30fps_matching_srt_wav_timeline_basis() {
+        let events = vec![make_audio_event(0.0, 2000.0, "テスト", None)];
+        let dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
+        exp.generate_fcpxml("").unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        assert!(content.contains(r#"name="FFVideoFormat1080p30""#), "既定は30fpsのフォーマット名であるべき: {content}");
+        assert!(content.contains(r#"frameDuration="1000/30000s""#), "既定は正確な30fps(1000/30000s)であるべき: {content}");
+        assert!(!content.contains("2997"), "既定では29.97fpsを名乗ってはいけない: {content}");
+    }
+
+    #[test]
+    fn fcpxml_can_opt_into_2997fps_explicitly() {
+        let events = vec![make_audio_event(0.0, 2000.0, "テスト", None)];
+        let dir = tempfile::tempdir().unwrap();
+        let exp = Exporter::new(&events, dir.path(), 48000, default_bgm())
+            .with_fcpxml_fps(FrameRate::Fps2997);
+        exp.generate_fcpxml("").unwrap();
+
+        let content = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        assert!(content.contains(r#"name="FFVideoFormat1080p2997""#));
+        assert!(content.contains(r#"frameDuration="1001/30000s""#));
     }
 
     #[test]
@@ -876,12 +1004,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // 非存在のみ → 書込可扱い → ""
         let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
-        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "");
+        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "");
         // 既存かつ書込可のファイルが混じっていても fallback しない（exists()&&writable のパスを検証）
         let existing = dir.path().join("a.wav");
         std::fs::write(&existing, b"x").unwrap();
         let files2 = vec![existing, dir.path().join("b.srt")];
-        assert_eq!(resolve_generation_suffix(&files2, 100).unwrap(), "");
+        assert_eq!(resolve_generation_suffix(&files2, dir.path(), 100).unwrap().0, "");
     }
 
     #[test]
@@ -891,7 +1019,7 @@ mod tests {
         std::fs::create_dir(&a).unwrap(); // a.wav をディレクトリにして書込不可(=ロック相当)
         let b = dir.path().join("b.srt");
         let files = vec![a, b];
-        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "_1");
+        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "_1");
     }
 
     #[test]
@@ -903,7 +1031,31 @@ mod tests {
         std::fs::write(&b, b"x").unwrap();
         std::fs::write(dir.path().join("a_1.wav"), b"x").unwrap(); // _1 スロットを一部埋める
         let files = vec![a, b];
-        assert_eq!(resolve_generation_suffix(&files, 100).unwrap(), "_2");
+        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "_2");
+    }
+
+    /// TOCTOU再現: 1回目の呼び出しでガードを保持したまま(=まだ生成完了・cleanup前)
+    /// 2回目を呼ぶと、ファイル自体はまだ存在しない(exists()チェックだけでは""に見える)にも
+    /// 関わらず、ロックにより別のsuffixへフォールバックするべき。
+    /// ロック解放後は再び""が使えるようになる。
+    #[test]
+    fn resolve_suffix_atomically_claims_slot_preventing_concurrent_reuse() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
+
+        let (first_suffix, first_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(first_suffix, "");
+
+        // 1回目のガードをまだ保持している間に2回目を呼ぶ = 並行実行のシミュレーション。
+        // 出力ファイル自体はまだ1つも書かれていない(existsチェックだけなら両方""を返すはず)。
+        let (second_suffix, second_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(second_suffix, "_1", "1回目がロックを保持している間は同じsuffixを使わせてはいけない");
+
+        drop(first_guard);
+        let (third_suffix, _third_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(third_suffix, "", "ロック解放後は再び\"\"が使えるべき");
+
+        drop(second_guard);
     }
 
     #[test]
@@ -933,5 +1085,33 @@ mod tests {
         exp.generate_fcpxml("_2").unwrap();
         let xml = std::fs::read_to_string(out_dir.join("timeline/timeline_2.fcpxml")).unwrap();
         assert!(xml.contains("voice_0001_2.wav"), "FCPXMLは連番付き音声を参照すること: {xml}");
+    }
+
+    /// `C:\work\A&B\voice.wav` のようなパスをそのままXML属性へ埋め込むと不正なXMLになる
+    /// (review.txt指摘)。`<`/`>`/`"` はWindowsのファイル名に使えないため、
+    /// 実際に発生し得る `&` を含むディレクトリ名・ファイル名で再現する。
+    #[test]
+    fn fcpxml_escapes_ampersand_in_asset_name_and_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub_dir = dir.path().join("A&B");
+        std::fs::create_dir_all(&sub_dir).unwrap();
+        let wav = sub_dir.join("voice&1.wav");
+        write_wav(&wav, 48000, 0.1);
+
+        let events = vec![make_audio_event(0.0, 100.0, "テスト", Some(wav))];
+        let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
+        exp.generate_fcpxml("").unwrap();
+        let xml = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
+
+        // 生のまま(未エスケープ)の "&1.wav" のような不正な並びが出てはいけない
+        assert!(!xml.contains("voice&1.wav"), "&はエスケープされているべき: {xml}");
+        assert!(xml.contains("voice&amp;1.wav"), "ファイル名の&はエスケープされているべき: {xml}");
+        assert!(xml.contains("A&amp;B"), "ディレクトリ名の&もエスケープされているべき: {xml}");
+    }
+
+    #[test]
+    fn xml_escape_handles_all_reserved_characters() {
+        assert_eq!(xml_escape(r#"A&B<C>"D""#), "A&amp;B&lt;C&gt;&quot;D&quot;");
+        assert_eq!(xml_escape("plain"), "plain");
     }
 }

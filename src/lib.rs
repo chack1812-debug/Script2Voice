@@ -24,29 +24,43 @@ pub fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::pat
         .unwrap_or_else(|| PathBuf::from("config.toml"))
 }
 
+/// HTTPエンジン呼び出し用の共有 `Client` を、設定された connect/request タイムアウトで構築する。
+/// タイムアウト未設定のままだと、エンジンが接続だけ受け付けて応答しない場合に
+/// 1台詞の処理が無期限に待機してしまう。
+fn build_http_client(http: &s2v_core::HttpConfig) -> Client {
+    Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(http.connect_timeout_s))
+        .timeout(std::time::Duration::from_secs(http.request_timeout_s))
+        .build()
+        .expect("reqwest Client の構築に失敗しました")
+}
+
 /// config から3エンジン（voicevox/aivis/xtts）を登録した EngineManager を構築する。
 pub fn build_engine_manager(config: &Config) -> EngineManager {
     use std::time::Duration;
     let timeout = |secs: Option<u64>| Duration::from_secs(secs.unwrap_or(60));
-    let client = Arc::new(Client::new());
+    let client = Arc::new(build_http_client(&config.http));
     let mut em = EngineManager::new();
     em.register(
         "voicevox",
         Arc::new(HttpEngine::with_exe_path(
             "voicevox", &config.voicevox.url, Arc::clone(&client), config.voicevox.exe_path.clone(),
-        ).with_startup_timeout(timeout(config.voicevox.startup_timeout_s))),
+        ).with_args(config.voicevox.args.clone())
+         .with_startup_timeout(timeout(config.voicevox.startup_timeout_s))),
     );
     em.register(
         "aivis",
         Arc::new(HttpEngine::with_exe_path(
             "aivis", &config.aivis.url, Arc::clone(&client), config.aivis.exe_path.clone(),
-        ).with_startup_timeout(timeout(config.aivis.startup_timeout_s))),
+        ).with_args(config.aivis.args.clone())
+         .with_startup_timeout(timeout(config.aivis.startup_timeout_s))),
     );
     em.register(
         "xtts",
         Arc::new(XttsEngine::with_exe_path(
             "xtts", &config.xtts.url, Arc::clone(&client), config.xtts.exe_path.clone(),
-        ).with_startup_timeout(timeout(config.xtts.startup_timeout_s))),
+        ).with_args(config.xtts.args.clone())
+         .with_startup_timeout(timeout(config.xtts.startup_timeout_s))),
     );
     em
 }
@@ -80,6 +94,7 @@ pub struct Producer {
     concurrency: ConcurrencyConfig,
     bgm_config: BgmConfig,
     sample_rate: u32,
+    fcpxml_fps: s2v_export::FrameRate,
 }
 
 /// 話者交代時のポーズ判定 (Python版 producer.py:188-193 相当)。
@@ -106,6 +121,13 @@ struct SynthTask {
     final_path: PathBuf,
     scene_config: s2v_core::SceneConfig,
     duration_ms: f64,
+}
+
+/// 合成または音響処理に失敗した台詞の記録（タイムラインには登録しない）。
+struct TaskFailure {
+    text: String,
+    cast_name: String,
+    reason: String,
 }
 
 impl Producer {
@@ -139,6 +161,11 @@ impl Producer {
             },
             bgm_config: config.bgm.clone(),
             sample_rate: config.audio.sample_rate,
+            fcpxml_fps: if config.export.fcpxml_2997fps {
+                s2v_export::FrameRate::Fps2997
+            } else {
+                s2v_export::FrameRate::Fps30
+            },
         })
     }
 
@@ -197,7 +224,9 @@ impl Producer {
                 self.project_root.join("full_dialogue.wav"),
             ])
             .collect();
-        let suffix = s2v_export::resolve_generation_suffix(&default_files, 100)?;
+        // ロックファイルにより、他プロセスが同じ台本を同時処理していても同じsuffixを
+        // 選ばないようにする(TOCTOU対策)。生成完了までこのガードを保持し続ける。
+        let (suffix, _generation_lock) = s2v_export::resolve_generation_suffix(&default_files, &self.project_root, 100)?;
         if !suffix.is_empty() {
             warn!("出力ファイルのいずれかが使用中のため、今回の生成一式を連番 {suffix} で保存します。");
         }
@@ -240,10 +269,12 @@ impl Producer {
             let ev_tx = events.clone();
             let cancel_flag = cancel.clone();
             let done = Arc::clone(&done);
+            let task_text = task.text.clone();
+            let task_cast_name = task.cast.name.clone();
 
             let handle = tokio::spawn(async move {
                 if is_cancelled(&cancel_flag) {
-                    return (si, ii, task); // 合成せず即返す
+                    return Ok(task); // 合成せず即返す
                 }
 
                 let engine_sem = sems.get(&task.cast.engine_type)
@@ -252,12 +283,9 @@ impl Producer {
 
                 // 合成
                 let _permit = engine_sem.acquire().await.unwrap();
-                match em.synthesize(&task.text, &task.cast, &task.raw_path).await {
-                    Ok(()) => {}
-                    Err(e) => {
-                        error!("合成失敗 {}: {e}", task.raw_path.display());
-                        return (si, ii, task);
-                    }
+                if let Err(e) = em.synthesize(&task.text, &task.cast, &task.raw_path).await {
+                    error!("合成失敗 {}: {e}", task.raw_path.display());
+                    return Err(format!("合成失敗: {e}"));
                 }
                 drop(_permit);
 
@@ -280,27 +308,39 @@ impl Producer {
                         info!("完了: {} ({:.0}ms)", task.final_path.display(), task.duration_ms);
                         let d = done.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                         emit(&ev_tx, ProduceEvent::ItemFinished { done: d, total });
+                        Ok(task)
                     }
-                    Ok(Err(e)) => error!("音響処理失敗: {e}"),
-                    Err(e) => error!("spawn_blocking パニック: {e}"),
+                    Ok(Err(e)) => {
+                        error!("音響処理失敗: {e}");
+                        Err(format!("音響処理失敗: {e}"))
+                    }
+                    Err(e) => {
+                        error!("spawn_blocking パニック: {e}");
+                        Err(format!("音響処理パニック: {e}"))
+                    }
                 }
-                (si, ii, task)
             });
-            handles.push(handle);
+            handles.push((si, ii, task_text, task_cast_name, handle));
         }
 
-        // タスク完了を収集
+        // タスク完了を収集。失敗したタスクは task_map へ登録せず、
+        // タイムライン・書き出しの対象から除外する（欠落を成功と誤認させない）。
         let mut task_map: HashMap<(usize, usize), SynthTask> = HashMap::new();
-        for handle in handles {
+        let mut failures: Vec<TaskFailure> = Vec::new();
+        for (si, ii, text, cast_name, handle) in handles {
             match handle.await {
-                Ok((si, ii, task)) => { task_map.insert((si, ii), task); }
-                Err(e) => error!("タスクパニック: {e}"),
+                Ok(Ok(task)) => { task_map.insert((si, ii), task); }
+                Ok(Err(reason)) => failures.push(TaskFailure { text, cast_name, reason }),
+                Err(e) => {
+                    error!("タスクパニック: {e}");
+                    failures.push(TaskFailure { text, cast_name, reason: format!("タスクパニック: {e}") });
+                }
             }
         }
         if is_cancelled(&cancel) {
             anyhow::bail!("ユーザーによりキャンセルされました");
         }
-        info!("Phase2完了: 全音声の合成・処理が終わりました。");
+        info!("Phase2完了: 全音声の合成・処理が終わりました。（失敗 {} 件）", failures.len());
 
         // ── Phase 3: タイムライン構築 ──────────────────────────────────────
         emit(&events, ProduceEvent::Phase("タイムライン".into()));
@@ -380,13 +420,64 @@ impl Producer {
         // エクスポート
         emit(&events, ProduceEvent::Phase("書き出し".into()));
         let timeline_events = timeline.into_events();
-        let exporter = Exporter::new(&timeline_events, &self.project_root, self.sample_rate, self.bgm_config.clone());
+        let exporter = Exporter::new(&timeline_events, &self.project_root, self.sample_rate, self.bgm_config.clone())
+            .with_fcpxml_fps(self.fcpxml_fps);
         exporter.generate_srt(&suffix)?;
         exporter.generate_fcpxml(&suffix)?;
         exporter.generate_combined_audio(&suffix)?;
         info!("--- Export Finished: {} ---", self.project_root.display());
+
+        if !failures.is_empty() {
+            let success = total - failures.len();
+            for f in &failures {
+                error!("台詞欠落: cast={} text={:?} reason={}", f.cast_name, f.text, f.reason);
+            }
+            anyhow::bail!(
+                "{total}件中{}件の音声生成に失敗しました（成功{success}件）。詳細はログを参照してください。",
+                failures.len()
+            );
+        }
+
         emit(&events, ProduceEvent::Finished);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod http_client_timeout_tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// 接続は受け付けるが応答を一切返さないTCPリスナーを立てる。
+    /// テストプロセス終了まで生存すればよいので、リスナーとスレッドはリークさせる。
+    fn spawn_hanging_server() -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                // 応答を返さず接続を握ったままにする
+                std::thread::sleep(Duration::from_secs(60));
+                drop(stream);
+            }
+        });
+        addr
+    }
+
+    #[tokio::test]
+    async fn http_client_enforces_request_timeout_against_hanging_server() {
+        let addr = spawn_hanging_server();
+        let http_config = s2v_core::HttpConfig { connect_timeout_s: 1, request_timeout_s: 1 };
+        let client = build_http_client(&http_config);
+
+        let url = format!("http://{addr}/version");
+        // クライアント自身のタイムアウトより十分長い外側ガード。
+        // 外側が先に発火したら「クライアントにタイムアウトが効いていない」ことを意味する。
+        let outer = tokio::time::timeout(Duration::from_secs(5), client.get(url).send()).await;
+
+        let inner = outer.expect(
+            "外側の5秒ガードより先にHTTPクライアント自身がタイムアウトすべき(request_timeout_sが効いていない)",
+        );
+        assert!(inner.is_err(), "応答のないサーバーに対してrequest_timeoutでErrになるべき");
     }
 }
 
@@ -421,6 +512,93 @@ mod produce_events_tests {
         // 合成はスキップされるので ItemFinished は1件も来ない
         let events: Vec<ProduceEvent> = rx.try_iter().collect();
         assert!(!events.iter().any(|e| matches!(e, ProduceEvent::ItemFinished { .. })));
+    }
+
+    #[tokio::test]
+    async fn synth_failure_is_reported_as_error_not_silent_success() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config();
+        // エンジン未登録なので、この台本の唯一の台詞は合成時に必ず失敗する。
+        let em = std::sync::Arc::new(s2v_engines::EngineManager::new());
+        let producer = Producer::new(std::sync::Arc::clone(&em), &config, tmp.path()).unwrap();
+
+        let mut parser = s2v_core::ScriptParser::new();
+        let scenes = parser
+            .parse_str("@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n")
+            .unwrap();
+
+        let result = producer.produce(&scenes).await;
+
+        let err = result.expect_err("合成に失敗した台詞がある場合、produce は成功扱いにしてはならない");
+        assert!(err.to_string().contains('1'), "失敗件数が含まれるべき: {err}");
+
+        // 失敗した台詞のWAVは存在しない（duration=0の欠落イベントが残ってはいけない）
+        let audio_dir = tmp.path().join("audio");
+        let has_wav = std::fs::read_dir(&audio_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| e.path().extension().is_some_and(|x| x == "wav"));
+        assert!(!has_wav, "合成失敗時はWAVファイルが残っていないはず");
+    }
+
+    /// 常に成功し、無音の短いWAVを書き出すだけのテスト用エンジン。
+    struct AlwaysSucceedsEngine;
+
+    #[async_trait::async_trait]
+    impl s2v_engines::Engine for AlwaysSucceedsEngine {
+        async fn activate(&self) -> anyhow::Result<()> { Ok(()) }
+        async fn synthesize(&self, _text: &str, _cast: &Cast, output: &std::path::Path) -> anyhow::Result<()> {
+            let spec = hound::WavSpec {
+                channels: 1,
+                sample_rate: 24000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::create(output, spec)?;
+            for _ in 0..2400 {
+                writer.write_sample(0i16)?;
+            }
+            writer.finalize()?;
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn partial_failure_excludes_failed_line_from_export_but_keeps_successful_one() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let tmp = tempfile::tempdir().unwrap();
+        let config = test_config();
+        let mut em = s2v_engines::EngineManager::new();
+        em.register("aivis", std::sync::Arc::new(AlwaysSucceedsEngine));
+        let em = std::sync::Arc::new(em);
+        let producer = Producer::new(std::sync::Arc::clone(&em), &config, tmp.path()).unwrap();
+
+        let mut parser = s2v_core::ScriptParser::new();
+        // A は voicevox(未登録) で必ず失敗、B は aivis(登録済み) で必ず成功する。
+        let scenes = parser
+            .parse_str(
+                "@scene テスト room_size=0.1\n@cast\nA:話者A:ノーマル,voicevox,pan=0\n\nB:話者B:ノーマル,aivis,pan=0\n\n@script\nA:失敗する台詞\nB:成功する台詞\n",
+            )
+            .unwrap();
+
+        let result = producer.produce(&scenes).await;
+        let err = result.expect_err("一部失敗があるので produce は Err を返すべき");
+        assert!(err.to_string().contains('1'), "失敗1件が含まれるべき: {err}");
+
+        // 成功した1件分のWAVのみ残る
+        let audio_dir = tmp.path().join("audio");
+        let wav_count = std::fs::read_dir(&audio_dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|x| x == "wav"))
+            .count();
+        assert_eq!(wav_count, 1, "成功した1件分のWAVのみ残るはず: 実際={wav_count}");
+
+        // SRTには成功した台詞のみ含まれ、失敗した台詞は現れない
+        let srt_path = tmp.path().join("timeline").join("subtitles.srt");
+        let srt = std::fs::read_to_string(&srt_path).unwrap();
+        assert!(srt.contains("成功する台詞"), "成功した台詞はSRTに含まれるべき: {srt}");
+        assert!(!srt.contains("失敗する台詞"), "失敗した台詞はSRTに含まれてはいけない: {srt}");
     }
 }
 

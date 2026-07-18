@@ -1,0 +1,166 @@
+Script2Voice-Rust版 敵対的レビュー
+レビュー日: 2026-07-16
+レビュー対象: リポジトリ全体（Rust workspace、Python video_compose、設定、台本仕様、テスト、設計・マニュアル）
+
+## 結論
+
+通常系のユニットテストは通るが、失敗系・外部プロセス・入力境界・ファイルパスを横断すると、実運用上の重大な欠陥が残っている。
+最優先で直すべきなのは、(1)音声合成/音響処理の失敗が `Producer::produce` の成功として扱われること、(2)同梱 `config.toml` の XTTS 起動指定が実装と互換しないこと、(3)FCPXML の 29.97fps 固定と、字幕ズレ調査で得た 30fps 運用知見が食い違うこと、(4)動画合成のアセット欠落が明確なエラーにならないことである。
+
+## 重大度の基準
+
+- Critical: 成功扱いのまま成果物欠落・無音・ハングなど、利用者が誤った成果物を受け取る。
+- High: 通常運用で頻発し得る機能不全、または入力・環境次第で処理不能になる。
+- Medium: 再現条件が限定的だが、品質・保守性・再現性を損なう。
+- Low: 直ちに壊れないが、速度・明瞭性・将来変更耐性を下げる。
+
+## 発見事項
+
+### [Critical] 個別の合成/音響処理失敗が成功扱いになる
+
+根拠: `src/lib.rs:244-287` のタスクは、合成失敗・音響処理失敗・`spawn_blocking` の失敗をログに出すだけで、失敗フラグを返さず `SynthTask` を返す。`src/lib.rs:292-299` はそのタスクを無条件に `task_map` へ登録し、`src/lib.rs:316-344` は存在するタスクをタイムラインへ登録する。
+
+影響:
+
+- 合成失敗では final WAV がなく duration=0 の音声イベントが残る。
+- 音響処理失敗でも同様に、SRTには字幕が出る一方、音声には欠落する可能性がある。
+- `Producer::produce` はエラーを返さず、CUIの `run_each` は台本を成功として数える。
+- GUIでも処理完了イベントや成功表示が出る可能性があり、ユーザーは欠落を見逃す。
+
+推奨: タスク結果を `Result<SynthTask, TaskFailure>` にし、失敗を収集して `produce` 自体を Err にする。失敗したアイテムはタイムラインへ登録しない。少なくとも成功件数、失敗件数、生成WAV存在を最終検証するテストを追加する。
+
+### [High] 同梱 XTTS 設定とプロセス起動実装が互換しない
+
+根拠: `config.toml:9-10` の `xtts.exe_path` は `python -m xtts_api_server --port ...` というコマンド全体である。一方 `crates/s2v-engines/src/process.rs:43-58` は値全体を `Path::new(path).exists()` で実行ファイルとして検査し、`Command::new(path)` に単一引数として渡す。
+
+影響: 同梱設定のままでは XTTS の自動起動は、ほぼ確実に「実行ファイルが見つからない」または起動失敗になる。`exe_path` のコメント（実行ファイルのパス）とも実データが矛盾している。さらに `python.exe` と引数を別フィールドに分ける設計がないため、空白を含む実行ファイルパスにも弱い。
+
+推奨: `exe_path` と `args` を分離した構造にするか、Windows向けの起動コマンド表現を明示的に設計する。同梱設定を実機で起動するE2Eテストを追加する。
+
+### [High] FCPXML の 29.97fps 固定が、字幕ズレ調査の結論と衝突する
+
+根拠: `crates/s2v-export/src/exporter.rs:90,96-100` は `FFVideoFormat1080p2997`、`1001/30000s` を固定して出力する。Obsidian記録の解決済み障害では、Filmoraの30fps設定で字幕ズレが消え、29.97/30の時間基準差が原因と確定している。
+
+影響: SRT+WAVを30fps環境で扱う場合は問題が出ないが、FCPXMLを取り込む経路は自ら29.97fpsを宣言しており、同じ累積ドリフトを再導入し得る。設計・記録・生成物の時間基準が一貫していない。
+
+推奨: FCPXMLのfpsを設定値または明示的なCLIオプションにし、既定値を30fpsにするか、29.97を維持するなら「この経路は29.97前提」と明記する。SRT/WAV/FCPXMLのタイムライン基準を一つの定数・型で共有する。
+
+### [High] `scene_map.json` のデフォルトアセット欠落で、後段が曖昧にクラッシュする
+
+根拠: `scripts/video_compose/scene_map.py:29-31` は `default_image` がない場合、未定義セグメントに `None` を返す。`scripts/video_compose/compose_video.py:81-84` はその値を検証せず、`scripts/video_compose/ffmpeg_cmd.py:50-56` で `asset["type"]` を参照する。
+
+再現確認: `resolve_assets({'paragraphs': [{'index': 1, 'image': 'a.png'}]}, 2)` の結果は `[{'type':'image','path':'a.png'}, None]` だった。
+
+影響: `TypeError` が発生し、どの段落・どのアセットが原因か分かりにくい。設定ミスを「既定画像へフォールバックする仕様」と誤認させる。
+
+推奨: `default_image` がない場合は解決時に `ValueError`（段落番号を含む）を出す。全アセットの存在・type・index重複・segment_count整合性を実行前に検証する。
+
+### [High] CUIがパーサー警告を捨てている
+
+根拠: `crates/s2v-core/src/parser.rs` はキャスト定義の飲み込みや未定義キャストを `ParseWarning` として保持するが、`src/main.rs:232-245` の `parse_all` は `warnings()` を取得せず、結果も表示しない。警告を表示するのは主にGUIの `script_model` 経路である。
+
+影響: 既知の後方非互換（`@cast`間の空行不足）をCUI利用者が発見できない。パースは成功し、台詞が静かに欠落する。
+
+推奨: ファイルごとに警告を収集してコンソールと `run.log` に出す。警告レベルを `--strict` でエラー化できるようにする。
+
+### [High] 外部HTTP呼び出しに総合タイムアウトがない
+
+根拠: `src/lib.rs:31` と `crates/s2v-engines/src/http_engine.rs:57-60,139-169`、`crates/s2v-engines/src/xtts_engine.rs:54-58,104-145` は `reqwest::Client::new()` を使い、`version`、`speakers`、音声合成リクエストにリクエストタイムアウトを設定していない。起動確認だけは別のポーリングタイムアウトを持つ。
+
+影響: エンジンが接続を受け付けたまま応答しない場合、1台詞の処理が永久に待機し、バッチ全体も終了しない。GUIの「合成中」表示も解除されない。
+
+推奨: connect/request timeoutを設定し、設定ファイルで上書き可能にする。合成リトライは指数バックオフ＋上限回数で実装し、タイムアウトを台本失敗として集計する。
+
+### [High] XTTSのグローバル設定更新が並行合成と競合する
+
+根拠: `crates/s2v-engines/src/xtts_engine.rs:102-122` は各合成の前に `get_tts_settings`→設定変更→`set_tts_settings` を行う。`config.toml:52` のXTTS並行数は2で、`src/lib.rs:233-266` は複数タスクを並行実行する。
+
+影響: 台詞Aの設定を台詞Bが上書きしてからAが合成するなど、話速・温度等の設定が別台詞へ混入する。結果が非決定的で、再現が難しい。
+
+推奨: XTTS側だけ設定更新＋合成をMutexで直列化する、またはAPIがリクエスト単位設定を受けられる方式へ変更する。並行数設定が品質保証と両立することをテストする。
+
+### [Medium] `ScriptParser` の再利用時に状態が台本をまたいで漏れる
+
+根拠: `crates/s2v-core/src/parser.rs:45-48` でリセットされるのは警告とキャスト自由記述の一時状態だけで、`casts`、`pause_config`、`asset_config` は初期化されない。現行の主要呼び出しは毎回 `ScriptParser::new()` を使うが、公開APIは `&mut self` の再利用を許している。
+
+影響: 同じParserで2台本を読むと、2台目が未定義の旧キャストを使えたり、前台本のポーズ設定が残ったりする。将来のウォッチ再読込・バッチ最適化で発火しやすい。
+
+推奨: `parse_str` 冒頭で台本固有状態を全消去するか、パーサーを一台本一生成にしてAPIを明確化する。異なるキャスト・異なるpause設定を連続パースするテストを追加する。
+
+### [Medium] 空の台詞・空のWAVがプロセスパニックになり得る
+
+根拠: `crates/s2v-audio/src/processor.rs:209-220` は空の入力に対して `out[0]` を実行する。WAV読み込みでも `crates/s2v-audio/src/processor.rs:70-87` はチャンネル数やサンプル数を検証しない。
+
+影響: エンジンが空音声を返した場合、通常の `Result` エラーではなくワーカーパニックになる。現在のProducerはパニックをログ化するだけで失敗扱いにもしていないため、Critical項目と複合する。
+
+推奨: 空入力、0チャンネル、異常なbit depthを早期に拒否し、エラーを上位へ返す。空テキスト・0バイトWAV・壊れたWAVのE2Eテストを追加する。
+
+### [Medium] FCPXMLのXMLエスケープが不足している
+
+根拠: `crates/s2v-export/src/exporter.rs:274-281` はファイル名とURIをXML属性へ直接埋め込む。`&`、`"`、`<`、`>` をエスケープしていない。
+
+影響: `C:\work\A&B\voice.wav` のようなパスでFCPXMLが不正になり、外部編集ソフトで読み込めない。日本語だけのテストでは見逃される。
+
+推奨: XMLエスケープ関数またはXMLライブラリを使う。特殊文字を含むパスの読み込みテストを追加する。
+
+### [Medium] 動画合成の時間境界を入力検証していない
+
+根拠: `scripts/video_compose/srt_timing.py:22-35` はマーカーの単調増加、音声総時間内、重複を検証しない。実測で `compute_segments([5.0, 3.0], 10.0)` は負の長さ `(5.0, 3.0)` を返した。
+
+影響: 壊れたSRTや手編集されたSRTでffmpegに負のdurationが渡り、不可解な失敗または意図しない合成になる。
+
+推奨: マーカーを単調増加・0以上・総時間以下に限定し、違反を行番号・時刻付きで拒否する。`durations > 0` を `build_command` でも検証する。
+
+### [Medium] 出力世代番号の決定にTOCTOU競合がある
+
+根拠: `src/lib.rs:191-206` と `crates/s2v-export/src/exporter.rs:430-443` は「空き番号を確認」してから各ファイルを書き込む。別プロセスが同時に同じ台本を処理すると同じsuffixを選べる。
+
+影響: 2つの実行が同じ音声・字幕を上書きし、生成物一式が混ざる。
+
+推奨: 台本単位のロックファイルを原子的に作成し、生成中の一式を一時ディレクトリへ書いて最後にrenameする。
+
+### [Low] Clippy品質ゲートが現状グリーンではない
+
+実行結果: `cargo clippy --workspace --all-targets -- -D warnings` は失敗した。`parser.rs:69,273` のmanual strip、`types.rs:53` のlarge enum variant、`types.rs:160` のuseless vecが検出された。通常の `cargo test --workspace --all-targets` は通るが、GUIの未使用フィールド警告も残る。
+
+推奨: CIでClippyを必須化するなら、警告を修正するか、意図的なものだけ理由付きallowにする。`ScriptItem::Speech` に大きな `SceneConfig` を各行へコピーする設計は、Box化またはシーン参照方式も検討する。
+
+## 効率・速度・スケールに関する提案
+
+1. `src/lib.rs:233-244` は台詞数分のTokioタスクを一度に生成する。セマフォで実作業は制限しているが、長大台本ではタスク・文字列・キャスト・パスが全件メモリに残る。bounded worker queueへ変更し、完了結果だけを返すとメモリ使用量とスケジューリング負荷を抑えられる。
+
+2. `crates/s2v-audio/src/processor.rs` と `crates/s2v-export/src/exporter.rs` は、各音声を全量読み込み、ステレオ化・リバーブ・ミックス用の大きなVecを重ねて確保する。長尺ではRAMが支配的になる。チャンク処理、メモリマップ、ストリーミングWAV書き出しを検討する。
+
+3. `prewarm_reverb` は台詞ごとのパラメータ列をそのまま渡している。IRキャッシュ側で重複排除される保証がAPI上見えないため、呼び出し前に `(rt60, pre_delay)` をdedupすれば、台詞数が多い場合の無駄なロック・探索を減らせる。
+
+4. HTTPエンジンは共有Clientを使っている点はよいが、`refresh_cache` と合成のリクエストを台詞ごとに繰り返す。スピーカー・スタイルキャッシュの有効期限と、起動後一度だけ更新するライフサイクルを明確化すると初期遅延を減らせる。
+
+5. `src/main.rs:217-227` の `required_engines` は、実際に発話されないキャストや未使用シーンのキャストもエンジン起動対象にする。実際に生成するSpeechだけを走査すれば、不要なエンジン起動・モデルロードを省ける。
+
+6. `scripts/video_compose/compose_video.py:82-84` は動画アセットごとにffprobeを逐次実行する。アセット数が多い場合は一括probeまたは並列化を検討できる。ただし、まず入力検証とパス解決を安定させる方が優先度は高い。
+
+## 相互依存ファイルの整合性チェック結果
+
+- 出力名はRust側の `full_dialogue.wav` / `timeline/subtitles.srt` とPython側の探索・参照が一致している。
+- `[PARAGRAPH]` の生成はRust exporter、抽出はPython `srt_timing.py` で一致する。ただしゼロ長SRTイベントのプレイヤー互換性は未検証。
+- `scene_map.py` の旧 `image` 形式と新 `type`/`path` 形式は実装・テストとも対応しているが、相対パスの基準がプロジェクトディレクトリではなくプロセスのカレントディレクトリである。設計記録にもこの注意があるため、CLIをその前提でラップするか、解決基準を `scene_map.json` の親へ統一すべき。
+- `Cast.appearance` と `SceneConfig.description` はパーサーへ格納されるが、現行のStage4はそれらから `prompts.json` を生成しない。設計書上もStage2未実装であり、機能が連結済みと誤認しないこと。
+- `config.toml` の `reference_gain_db` は読み込まれるが音量計算には使われない。これはPython版互換の意図として記録されているが、利用者が効く設定だと誤解しやすいので、廃止または「未使用」と明記すべき。
+- `docs/superpowers` の一部設計書・進捗記録は「未コミット」「ユーザー試用待ち」と記載している一方、現在のHEADには複数の実装コミットがある。設計書を完了状態へ更新し、実際のHEAD・テスト数・未着手項目を一つの現況表に集約すると判断を誤りにくい。
+
+## 検証実行
+
+- `cargo test --workspace --all-targets`: 成功。Rustテスト合計は出力上 220件相当、失敗なし。
+- `python -m pytest scripts/video_compose/tests -q`: 23 passed。
+- `cargo clippy --workspace --all-targets -- -D warnings`: 失敗。上記manual-strip、large-enum-variant、useless-vecを検出。
+- 外部実エンジン、GUI目視、実際のffmpeg実行、FCPXMLを各NLEへ取り込む試験はこのレビューでは実施していない。
+
+## 優先修正順
+
+1. Producerの失敗伝播と欠落音声のタイムライン登録防止。
+2. XTTS起動設定の構造化、およびHTTP/XTTSリクエストタイムアウト。
+3. FCPXMLのfps方針統一（30fps/29.97fpsを設定可能にし、SRT/WAVと整合）。
+4. video_composeのアセット・SRT・パス検証。
+5. CUIでParseWarningを表示し、strict modeを追加。
+6. 失敗系・長尺・並行XTTS・特殊パス・FCPXMLインポートのE2Eテスト。
+7. Clippyを修正し、長尺処理のbounded queue/ストリーミング化を設計する。

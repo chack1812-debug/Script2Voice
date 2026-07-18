@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 from ffmpeg_cmd import build_command
-from scene_map import load_scene_map, resolve_assets
+from scene_map import load_scene_map, resolve_asset_paths, resolve_assets, validate_assets_exist
 from srt_timing import compute_segments, parse_paragraph_markers
 
 
@@ -79,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
 
     scene_map = load_scene_map(scene_map_path)
     assets = resolve_assets(scene_map, segment_count=len(segments))
+    assets = resolve_asset_paths(assets, scene_map_path.resolve().parent)
+    validate_assets_exist(assets)
     for asset in assets:
         if asset["type"] == "video":
             asset["source_duration"] = probe_duration_seconds(Path(asset["path"]))
