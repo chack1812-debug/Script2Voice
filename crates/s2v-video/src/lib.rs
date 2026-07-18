@@ -5,6 +5,5 @@ pub mod ffmpeg_cmd;
 pub mod scene_map;
 pub mod srt_timing;
 
-// NOTE: `ComposeOptions` (Task 5) はまだ実装されていないため、現時点では re-export しない。
-// pub use compose::ComposeOptions;
+pub use compose::ComposeOptions;
 pub use scene_map::{Asset, AssetKind};
