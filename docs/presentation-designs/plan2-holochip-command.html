@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案2: ホロチップ・コマンドセンター — Script2Voice プレゼンデザイン</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@300;400;700;900&display=swap');
+
+  :root {
+    --bg: #060A10;
+    --panel-bg: rgba(8,16,28,0.8);
+    --teal: #00FFD4;
+    --teal-mid: #0A8A72;
+    --teal-dim: rgba(0,255,212,0.12);
+    --amber: #FF9F1C;
+    --amber-dim: rgba(255,159,28,0.15);
+    --copper: #C8956C;
+    --red: #FF4757;
+    --green: #2ED573;
+    --white: #D8E3F0;
+    --muted: rgba(216,227,240,0.45);
+    --border: rgba(0,255,212,0.15);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+
+  .slide {
+    width: 100%; min-height: 100vh;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+
+  /* スキャンライン */
+  .scanline {
+    position: absolute; inset:0; z-index: 1; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,255,212,0.015) 2px,
+      rgba(0,255,212,0.015) 4px
+    );
+  }
+
+  /* ===== SLIDE 1: BOOT SCREEN ===== */
+  .slide-boot {
+    background: radial-gradient(ellipse at 50% 40%, #0C1420 0%, var(--bg) 70%);
+  }
+
+  .boot-content {
+    position: relative; z-index: 2;
+    text-align: center;
+  }
+
+  .boot-frame {
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 4rem 6rem;
+    background: var(--panel-bg);
+    backdrop-filter: blur(20px);
+    position: relative;
+  }
+  .boot-frame::before, .boot-frame::after {
+    content: '';
+    position: absolute;
+    width: 20px; height: 20px;
+    border-color: var(--teal);
+    border-style: solid;
+    border-width: 0;
+  }
+  .boot-frame::before { top:-1px; left:-1px; border-top-width:2px; border-left-width:2px; border-radius: 16px 0 0 0; }
+  .boot-frame::after { bottom:-1px; right:-1px; border-bottom-width:2px; border-right-width:2px; border-radius: 0 0 16px 0; }
+
+  .boot-status {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem; color: var(--teal-mid);
+    margin-bottom: 2rem;
+    letter-spacing: 0.2em;
+    animation: blink-text 3s steps(1) infinite;
+  }
+  @keyframes blink-text {
+    0%,90% { opacity: 1; }
+    95% { opacity: 0; }
+  }
+
+  .boot-title {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: clamp(3.5rem, 8vw, 7rem);
+    font-weight: 700;
+    line-height: 0.95;
+    color: var(--white);
+    text-shadow: 0 0 40px rgba(0,255,212,0.2);
+  }
+  .boot-title .accent { color: var(--teal); }
+
+  .boot-subtitle {
+    font-size: 1.1rem;
+    color: var(--muted);
+    margin-top: 1rem;
+    font-weight: 300;
+    letter-spacing: 0.1em;
+  }
+
+  .boot-chips {
+    display: flex; gap: 0.8rem; margin-top: 2.5rem; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .chip {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem;
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    position: relative;
+  }
+  .chip::before {
+    content: ''; position: absolute;
+    left: 6px; top: 50%; transform: translateY(-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+  }
+  .chip.online::before { background: var(--green); box-shadow: 0 0 4px var(--green); }
+  .chip.standby::before { background: var(--amber); box-shadow: 0 0 4px var(--amber); }
+  .chip { padding-left: 1.5rem; }
+
+  /* ===== SLIDE 2: COMMAND CENTER ===== */
+  .slide-command {
+    background: var(--bg);
+    padding: 1.5rem;
+  }
+
+  .command-grid {
+    position: relative; z-index: 2;
+    display: grid;
+    grid-template-columns: 260px 1fr 260px;
+    grid-template-rows: auto 1fr auto;
+    gap: 1rem;
+    width: 100%; max-width: 1300px;
+    height: 90vh;
+  }
+
+  /* 共通パネル */
+  .cmd-panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .cmd-panel-header {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,255,212,0.03);
+  }
+  .cmd-panel-header .pin {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.55rem; color: var(--teal-mid);
+    border: 1px solid var(--teal-mid);
+    border-radius: 2px; padding: 0.1rem 0.3rem;
+  }
+  .cmd-panel-header .label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem; color: var(--amber);
+    letter-spacing: 0.1em;
+  }
+  .cmd-panel-body { padding: 1rem; flex: 1; }
+
+  /* トップバー */
+  .top-bar {
+    grid-column: 1 / 4;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.8rem 1.5rem;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .top-bar .sys-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.4rem; font-weight: 700;
+    color: var(--teal);
+  }
+  .top-bar .sys-status {
+    display: flex; gap: 1.5rem;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.65rem; color: var(--muted);
+  }
+  .top-bar .sys-status .val { color: var(--teal); }
+
+  /* 左パネル: エンジン */
+  .engine-panel { grid-row: 2 / 4; }
+  .engine-block {
+    padding: 0.8rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 0.8rem;
+    background: rgba(0,0,0,0.3);
+    transition: all 0.3s;
+  }
+  .engine-block:hover {
+    border-color: var(--teal);
+    background: var(--teal-dim);
+  }
+  .engine-block .ic-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem; color: var(--copper);
+    margin-bottom: 0.3rem;
+  }
+  .engine-block .eng-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.1rem; font-weight: 600; color: var(--white);
+  }
+  .engine-block .eng-detail {
+    font-size: 0.7rem; color: var(--muted);
+    margin-top: 0.3rem;
+  }
+  .engine-block .eng-bar {
+    height: 3px; border-radius: 2px;
+    background: rgba(0,255,212,0.1);
+    margin-top: 0.5rem; overflow: hidden;
+  }
+  .engine-block .eng-bar-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--teal), var(--teal-mid));
+  }
+
+  /* 中央: 部屋ホログラム */
+  .room-hologram {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+  }
+  .holo-room {
+    width: 100%; max-width: 500px; aspect-ratio: 16/10;
+    border: 1px solid var(--teal-mid);
+    border-radius: 8px;
+    position: relative;
+    background:
+      radial-gradient(ellipse at 50% 50%, rgba(0,255,212,0.06) 0%, transparent 70%);
+    overflow: hidden;
+  }
+  .holo-room .perspective-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,212,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,212,0.04) 1px, transparent 1px);
+    background-size: 30px 30px;
+    transform: perspective(500px) rotateX(30deg);
+    transform-origin: bottom center;
+  }
+  .holo-walls {
+    position: absolute;
+    left: 15%; right: 15%; top: 20%; bottom: 15%;
+    border: 2px solid var(--teal);
+    border-radius: 4px;
+    box-shadow:
+      0 0 30px rgba(0,255,212,0.15),
+      inset 0 0 30px rgba(0,255,212,0.05);
+    animation: holo-pulse 4s ease-in-out infinite;
+  }
+  @keyframes holo-pulse {
+    0%,100% { box-shadow: 0 0 30px rgba(0,255,212,0.15), inset 0 0 30px rgba(0,255,212,0.05); }
+    50% { box-shadow: 0 0 50px rgba(0,255,212,0.25), inset 0 0 50px rgba(0,255,212,0.1); }
+  }
+
+  .holo-icon {
+    position: absolute;
+    font-size: 2rem;
+    filter: drop-shadow(0 0 15px var(--teal));
+    z-index: 2;
+  }
+  .holo-speaker { left: 25%; top: 30%; }
+  .holo-listener { right: 25%; bottom: 25%; }
+
+  .holo-wave {
+    position: absolute; left:25%; top:30%; right:25%; bottom:25%;
+    z-index: 1;
+  }
+  .holo-wave svg { width:100%; height:100%; }
+
+  .holo-data {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem; margin-top: 1rem; width: 100%; max-width: 500px;
+  }
+  .holo-datum {
+    text-align: center;
+    padding: 0.5rem;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+  }
+  .holo-datum .d-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.55rem; color: var(--muted);
+    text-transform: uppercase;
+  }
+  .holo-datum .d-value {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 1.2rem; font-weight: 700;
+    color: var(--teal);
+  }
+
+  /* 右パネル: 出力 */
+  .output-panel { grid-row: 2; }
+  .output-block {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.6rem 0.8rem;
+    border-bottom: 1px solid rgba(0,255,212,0.06);
+    transition: background 0.2s;
+  }
+  .output-block:hover { background: var(--teal-dim); }
+  .output-block:last-child { border-bottom: none; }
+  .output-block .o-icon {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: var(--teal-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+  }
+  .output-block .o-info .o-name {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.8rem; color: var(--white);
+  }
+  .output-block .o-info .o-desc {
+    font-size: 0.65rem; color: var(--muted);
+  }
+
+  /* 右下: ログ */
+  .log-panel { grid-row: 3; }
+  .log-line {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    padding: 0.15rem 0;
+    border-bottom: 1px solid rgba(255,255,255,0.02);
+  }
+  .log-line .ts { color: var(--teal-mid); }
+  .log-line .ok { color: var(--green); }
+  .log-line .warn { color: var(--amber); }
+
+  /* ボトムバー */
+  .bottom-bar {
+    grid-column: 1 / 4;
+    display: flex; align-items: center; gap: 2rem;
+    padding: 0.8rem 1.5rem;
+    background: var(--panel-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .pipeline-step {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem;
+  }
+  .pipeline-step .step-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.6rem; font-weight: 700;
+  }
+  .step-done .step-num { background: var(--teal); color: var(--bg); }
+  .step-active .step-num { background: var(--amber); color: var(--bg); animation: pulse-dot 1.5s ease-in-out infinite; }
+  .step-pending .step-num { border: 1px solid var(--muted); color: var(--muted); }
+  @keyframes pulse-dot {
+    0%,100% { box-shadow: 0 0 0 0 rgba(255,159,28,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(255,159,28,0); }
+  }
+  .pipeline-step .step-name { color: var(--white); }
+  .step-pending .step-name { color: var(--muted); }
+  .step-connector {
+    width: 30px; height: 1px;
+    background: linear-gradient(90deg, var(--teal), var(--teal-mid));
+  }
+  .step-connector.pending { background: rgba(255,255,255,0.1); }
+
+  .section-divider {
+    width: 100%; text-align: center; padding: 2rem;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.7rem; color: var(--teal-mid);
+    letter-spacing: 0.3em;
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: BOOT ==================== -->
+<section class="slide slide-boot">
+  <div class="scanline"></div>
+  <div class="boot-content">
+    <div class="boot-frame">
+      <div class="boot-status">// INITIALIZING SOUND ENGINEERING SYSTEM...</div>
+      <div class="boot-title">
+        Script<span class="accent">2</span>Voice
+      </div>
+      <div class="boot-subtitle">台本から、音の空間を創り出す</div>
+      <div class="boot-chips">
+        <span class="chip online">VOICEVOX ONLINE</span>
+        <span class="chip online">AivisSpeech ONLINE</span>
+        <span class="chip standby">XTTS STANDBY</span>
+        <span class="chip online">Spatial DSP READY</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider">▼ COMMAND CENTER LAYOUT ▼</div>
+
+<!-- ==================== SLIDE 2: COMMAND CENTER ==================== -->
+<section class="slide slide-command">
+  <div class="scanline"></div>
+
+  <div class="command-grid">
+
+    <!-- トップバー -->
+    <div class="top-bar">
+      <span class="sys-name">Script2Voice Command</span>
+      <div class="sys-status">
+        <span>ENGINES: <span class="val">3/3</span></span>
+        <span>LINES: <span class="val">177</span></span>
+        <span>STATUS: <span class="val">PROCESSING</span></span>
+      </div>
+    </div>
+
+    <!-- 左: エンジン -->
+    <div class="cmd-panel engine-panel">
+      <div class="cmd-panel-header">
+        <span class="pin">IC-01</span>
+        <span class="label">TTS ENGINES</span>
+      </div>
+      <div class="cmd-panel-body">
+        <div class="engine-block">
+          <div class="ic-label">U1 // PORT 50021</div>
+          <div class="eng-name">VOICEVOX</div>
+          <div class="eng-detail">ずんだもん / 四国めたん</div>
+          <div class="eng-bar"><div class="eng-bar-fill" style="width:78%"></div></div>
+        </div>
+        <div class="engine-block">
+          <div class="ic-label">U2 // PORT 10101</div>
+          <div class="eng-name">AivisSpeech</div>
+          <div class="eng-detail">Anneli / Avis</div>
+          <div class="eng-bar"><div class="eng-bar-fill" style="width:45%"></div></div>
+        </div>
+        <div class="engine-block">
+          <div class="ic-label">U3 // PORT 8020</div>
+          <div class="eng-name">XTTS v2</div>
+          <div class="eng-detail">Custom Voice Clone</div>
+          <div class="eng-bar"><div class="eng-bar-fill" style="width:20%"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中央: 部屋ホログラム -->
+    <div class="cmd-panel room-hologram">
+      <div class="cmd-panel-header">
+        <span class="pin">IC-02</span>
+        <span class="label">SPATIAL PROCESSOR — ROOM VIEW</span>
+      </div>
+      <div class="cmd-panel-body" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div class="holo-room">
+          <div class="perspective-grid"></div>
+          <div class="holo-walls"></div>
+          <div class="holo-wave">
+            <svg viewBox="0 0 200 120">
+              <path d="M30,35 Q100,5 160,75" fill="none" stroke="#00FFD4" stroke-width="1.5" stroke-dasharray="4 3" opacity="0.5">
+                <animate attributeName="stroke-dashoffset" values="0;-14" dur="2s" repeatCount="indefinite"/>
+              </path>
+              <path d="M30,35 L30,95 L160,95 L160,75" fill="none" stroke="#00FFD4" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.2">
+                <animate attributeName="stroke-dashoffset" values="0;-14" dur="3s" repeatCount="indefinite"/>
+              </path>
+            </svg>
+          </div>
+          <span class="holo-icon holo-speaker">🔊</span>
+          <span class="holo-icon holo-listener">👤</span>
+        </div>
+        <div class="holo-data">
+          <div class="holo-datum"><div class="d-label">Pan</div><div class="d-value">-25°</div></div>
+          <div class="holo-datum"><div class="d-label">Distance</div><div class="d-value">2.0m</div></div>
+          <div class="holo-datum"><div class="d-label">Room</div><div class="d-value">25×45</div></div>
+          <div class="holo-datum"><div class="d-label">Reverb</div><div class="d-value">0.30</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右上: 出力 -->
+    <div class="cmd-panel output-panel">
+      <div class="cmd-panel-header">
+        <span class="pin">IC-03</span>
+        <span class="label">OUTPUT</span>
+      </div>
+      <div class="cmd-panel-body">
+        <div class="output-block">
+          <div class="o-icon">🎵</div>
+          <div class="o-info"><div class="o-name">full_dialogue.wav</div><div class="o-desc">空間音響ミックス済み</div></div>
+        </div>
+        <div class="output-block">
+          <div class="o-icon">📝</div>
+          <div class="o-info"><div class="o-name">subtitles.srt</div><div class="o-desc">ルビ反映字幕</div></div>
+        </div>
+        <div class="output-block">
+          <div class="o-icon">🎬</div>
+          <div class="o-info"><div class="o-name">timeline.fcpxml</div><div class="o-desc">編集タイムライン</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 右下: ログ -->
+    <div class="cmd-panel log-panel">
+      <div class="cmd-panel-header">
+        <span class="pin">LOG</span>
+        <span class="label">SYSTEM LOG</span>
+      </div>
+      <div class="cmd-panel-body" style="overflow-y:auto;">
+        <div class="log-line"><span class="ts">00:00.12</span> <span class="ok">OK</span> config.toml loaded</div>
+        <div class="log-line"><span class="ts">00:00.34</span> <span class="ok">OK</span> VOICEVOX connected</div>
+        <div class="log-line"><span class="ts">00:00.41</span> <span class="ok">OK</span> AivisSpeech connected</div>
+        <div class="log-line"><span class="ts">00:01.02</span> <span class="ok">OK</span> Script parsed: 177 lines</div>
+        <div class="log-line"><span class="ts">00:01.15</span> <span class="warn">WARN</span> XTTS: slow start</div>
+        <div class="log-line"><span class="ts">00:02.30</span> <span class="ok">OK</span> Phase 2 started</div>
+      </div>
+    </div>
+
+    <!-- ボトムバー: パイプライン -->
+    <div class="bottom-bar">
+      <div class="pipeline-step step-done"><span class="step-num">1</span><span class="step-name">Parse</span></div>
+      <div class="step-connector"></div>
+      <div class="pipeline-step step-active"><span class="step-num">2</span><span class="step-name">Synthesize</span></div>
+      <div class="step-connector pending"></div>
+      <div class="pipeline-step step-pending"><span class="step-num">3</span><span class="step-name">Spatial</span></div>
+      <div class="step-connector pending"></div>
+      <div class="pipeline-step step-pending"><span class="step-num">4</span><span class="step-name">Export</span></div>
+    </div>
+
+  </div>
+</section>
+
+</body>
+</html>

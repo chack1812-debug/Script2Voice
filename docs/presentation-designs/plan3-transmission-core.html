@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案3: トランスミッション・コア — Script2Voice プレゼンデザイン</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Exo+2:wght@300;400;700;900&family=Noto+Sans+JP:wght@300;400;700;900&family=Fira+Code:wght@400;600&display=swap');
+
+  :root {
+    --bg: #07090F;
+    --teal: #0AFFC2;
+    --teal-mid: #088A6A;
+    --teal-glow: rgba(10,255,194,0.2);
+    --copper: #E8A96A;
+    --copper-dim: rgba(232,169,106,0.2);
+    --amber: #FFCB47;
+    --dark-panel: rgba(10,14,22,0.85);
+    --white: #E0E8F0;
+    --muted: rgba(224,232,240,0.5);
+    --border: rgba(10,255,194,0.12);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+
+  .slide {
+    width: 100%; min-height: 100vh;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ===== SLIDE 1: CORE TITLE ===== */
+  .slide-core-title {
+    background: var(--bg);
+  }
+
+  .core-bg-rings {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ring {
+    position: absolute; border-radius: 50%;
+    border: 1px solid var(--border);
+  }
+  .ring-1 { width: 300px; height: 300px; animation: rotate-ring 30s linear infinite; }
+  .ring-2 { width: 500px; height: 500px; border-style: dashed; animation: rotate-ring 45s linear infinite reverse; }
+  .ring-3 { width: 700px; height: 700px; opacity: 0.5; animation: rotate-ring 60s linear infinite; }
+  .ring-4 { width: 900px; height: 900px; opacity: 0.3; border-style: dashed; animation: rotate-ring 80s linear infinite reverse; }
+  @keyframes rotate-ring { to { transform: rotate(360deg); } }
+
+  /* 回路トレース放射 */
+  .radial-traces {
+    position: absolute; inset:0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .radial-traces svg { width: 100%; height: 100%; max-width: 1000px; max-height: 1000px; }
+
+  .core-title-content {
+    position: relative; z-index: 5;
+    text-align: center;
+  }
+
+  .core-glow {
+    width: 180px; height: 180px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--teal-glow) 0%, transparent 70%);
+    margin: 0 auto 2rem;
+    display: flex; align-items: center; justify-content: center;
+    animation: core-pulse 3s ease-in-out infinite;
+  }
+  @keyframes core-pulse {
+    0%,100% { transform: scale(1); opacity: 0.8; }
+    50% { transform: scale(1.1); opacity: 1; }
+  }
+  .core-glow .inner {
+    width: 80px; height: 80px;
+    border-radius: 50%;
+    border: 2px solid var(--teal);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 2rem;
+    box-shadow: 0 0 40px var(--teal-glow), inset 0 0 20px var(--teal-glow);
+  }
+
+  .core-main-title {
+    font-family: 'Exo 2', sans-serif;
+    font-size: clamp(3rem, 7vw, 5.5rem);
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    color: var(--white);
+    text-shadow: 0 0 60px var(--teal-glow);
+  }
+  .core-main-title span { color: var(--teal); }
+
+  .core-tagline {
+    font-size: 1.15rem;
+    color: var(--muted);
+    margin-top: 0.8rem;
+    font-weight: 300;
+  }
+
+  .core-specs {
+    display: flex; gap: 2rem; margin-top: 2.5rem; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .core-spec {
+    text-align: center;
+  }
+  .core-spec .val {
+    font-family: 'Exo 2', sans-serif;
+    font-size: 1.8rem; font-weight: 700;
+    color: var(--teal);
+  }
+  .core-spec .lbl {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.15em;
+  }
+
+  /* ===== SLIDE 2: ORBITAL ARCHITECTURE ===== */
+  .slide-orbital {
+    background: radial-gradient(circle at 50% 50%, #0C1018 0%, var(--bg) 60%);
+    flex-direction: column; gap: 2rem;
+    padding: 2rem;
+  }
+
+  .orbital-header {
+    position: relative; z-index: 5;
+    text-align: center;
+  }
+  .orbital-header h2 {
+    font-family: 'Exo 2', sans-serif;
+    font-size: clamp(1.3rem, 3vw, 2rem);
+    font-weight: 700; color: var(--teal);
+  }
+  .orbital-header p {
+    font-size: 0.85rem; color: var(--muted); margin-top: 0.3rem;
+  }
+
+  .orbital-system {
+    position: relative; z-index: 5;
+    width: 100%; max-width: 900px;
+    aspect-ratio: 16/10;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* 中央コア: 部屋 */
+  .orbital-core {
+    width: 260px; height: 200px;
+    background: var(--dark-panel);
+    border: 2px solid var(--teal);
+    border-radius: 12px;
+    position: absolute;
+    box-shadow: 0 0 50px var(--teal-glow);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 3;
+  }
+  .orbital-core .core-label {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.6rem; color: var(--amber);
+    text-transform: uppercase; letter-spacing: 0.2em;
+    margin-bottom: 0.5rem;
+  }
+  .orbital-room {
+    width: 180px; height: 110px;
+    border: 1.5px solid var(--teal);
+    border-radius: 4px;
+    position: relative;
+    background: rgba(10,255,194,0.03);
+  }
+  .orbital-room .or-grid {
+    position: absolute; inset:0;
+    background-image:
+      linear-gradient(rgba(10,255,194,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(10,255,194,0.05) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  .orbital-room .or-speaker { position: absolute; top: 20%; left: 20%; font-size: 1.4rem; }
+  .orbital-room .or-listener { position: absolute; bottom: 20%; right: 20%; font-size: 1.4rem; }
+
+  /* 衛星モジュール */
+  .satellite {
+    position: absolute;
+    width: 150px;
+    background: var(--dark-panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    z-index: 2;
+    transition: all 0.3s;
+  }
+  .satellite:hover {
+    border-color: var(--teal);
+    box-shadow: 0 0 20px var(--teal-glow);
+    transform: scale(1.05);
+  }
+  .satellite .sat-icon { font-size: 1.8rem; margin-bottom: 0.3rem; }
+  .satellite .sat-name {
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem; color: var(--amber);
+    text-transform: uppercase;
+  }
+  .satellite .sat-desc {
+    font-size: 0.75rem; color: var(--muted);
+    margin-top: 0.2rem;
+  }
+
+  .sat-parse { top: 2%; left: 5%; }
+  .sat-synth { top: 2%; right: 5%; }
+  .sat-export { bottom: 2%; right: 5%; }
+  .sat-batch { bottom: 2%; left: 5%; }
+
+  /* 接続線 */
+  .orbital-connections {
+    position: absolute; inset:0; z-index: 1;
+  }
+  .orbital-connections svg { width: 100%; height: 100%; }
+  .conn-line {
+    stroke: var(--teal-mid);
+    stroke-width: 1.5;
+    fill: none;
+    stroke-dasharray: 6 4;
+    animation: dash-flow 2s linear infinite;
+  }
+  @keyframes dash-flow { to { stroke-dashoffset: -20; } }
+  .conn-line-copper {
+    stroke: var(--copper);
+    stroke-width: 1;
+    fill: none;
+    stroke-dasharray: 4 6;
+    opacity: 0.4;
+    animation: dash-flow 3s linear infinite;
+  }
+
+  .section-divider {
+    width: 100%; text-align: center; padding: 2rem;
+    font-family: 'Fira Code', monospace;
+    font-size: 0.7rem; color: var(--teal-mid);
+    letter-spacing: 0.3em;
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: CORE TITLE ==================== -->
+<section class="slide slide-core-title">
+  <div class="core-bg-rings">
+    <div class="ring ring-1"></div>
+    <div class="ring ring-2"></div>
+    <div class="ring ring-3"></div>
+    <div class="ring ring-4"></div>
+  </div>
+
+  <div class="radial-traces">
+    <svg viewBox="0 0 1000 1000">
+      <line x1="500" y1="200" x2="500" y2="0" stroke="#E8A96A" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.2"/>
+      <line x1="500" y1="800" x2="500" y2="1000" stroke="#E8A96A" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.2"/>
+      <line x1="200" y1="500" x2="0" y2="500" stroke="#E8A96A" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.2"/>
+      <line x1="800" y1="500" x2="1000" y2="500" stroke="#E8A96A" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.2"/>
+      <line x1="300" y1="300" x2="100" y2="100" stroke="#0AFFC2" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.15"/>
+      <line x1="700" y1="300" x2="900" y2="100" stroke="#0AFFC2" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.15"/>
+      <line x1="300" y1="700" x2="100" y2="900" stroke="#0AFFC2" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.15"/>
+      <line x1="700" y1="700" x2="900" y2="900" stroke="#0AFFC2" stroke-width="0.5" stroke-dasharray="4 8" opacity="0.15"/>
+    </svg>
+  </div>
+
+  <div class="core-title-content">
+    <div class="core-glow">
+      <div class="inner">🔊</div>
+    </div>
+    <div class="core-main-title">Script<span>2</span>Voice</div>
+    <div class="core-tagline">すべての音を、正しい場所へ</div>
+    <div class="core-specs">
+      <div class="core-spec"><div class="val">3</div><div class="lbl">TTS Engines</div></div>
+      <div class="core-spec"><div class="val">3D</div><div class="lbl">Spatial Audio</div></div>
+      <div class="core-spec"><div class="val">∞</div><div class="lbl">Batch Scripts</div></div>
+      <div class="core-spec"><div class="val">4</div><div class="lbl">Export Formats</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider">▼ ORBITAL ARCHITECTURE VIEW ▼</div>
+
+<!-- ==================== SLIDE 2: ORBITAL ==================== -->
+<section class="slide slide-orbital">
+  <div class="orbital-header">
+    <h2>Processing Architecture</h2>
+    <p>中央の空間処理コアを軸に、各モジュールが連携</p>
+  </div>
+
+  <div class="orbital-system">
+    <!-- 接続線(SVG) -->
+    <div class="orbital-connections">
+      <svg viewBox="0 0 900 560">
+        <path class="conn-line" d="M150,80 Q300,150 370,230"/>
+        <path class="conn-line" d="M750,80 Q600,150 530,230"/>
+        <path class="conn-line" d="M530,340 Q600,420 750,480"/>
+        <path class="conn-line" d="M370,340 Q300,420 150,480"/>
+        <path class="conn-line-copper" d="M150,80 L150,480"/>
+        <path class="conn-line-copper" d="M750,80 L750,480"/>
+      </svg>
+    </div>
+
+    <!-- 中央コア -->
+    <div class="orbital-core">
+      <div class="core-label">Spatial DSP Core</div>
+      <div class="orbital-room">
+        <div class="or-grid"></div>
+        <span class="or-speaker">🔊</span>
+        <span class="or-listener">👤</span>
+      </div>
+    </div>
+
+    <!-- 衛星モジュール -->
+    <div class="satellite sat-parse">
+      <div class="sat-icon">📄</div>
+      <div class="sat-name">Parser</div>
+      <div class="sat-desc">台本解析</div>
+    </div>
+    <div class="satellite sat-synth">
+      <div class="sat-icon">🎤</div>
+      <div class="sat-name">Synthesizer</div>
+      <div class="sat-desc">音声合成</div>
+    </div>
+    <div class="satellite sat-export">
+      <div class="sat-icon">📦</div>
+      <div class="sat-name">Exporter</div>
+      <div class="sat-desc">ファイル出力</div>
+    </div>
+    <div class="satellite sat-batch">
+      <div class="sat-icon">🔄</div>
+      <div class="sat-name">Batch</div>
+      <div class="sat-desc">一括処理</div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

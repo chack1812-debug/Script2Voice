@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案4: サウンド・フォージ — Script2Voice プレゼンデザイン</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;600;700&family=Noto+Sans+JP:wght@300;400;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap');
+
+  :root {
+    --bg: #080B12;
+    --copper: #D4935A;
+    --copper-glow: rgba(212,147,90,0.2);
+    --teal: #00E8B8;
+    --teal-glow: rgba(0,232,184,0.15);
+    --emerald: #10B981;
+    --amber: #F5A623;
+    --white: #E4ECF4;
+    --muted: rgba(228,236,244,0.45);
+    --panel: rgba(12,16,24,0.8);
+    --border: rgba(0,232,184,0.12);
+    --border-copper: rgba(212,147,90,0.2);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+
+  .slide {
+    width: 100%; min-height: 100vh;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ===== SLIDE 1: TRANSFORMATION TITLE ===== */
+  .slide-forge-title {
+    background: var(--bg);
+  }
+
+  .forge-bg {
+    position: absolute; inset: 0;
+    overflow: hidden;
+  }
+
+  /* 左: 回路パターン */
+  .circuit-side {
+    position: absolute; left: 0; top: 0; bottom: 0; width: 40%;
+    background-image:
+      linear-gradient(var(--border-copper) 1px, transparent 1px),
+      linear-gradient(90deg, var(--border-copper) 1px, transparent 1px);
+    background-size: 30px 30px;
+    opacity: 0.15;
+    mask-image: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+    -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+  }
+
+  /* 右: 波形パターン */
+  .wave-side {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 40%;
+    opacity: 0.12;
+    mask-image: linear-gradient(270deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+    -webkit-mask-image: linear-gradient(270deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+    overflow: hidden;
+  }
+  .wave-side svg { width: 100%; height: 100%; }
+
+  /* 中央グラデーション */
+  .center-gradient {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 50%, rgba(0,232,184,0.06) 0%, transparent 50%);
+  }
+
+  .forge-title-content {
+    position: relative; z-index: 5;
+    text-align: center;
+    max-width: 800px;
+  }
+
+  .forge-flow {
+    display: flex; align-items: center; justify-content: center;
+    gap: 1.5rem; margin-bottom: 2rem;
+  }
+  .forge-flow-item {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+  }
+  .forge-flow-icon {
+    width: 56px; height: 56px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.6rem;
+  }
+  .ff-digital {
+    border: 1px solid var(--border-copper);
+    background: var(--copper-glow);
+  }
+  .ff-process {
+    border: 1px solid var(--border);
+    background: var(--teal-glow);
+    box-shadow: 0 0 20px var(--teal-glow);
+  }
+  .ff-acoustic {
+    border: 1px solid rgba(16,185,129,0.2);
+    background: rgba(16,185,129,0.1);
+  }
+  .forge-flow-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.6rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .forge-flow-arrow {
+    font-size: 1.2rem; color: var(--teal);
+    animation: arrow-pulse 2s ease-in-out infinite;
+  }
+  @keyframes arrow-pulse {
+    0%,100% { opacity: 0.4; transform: translateX(0); }
+    50% { opacity: 1; transform: translateX(4px); }
+  }
+
+  .forge-main-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(3rem, 7vw, 5.5rem);
+    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--copper) 0%, var(--teal) 50%, var(--emerald) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .forge-subtitle {
+    font-size: 1.1rem; color: var(--muted);
+    margin-top: 0.8rem; font-weight: 300;
+  }
+
+  .forge-tags {
+    display: flex; gap: 0.6rem; margin-top: 2rem; justify-content: center;
+    flex-wrap: wrap;
+  }
+  .forge-tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.65rem;
+    padding: 0.4rem 1rem;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .forge-tag.highlight {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: var(--teal-glow);
+  }
+
+  /* ===== SLIDE 2: FORGE PIPELINE ===== */
+  .slide-forge-content {
+    background: var(--bg);
+    flex-direction: column;
+    gap: 2rem; padding: 3rem;
+  }
+
+  .forge-content-header {
+    position: relative; z-index: 5;
+    width: 100%; max-width: 1200px;
+  }
+  .forge-content-header h2 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(1.2rem, 3vw, 1.8rem);
+    font-weight: 700; color: var(--teal);
+  }
+
+  .forge-pipeline {
+    position: relative; z-index: 5;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    max-width: 1200px; width: 100%;
+  }
+
+  .forge-stage {
+    position: relative;
+    padding: 1.5rem;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    transition: all 0.3s;
+  }
+  .forge-stage:first-child { border-radius: 12px 0 0 12px; }
+  .forge-stage:last-child { border-radius: 0 12px 12px 0; }
+  .forge-stage:hover {
+    background: rgba(0,232,184,0.04);
+    z-index: 1;
+  }
+
+  .stage-num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 3rem; font-weight: 700;
+    color: rgba(255,255,255,0.04);
+    position: absolute; top: 8px; right: 12px;
+  }
+
+  .stage-icon {
+    font-size: 2rem; margin-bottom: 0.8rem;
+  }
+
+  .stage-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem; color: var(--amber);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 0.5rem;
+  }
+
+  .stage-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.2rem; font-weight: 600;
+    margin-bottom: 0.6rem;
+  }
+
+  .stage-desc {
+    font-size: 0.8rem; color: var(--muted);
+    line-height: 1.6;
+  }
+
+  .stage-detail {
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--border);
+  }
+  .stage-detail-item {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.75rem; color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+  .stage-detail-item .dot {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--teal);
+  }
+
+  /* 中間の矢印 */
+  .forge-stage::after {
+    content: '→';
+    position: absolute;
+    right: -12px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 1.2rem;
+    color: var(--teal);
+    z-index: 2;
+  }
+  .forge-stage:last-child::after { content: none; }
+
+  /* 色帯グラデーション */
+  .forge-stage:nth-child(1) { border-bottom: 2px solid var(--copper); }
+  .forge-stage:nth-child(2) { border-bottom: 2px solid var(--amber); }
+  .forge-stage:nth-child(3) { border-bottom: 2px solid var(--teal); }
+  .forge-stage:nth-child(4) { border-bottom: 2px solid var(--emerald); }
+
+  /* 下部: 部屋プレビュー */
+  .forge-room-strip {
+    position: relative; z-index: 5;
+    display: flex; align-items: center; gap: 2rem;
+    max-width: 1200px; width: 100%;
+    padding: 1.5rem 2rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .forge-room-mini {
+    width: 200px; height: 130px;
+    border: 1.5px solid var(--teal);
+    border-radius: 6px;
+    position: relative;
+    background: rgba(0,232,184,0.02);
+    flex-shrink: 0;
+  }
+  .forge-room-mini .rm-grid {
+    position: absolute; inset:0;
+    background-image:
+      linear-gradient(rgba(0,232,184,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,232,184,0.04) 1px, transparent 1px);
+    background-size: 16px 16px;
+  }
+  .forge-room-mini .rm-icon {
+    position: absolute; font-size: 1.2rem;
+    filter: drop-shadow(0 0 8px var(--teal));
+  }
+  .rm-sp { top:22%; left:22%; }
+  .rm-li { bottom:22%; right:22%; }
+
+  .forge-room-info {
+    flex: 1;
+  }
+  .forge-room-info h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1rem; font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+  .forge-room-info p {
+    font-size: 0.8rem; color: var(--muted);
+    line-height: 1.6;
+  }
+  .room-params-row {
+    display: flex; gap: 1rem; margin-top: 0.8rem; flex-wrap: wrap;
+  }
+  .rp {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem; color: var(--muted);
+  }
+  .rp span { color: var(--teal); font-weight: 600; }
+
+  .section-divider {
+    width: 100%; text-align: center; padding: 2rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.7rem; color: var(--teal);
+    letter-spacing: 0.3em; background: var(--bg);
+    opacity: 0.5;
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: FORGE TITLE ==================== -->
+<section class="slide slide-forge-title">
+  <div class="forge-bg">
+    <div class="circuit-side"></div>
+    <div class="wave-side">
+      <svg viewBox="0 0 400 800" preserveAspectRatio="none">
+        <path d="M0,100 Q100,80 200,100 T400,100" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.6"/>
+        <path d="M0,200 Q100,170 200,200 T400,200" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.5"/>
+        <path d="M0,300 Q100,280 200,300 T400,300" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.4"/>
+        <path d="M0,400 Q100,370 200,400 T400,400" fill="none" stroke="#00E8B8" stroke-width="0.8" opacity="0.5"/>
+        <path d="M0,500 Q100,470 200,500 T400,500" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.4"/>
+        <path d="M0,600 Q100,580 200,600 T400,600" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.3"/>
+        <path d="M0,700 Q100,680 200,700 T400,700" fill="none" stroke="#10B981" stroke-width="0.5" opacity="0.2"/>
+      </svg>
+    </div>
+    <div class="center-gradient"></div>
+  </div>
+
+  <div class="forge-title-content">
+    <div class="forge-flow">
+      <div class="forge-flow-item">
+        <div class="forge-flow-icon ff-digital">📄</div>
+        <span class="forge-flow-label">Digital</span>
+      </div>
+      <span class="forge-flow-arrow">→</span>
+      <div class="forge-flow-item">
+        <div class="forge-flow-icon ff-process">⚡</div>
+        <span class="forge-flow-label">Process</span>
+      </div>
+      <span class="forge-flow-arrow">→</span>
+      <div class="forge-flow-item">
+        <div class="forge-flow-icon ff-acoustic">🔊</div>
+        <span class="forge-flow-label">Acoustic</span>
+      </div>
+    </div>
+
+    <h1 class="forge-main-title">Script2Voice</h1>
+    <p class="forge-subtitle">テキストが回路を通り、音の空間に変わる</p>
+
+    <div class="forge-tags">
+      <span class="forge-tag">VOICEVOX</span>
+      <span class="forge-tag">AivisSpeech</span>
+      <span class="forge-tag">XTTS</span>
+      <span class="forge-tag highlight">Spatial Audio</span>
+      <span class="forge-tag highlight">Rust</span>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider">▼ PIPELINE DETAIL ▼</div>
+
+<!-- ==================== SLIDE 2: PIPELINE ==================== -->
+<section class="slide slide-forge-content">
+  <div class="forge-content-header">
+    <h2>Processing Pipeline</h2>
+  </div>
+
+  <div class="forge-pipeline">
+    <div class="forge-stage">
+      <div class="stage-num">01</div>
+      <div class="stage-icon">📄</div>
+      <div class="stage-name">Parse</div>
+      <div class="stage-title">台本解析</div>
+      <div class="stage-desc">テキストファイルからシーン・台詞・キャスト情報を構造化データへ変換</div>
+      <div class="stage-detail">
+        <div class="stage-detail-item"><span class="dot"></span>ルビ記法対応</div>
+        <div class="stage-detail-item"><span class="dot"></span>シーン区切り検出</div>
+        <div class="stage-detail-item"><span class="dot"></span>キャスト自動割当</div>
+      </div>
+    </div>
+
+    <div class="forge-stage">
+      <div class="stage-num">02</div>
+      <div class="stage-icon">🎤</div>
+      <div class="stage-name">Synthesize</div>
+      <div class="stage-title">音声合成</div>
+      <div class="stage-desc">キャストごとに最適なTTSエンジンを選択し、台詞を音声化</div>
+      <div class="stage-detail">
+        <div class="stage-detail-item"><span class="dot"></span>3エンジン対応</div>
+        <div class="stage-detail-item"><span class="dot"></span>自動起動・終了</div>
+        <div class="stage-detail-item"><span class="dot"></span>非同期並列処理</div>
+      </div>
+    </div>
+
+    <div class="forge-stage">
+      <div class="stage-num">03</div>
+      <div class="stage-icon">🔊</div>
+      <div class="stage-name">Spatial DSP</div>
+      <div class="stage-title">空間音響処理</div>
+      <div class="stage-desc">定位・距離減衰・初期反射・残響を物理モデルで付与</div>
+      <div class="stage-detail">
+        <div class="stage-detail-item"><span class="dot"></span>3D定位(pan/距離/高さ)</div>
+        <div class="stage-detail-item"><span class="dot"></span>部屋シミュレーション</div>
+        <div class="stage-detail-item"><span class="dot"></span>壁面反射モデル</div>
+      </div>
+    </div>
+
+    <div class="forge-stage">
+      <div class="stage-num">04</div>
+      <div class="stage-icon">📦</div>
+      <div class="stage-name">Export</div>
+      <div class="stage-title">ファイル出力</div>
+      <div class="stage-desc">タイムラインを構築し、複数フォーマットで一括出力</div>
+      <div class="stage-detail">
+        <div class="stage-detail-item"><span class="dot"></span>.wav ミックス</div>
+        <div class="stage-detail-item"><span class="dot"></span>.srt 字幕</div>
+        <div class="stage-detail-item"><span class="dot"></span>.fcpxml タイムライン</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="forge-room-strip">
+    <div class="forge-room-mini">
+      <div class="rm-grid"></div>
+      <span class="rm-icon rm-sp">🔊</span>
+      <span class="rm-icon rm-li">👤</span>
+    </div>
+    <div class="forge-room-info">
+      <h3>空間音響エンジン</h3>
+      <p>仮想空間内にスピーカー(話者)とリスナー(聴取者)を配置。壁面反射・距離減衰・残響を物理ベースでシミュレーションし、まるでその場にいるかのような立体的な音響を生成します。</p>
+      <div class="room-params-row">
+        <span class="rp">W: <span>25.0m</span></span>
+        <span class="rp">D: <span>45.0m</span></span>
+        <span class="rp">H: <span>18.0m</span></span>
+        <span class="rp">reverb: <span>0.30</span></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Script2Voice — プレゼンテーション</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0A0E17;
+    --bg2: #0D1520;
+    --teal: #14F0C5;
+    --teal-dim: #0A7A64;
+    --amber: #FFB800;
+    --copper: #D4A574;
+    --copper-dim: rgba(212,165,116,0.15);
+    --white: #E8EDF5;
+    --white-dim: rgba(232,237,245,0.6);
+    --glass: rgba(14,20,35,0.65);
+    --glass-border: rgba(20,240,197,0.25);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  html {
+    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ===== 共通パーツ ===== */
+  .slide {
+    width: 100%; min-height: 100vh;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+    scroll-snap-align: start;
+    padding: 3rem;
+  }
+
+  /* PCB背景パターン */
+  .pcb-bg {
+    position: absolute; inset:0; z-index:0; opacity: 0.12;
+    background-image:
+      linear-gradient(var(--copper-dim) 1px, transparent 1px),
+      linear-gradient(90deg, var(--copper-dim) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .pcb-bg::after {
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 20% 30%, var(--copper-dim) 0%, transparent 60%),
+      radial-gradient(circle at 80% 70%, var(--copper-dim) 0%, transparent 60%);
+  }
+
+  /* 六角グリッド */
+  .hex-grid {
+    position: absolute; inset:0; z-index:0; opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='52'%3E%3Cpolygon points='30,2 55,15 55,37 30,50 5,37 5,15' fill='none' stroke='%2314F0C5' stroke-width='0.5'/%3E%3C/svg%3E");
+    background-size: 60px 52px;
+  }
+
+  /* 共通: コンテンツヘッダ */
+  .content-header {
+    position: relative; z-index: 2;
+    width: 100%; max-width: 1200px;
+    margin-bottom: 1.8rem;
+  }
+  .content-header .kicker {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem; letter-spacing: 0.25em;
+    color: var(--amber); text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+  .content-header h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.2rem, 3vw, 2rem);
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: 0.05em;
+  }
+  .content-header .line {
+    height: 1px; margin-top: 0.6rem;
+    background: linear-gradient(90deg, var(--teal), transparent);
+  }
+
+  /* 共通: HUDパネル */
+  .hud-panel {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    backdrop-filter: blur(16px);
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .hud-panel:hover {
+    border-color: var(--teal);
+    box-shadow: 0 0 24px rgba(20,240,197,0.12), inset 0 0 24px rgba(20,240,197,0.04);
+  }
+  .hud-panel::before {
+    content: attr(data-id);
+    position: absolute; top: 8px; right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; color: var(--teal-dim);
+    opacity: 0.6;
+  }
+  .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.9rem;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .panel-title .indicator {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 6px var(--teal);
+  }
+
+  /* ===== スライド1: タイトル ===== */
+  .slide-title {
+    background: radial-gradient(ellipse at 50% 50%, #0F1A2A 0%, var(--bg) 70%);
+  }
+  .title-circuit { position: absolute; width: 100%; height: 100%; z-index: 1; }
+  .title-circuit svg { width: 100%; height: 100%; }
+  .title-content { position: relative; z-index: 2; text-align: center; }
+  .title-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; letter-spacing: 0.3em;
+    color: var(--teal-dim); text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+  .title-main {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(3rem, 7vw, 6rem);
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--teal) 0%, #00D4FF 50%, var(--teal) 100%);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 30px rgba(20,240,197,0.3));
+  }
+  @keyframes shimmer {
+    0%,100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  .title-sub {
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    font-weight: 300; color: var(--white-dim);
+    margin-top: 1rem; letter-spacing: 0.15em;
+  }
+  .title-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    margin-top: 2rem; padding: 0.5rem 1.5rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 100px;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem; color: var(--amber);
+  }
+  .title-badge .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--teal);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; box-shadow: 0 0 4px var(--teal); }
+    50% { opacity: 0.4; box-shadow: 0 0 12px var(--teal); }
+  }
+  .circuit-line { stroke: var(--copper); stroke-width: 1; fill: none; stroke-dasharray: 8 4; opacity: 0.3; }
+  .circuit-glow {
+    stroke: var(--teal); stroke-width: 2; fill: none;
+    stroke-dasharray: 200; stroke-dashoffset: 200;
+    animation: trace-glow 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px var(--teal));
+  }
+  @keyframes trace-glow {
+    0% { stroke-dashoffset: 200; }
+    50% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -200; }
+  }
+  .title-scroll-hint {
+    position: absolute; bottom: 3.2rem; left: 50%; transform: translateX(-50%);
+    z-index: 3; font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem; letter-spacing: 0.2em; color: var(--teal-dim);
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    animation: bob 2s ease-in-out infinite;
+  }
+  @keyframes bob { 0%,100% { transform: translateX(-50%) translateY(0);} 50% { transform: translateX(-50%) translateY(6px);} }
+
+  /* ===== スライド2: コンセプト ===== */
+  .concept-flow {
+    position: relative; z-index: 2;
+    display: grid; grid-template-columns: auto 60px auto 60px auto;
+    align-items: center; gap: 0; max-width: 1100px; width: 100%;
+  }
+  .concept-node {
+    display: flex; flex-direction: column; align-items: center; gap: 0.6rem;
+    text-align: center;
+  }
+  .concept-card {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 14px; padding: 1.6rem 1.4rem; backdrop-filter: blur(16px);
+    min-width: 200px; transition: all 0.3s;
+  }
+  .concept-card:hover { border-color: var(--teal); box-shadow: 0 0 24px rgba(20,240,197,0.12); }
+  .concept-card .big-icon { font-size: 2.6rem; filter: drop-shadow(0 0 12px var(--teal)); }
+  .concept-card .c-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    color: var(--amber); text-transform: uppercase; letter-spacing: 0.12em;
+    margin-top: 0.6rem;
+  }
+  .concept-card .c-name { font-size: 1.05rem; font-weight: 700; color: var(--white); margin-top: 0.2rem; }
+  .concept-card .c-desc { font-size: 0.78rem; color: var(--white-dim); margin-top: 0.3rem; }
+  .concept-outputs { display: flex; flex-direction: column; gap: 0.6rem; }
+  .concept-out-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 10px; padding: 0.7rem 1rem; backdrop-filter: blur(16px);
+    min-width: 240px; transition: all 0.3s;
+  }
+  .concept-out-item:hover { border-color: var(--teal); transform: translateX(4px); }
+  .concept-out-item .oi { font-size: 1.3rem; }
+  .concept-out-item .ot { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--amber); }
+  .concept-out-item .od { font-size: 0.78rem; color: var(--white-dim); margin-left: auto; }
+  .concept-engine {
+    background: radial-gradient(circle, rgba(20,240,197,0.12), transparent 70%);
+    border: 1px solid var(--teal); border-radius: 50%;
+    width: 150px; height: 150px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    box-shadow: 0 0 40px rgba(20,240,197,0.2), inset 0 0 30px rgba(20,240,197,0.06);
+    animation: core-pulse 3s ease-in-out infinite;
+  }
+  @keyframes core-pulse {
+    0%,100% { box-shadow: 0 0 40px rgba(20,240,197,0.2), inset 0 0 30px rgba(20,240,197,0.06); }
+    50% { box-shadow: 0 0 64px rgba(20,240,197,0.32), inset 0 0 40px rgba(20,240,197,0.1); }
+  }
+  .concept-engine .ce-icon { font-size: 2.4rem; }
+  .concept-engine .ce-name { font-family:'Orbitron',sans-serif; font-size: 0.7rem; color: var(--teal); margin-top: 0.3rem; letter-spacing: 0.08em; }
+  .flow-arrow { display:flex; align-items:center; justify-content:center; }
+  .flow-arrow svg { width: 56px; height: 22px; }
+  .arrow-line { stroke: var(--teal); stroke-width: 2; fill: none; stroke-dasharray: 4 3; animation: arrow-flow 1.5s linear infinite; }
+  @keyframes arrow-flow { to { stroke-dashoffset: -14; } }
+  .arrow-head { fill: var(--teal); }
+  .concept-tagline {
+    position: relative; z-index: 2; margin-top: 2.4rem; text-align: center;
+    font-size: clamp(1rem, 2.2vw, 1.4rem); font-weight: 300; color: var(--white-dim);
+  }
+  .concept-tagline b { color: var(--teal); font-weight: 700; }
+
+  /* ===== スライド3: アーキテクチャ ===== */
+  .hud-grid {
+    position: relative; z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 1.2rem; max-width: 1200px; width: 100%;
+  }
+  .room-panel {
+    grid-column: 2; grid-row: 1 / 3;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 360px;
+  }
+  .room-view {
+    width: 100%; max-width: 380px; aspect-ratio: 4/3;
+    border: 1px solid var(--teal-dim); border-radius: 8px;
+    position: relative; background: rgba(20,240,197,0.02); overflow: hidden;
+  }
+  .room-view .room-walls {
+    position: absolute; inset: 15%;
+    border: 2px solid var(--teal); border-radius: 4px;
+    box-shadow: 0 0 20px rgba(20,240,197,0.15), inset 0 0 20px rgba(20,240,197,0.05);
+  }
+  .room-view .room-grid {
+    position: absolute; inset: 15%;
+    background-image:
+      linear-gradient(rgba(20,240,197,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,240,197,0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  .room-icon { position: absolute; font-size: 1.8rem; filter: drop-shadow(0 0 10px var(--teal)); transition: transform 0.3s; }
+  .room-icon:hover { transform: scale(1.2); }
+  .speaker-icon { top: 30%; left: 28%; }
+  .listener-icon { top: 60%; right: 28%; }
+  .sound-path { position: absolute; inset: 15%; }
+  .sound-path svg { width: 100%; height: 100%; }
+  .sound-wave-line { stroke: var(--teal); stroke-width: 1.5; fill: none; opacity: 0.5; stroke-dasharray: 6 3; animation: wave-flow 2s linear infinite; }
+  @keyframes wave-flow { to { stroke-dashoffset: -18; } }
+  .room-params { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; justify-content: center; }
+  .param-chip {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
+    padding: 0.3rem 0.7rem; border: 1px solid var(--glass-border);
+    border-radius: 4px; color: var(--white-dim); background: rgba(20,240,197,0.04);
+  }
+  .param-chip span { color: var(--teal); }
+  .pipeline-panel { grid-column: 1 / 4; }
+  .pipeline-flow { display: flex; align-items: center; gap: 0; justify-content: center; flex-wrap: wrap; }
+  .pipeline-node {
+    display: flex; flex-direction: column; align-items: center; gap: 0.4rem;
+    padding: 0.8rem 1.2rem; border: 1px solid var(--glass-border);
+    border-radius: 8px; background: rgba(20,240,197,0.03);
+    min-width: 130px; transition: all 0.3s;
+  }
+  .pipeline-node:hover { border-color: var(--teal); background: rgba(20,240,197,0.08); transform: translateY(-2px); }
+  .pipeline-node .node-icon { font-size: 1.6rem; }
+  .pipeline-node .node-label { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--amber); text-transform: uppercase; letter-spacing: 0.1em; }
+  .pipeline-node .node-desc { font-size: 0.75rem; color: var(--white-dim); text-align: center; }
+  .pipeline-arrow { width: 50px; display: flex; align-items: center; justify-content: center; }
+  .pipeline-arrow svg { width: 50px; height: 20px; }
+  .engine-list, .output-list { display: flex; flex-direction: column; gap: 0.7rem; }
+  .engine-item, .output-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0.8rem; border-radius: 6px;
+    background: rgba(255,255,255,0.02); border-left: 2px solid var(--teal-dim);
+    transition: all 0.3s;
+  }
+  .engine-item:hover, .output-item:hover { background: rgba(20,240,197,0.06); border-left-color: var(--teal); }
+  .engine-item .icon { font-size: 1.2rem; }
+  .engine-item .name { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--white); }
+  .engine-item .status { margin-left: auto; font-size: 0.65rem; color: var(--teal); font-family: 'JetBrains Mono', monospace; }
+  .output-item .ext { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--amber); min-width: 60px; }
+  .output-item .desc { font-size: 0.8rem; color: var(--white-dim); }
+
+  /* ===== スライド4: 台本フォーマット ===== */
+  .two-col {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: 1fr 1.2fr; gap: 1.4rem;
+    max-width: 1200px; width: 100%; align-items: stretch;
+  }
+  .block-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .block-row {
+    display: flex; align-items: baseline; gap: 0.8rem;
+    padding: 0.6rem 0.8rem; border-radius: 6px;
+    background: rgba(255,255,255,0.02); border-left: 2px solid var(--teal-dim);
+    transition: all 0.3s;
+  }
+  .block-row:hover { background: rgba(20,240,197,0.06); border-left-color: var(--teal); }
+  .block-row .tag { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--teal); min-width: 86px; font-weight: 700; }
+  .block-row .what { font-size: 0.82rem; color: var(--white-dim); }
+  .code-block {
+    background: rgba(5,8,14,0.7); border: 1px solid var(--glass-border);
+    border-radius: 10px; padding: 1.2rem 1.4rem; overflow: auto;
+    font-family: 'JetBrains Mono', monospace; font-size: 0.78rem; line-height: 1.65;
+  }
+  .code-block .ln { display: block; white-space: pre; }
+  .c-sec { color: var(--teal); font-weight: 700; }
+  .c-cmd { color: var(--amber); }
+  .c-cast { color: #00D4FF; }
+  .c-com { color: var(--white-dim); opacity: 0.6; }
+  .c-txt { color: var(--white); }
+
+  /* ===== スライド5: エンジン ===== */
+  .engine-grid {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: repeat(3, 1fr); gap: 1.2rem;
+    max-width: 1150px; width: 100%; margin-bottom: 1.4rem;
+  }
+  .engine-card { text-align: center; }
+  .engine-card .ec-icon { font-size: 2.4rem; filter: drop-shadow(0 0 12px var(--teal)); }
+  .engine-card .ec-name { font-family: 'Orbitron', sans-serif; font-size: 1.15rem; color: var(--teal); margin-top: 0.5rem; }
+  .engine-card .ec-id { font-family: 'JetBrains Mono', monospace; font-size: 0.72rem; color: var(--amber); margin-top: 0.3rem; }
+  .engine-card .ec-url { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--white-dim); margin-top: 0.6rem; }
+  .engine-card .ec-role { font-size: 0.8rem; color: var(--white-dim); margin-top: 0.7rem; line-height: 1.6; }
+  .feature-row {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: repeat(4, 1fr); gap: 1rem;
+    max-width: 1150px; width: 100%;
+  }
+  .feature-pill {
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 10px; padding: 1rem; text-align: center; backdrop-filter: blur(12px);
+    transition: all 0.3s;
+  }
+  .feature-pill:hover { border-color: var(--teal); transform: translateY(-2px); }
+  .feature-pill .fi { font-size: 1.5rem; }
+  .feature-pill .ft { font-size: 0.8rem; color: var(--white); margin-top: 0.5rem; font-weight: 700; }
+  .feature-pill .fd { font-size: 0.72rem; color: var(--white-dim); margin-top: 0.2rem; }
+
+  /* ===== スライド6: 空間音響 ===== */
+  .spatial-layout {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 1.4rem;
+    max-width: 1200px; width: 100%;
+  }
+  .dsp-chain { display: flex; flex-direction: column; gap: 0.7rem; margin-top: 0.4rem; }
+  .dsp-step {
+    display: flex; align-items: center; gap: 0.9rem;
+    padding: 0.8rem 1rem; border-radius: 8px;
+    background: rgba(20,240,197,0.03); border: 1px solid var(--glass-border);
+    transition: all 0.3s; position: relative;
+  }
+  .dsp-step:hover { border-color: var(--teal); background: rgba(20,240,197,0.07); }
+  .dsp-step.highlight { border-color: var(--amber); background: rgba(255,184,0,0.06); }
+  .dsp-step .num { font-family: 'Orbitron', sans-serif; font-size: 1rem; color: var(--teal); min-width: 26px; }
+  .dsp-step.highlight .num { color: var(--amber); }
+  .dsp-step .dsp-name { font-weight: 700; font-size: 0.9rem; color: var(--white); }
+  .dsp-step .dsp-desc { font-size: 0.74rem; color: var(--white-dim); margin-top: 0.1rem; }
+  .dsp-step .new-badge {
+    margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
+    color: var(--amber); border: 1px solid var(--amber); border-radius: 4px; padding: 0.1rem 0.45rem;
+  }
+  .spatial-note {
+    grid-column: 1 / 3; position: relative; z-index: 2;
+    font-size: 0.85rem; color: var(--white-dim); text-align: center;
+    margin-top: 0.4rem; line-height: 1.7;
+  }
+  .spatial-note b { color: var(--teal); }
+
+  /* ===== スライド7: 出力 & バッチ ===== */
+  .deliverable-grid {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: repeat(2, 1fr); gap: 1.1rem;
+    max-width: 1150px; width: 100%; margin-bottom: 1.3rem;
+  }
+  .deliverable {
+    display: flex; align-items: flex-start; gap: 1rem;
+    background: var(--glass); border: 1px solid var(--glass-border);
+    border-radius: 12px; padding: 1.2rem 1.3rem; backdrop-filter: blur(14px);
+    transition: all 0.3s;
+  }
+  .deliverable:hover { border-color: var(--teal); box-shadow: 0 0 20px rgba(20,240,197,0.1); }
+  .deliverable .di { font-size: 1.8rem; filter: drop-shadow(0 0 8px var(--teal)); }
+  .deliverable .dpath { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: var(--amber); }
+  .deliverable .ddesc { font-size: 0.8rem; color: var(--white-dim); margin-top: 0.35rem; line-height: 1.6; }
+  .batch-panel { position: relative; z-index: 2; max-width: 1150px; width: 100%; }
+  .batch-flow { display: flex; align-items: center; justify-content: center; gap: 0.5rem; flex-wrap: wrap; }
+  .batch-scripts { display: flex; gap: 0.4rem; }
+  .batch-doc {
+    font-family: 'JetBrains Mono', monospace; font-size: 0.68rem; color: var(--white-dim);
+    border: 1px solid var(--glass-border); border-radius: 6px; padding: 0.5rem 0.7rem;
+    background: rgba(20,240,197,0.03);
+  }
+  .batch-tag { font-family: 'JetBrains Mono', monospace; font-size: 0.74rem; color: var(--teal); }
+
+  /* ===== スライド8: まとめ & ロードマップ ===== */
+  .summary-cols {
+    position: relative; z-index: 2; display: grid;
+    grid-template-columns: 1fr 1fr; gap: 1.6rem;
+    max-width: 1150px; width: 100%;
+  }
+  .summary-list { display: flex; flex-direction: column; gap: 0.7rem; }
+  .summary-item { display: flex; align-items: flex-start; gap: 0.7rem; font-size: 0.9rem; color: var(--white); }
+  .summary-item .chk { color: var(--teal); font-weight: 700; }
+  .roadmap-list { display: flex; flex-direction: column; gap: 0.8rem; }
+  .roadmap-step { display: flex; gap: 0.8rem; align-items: flex-start; }
+  .roadmap-step .rs-num {
+    font-family: 'Orbitron', sans-serif; font-size: 0.8rem; color: var(--amber);
+    border: 1px solid var(--amber); border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .roadmap-step .rs-name { font-weight: 700; font-size: 0.88rem; color: var(--white); }
+  .roadmap-step .rs-desc { font-size: 0.76rem; color: var(--white-dim); margin-top: 0.15rem; line-height: 1.55; }
+  .closing {
+    position: relative; z-index: 2; text-align: center; margin-top: 2rem;
+    font-family: 'Orbitron', sans-serif; font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+    color: var(--teal); letter-spacing: 0.06em;
+    filter: drop-shadow(0 0 16px rgba(20,240,197,0.25));
+  }
+
+  /* ===== フッタ ===== */
+  .slide-footer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 0.8rem 2rem;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; color: var(--teal-dim);
+    z-index: 10; border-top: 1px solid rgba(20,240,197,0.08);
+  }
+
+  /* ===== ナビゲーション ===== */
+  .nav-dots {
+    position: fixed; right: 22px; top: 50%; transform: translateY(-50%);
+    z-index: 100; display: flex; flex-direction: column; gap: 12px;
+  }
+  .nav-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1px solid var(--teal-dim); background: transparent;
+    cursor: pointer; padding: 0; transition: all 0.3s;
+  }
+  .nav-dot:hover { border-color: var(--teal); }
+  .nav-dot.active { background: var(--teal); border-color: var(--teal); box-shadow: 0 0 10px var(--teal); }
+  .progress-bar {
+    position: fixed; top: 0; left: 0; height: 3px; width: 0;
+    background: linear-gradient(90deg, var(--teal), #00D4FF);
+    box-shadow: 0 0 8px var(--teal); z-index: 101; transition: width 0.2s ease-out;
+  }
+
+  @media (max-width: 860px) {
+    .hud-grid { grid-template-columns: 1fr; }
+    .room-panel { grid-column: 1; grid-row: auto; }
+    .pipeline-panel { grid-column: 1; }
+    .concept-flow { grid-template-columns: 1fr; gap: 1rem; }
+    .flow-arrow { transform: rotate(90deg); }
+    .two-col, .spatial-layout, .summary-cols, .deliverable-grid { grid-template-columns: 1fr; }
+    .engine-grid { grid-template-columns: 1fr; }
+    .feature-row { grid-template-columns: 1fr 1fr; }
+    .nav-dots { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<div class="progress-bar" id="progressBar"></div>
+<div class="nav-dots" id="navDots"></div>
+
+<!-- ==================== SLIDE 1: TITLE ==================== -->
+<section class="slide slide-title">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <svg class="title-circuit" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+    <path class="circuit-line" d="M0,350 H300 L350,300 H500"/>
+    <path class="circuit-glow" d="M0,350 H300 L350,300 H500"/>
+    <path class="circuit-line" d="M700,300 H850 L900,350 H1200"/>
+    <path class="circuit-glow" d="M700,300 H850 L900,350 H1200" style="animation-delay: 1s"/>
+    <path class="circuit-line" d="M400,0 V200 L450,250 V300"/>
+    <path class="circuit-glow" d="M400,0 V200 L450,250 V300" style="animation-delay: 0.5s"/>
+    <path class="circuit-line" d="M750,400 V500 L700,550 V700"/>
+    <path class="circuit-glow" d="M750,400 V500 L700,550 V700" style="animation-delay: 1.5s"/>
+    <circle cx="500" cy="300" r="3" fill="#14F0C5" opacity="0.6"/>
+    <circle cx="700" cy="300" r="3" fill="#14F0C5" opacity="0.6"/>
+    <circle cx="450" cy="300" r="2" fill="#D4A574" opacity="0.4"/>
+    <circle cx="750" cy="400" r="2" fill="#D4A574" opacity="0.4"/>
+  </svg>
+
+  <div class="title-content">
+    <div class="title-label">Sound Engineering Automation System</div>
+    <h1 class="title-main">Script2Voice</h1>
+    <p class="title-sub">台本から音声・字幕・編集タイムラインを自動生成</p>
+    <div class="title-badge">
+      <span class="dot"></span>
+      <span>SYSTEM v0.1.0 // Rust Edition</span>
+    </div>
+  </div>
+
+  <div class="title-scroll-hint">
+    <span>SCROLL / → KEY</span>
+    <span>▼</span>
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>01 / Title</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 2: CONCEPT ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">The Concept</div>
+    <h2>One Script, Full Production</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="concept-flow">
+    <!-- 入力 -->
+    <div class="concept-node">
+      <div class="concept-card">
+        <div class="big-icon">📄</div>
+        <div class="c-label">Input</div>
+        <div class="c-name">台本ファイル</div>
+        <div class="c-desc">テキスト1本だけ（.txt）</div>
+      </div>
+    </div>
+
+    <div class="flow-arrow">
+      <svg viewBox="0 0 56 22"><line class="arrow-line" x1="0" y1="11" x2="46" y2="11"/><polygon class="arrow-head" points="44,5 54,11 44,17"/></svg>
+    </div>
+
+    <!-- エンジン -->
+    <div class="concept-node">
+      <div class="concept-engine">
+        <div class="ce-icon">⚙️</div>
+        <div class="ce-name">Script2Voice</div>
+      </div>
+    </div>
+
+    <div class="flow-arrow">
+      <svg viewBox="0 0 56 22"><line class="arrow-line" x1="0" y1="11" x2="46" y2="11"/><polygon class="arrow-head" points="44,5 54,11 44,17"/></svg>
+    </div>
+
+    <!-- 出力 -->
+    <div class="concept-node">
+      <div class="concept-outputs">
+        <div class="concept-out-item"><span class="oi">🔊</span><span class="ot">voice_NNNN.wav</span><span class="od">空間音響済み音声</span></div>
+        <div class="concept-out-item"><span class="oi">🎚️</span><span class="ot">full_dialogue.wav</span><span class="od">ミックス済み</span></div>
+        <div class="concept-out-item"><span class="oi">📝</span><span class="ot">subtitles.srt</span><span class="od">字幕</span></div>
+        <div class="concept-out-item"><span class="oi">🎬</span><span class="ot">timeline.fcpxml</span><span class="od">編集タイムライン</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="concept-tagline">
+    台本を書くだけで、<b>ナレーション動画・ボイスドラマ</b>の素材が一括で揃う。
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>02 / Concept</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 3: ARCHITECTURE ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">System Architecture</div>
+    <h2>System Architecture</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="hud-grid">
+
+    <!-- 左上: エンジン -->
+    <div class="hud-panel" data-id="SYS-ENG">
+      <div class="panel-title"><span class="indicator"></span> TTS Engines</div>
+      <div class="engine-list">
+        <div class="engine-item">
+          <span class="icon">🟢</span>
+          <span class="name">VOICEVOX</span>
+          <span class="status">ACTIVE</span>
+        </div>
+        <div class="engine-item">
+          <span class="icon">🟢</span>
+          <span class="name">AivisSpeech</span>
+          <span class="status">ACTIVE</span>
+        </div>
+        <div class="engine-item">
+          <span class="icon">🟡</span>
+          <span class="name">XTTS</span>
+          <span class="status">STANDBY</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中央: 部屋俯瞰 -->
+    <div class="hud-panel room-panel" data-id="SYS-ROOM">
+      <div class="panel-title"><span class="indicator"></span> Spatial Processor</div>
+      <div class="room-view">
+        <div class="room-grid"></div>
+        <div class="room-walls"></div>
+        <div class="sound-path">
+          <svg viewBox="0 0 100 100">
+            <path class="sound-wave-line" d="M22,25 Q50,10 72,55"/>
+            <path class="sound-wave-line" d="M22,25 L22,75 L72,75 L72,55" style="opacity:0.25; animation-delay:0.5s"/>
+            <path class="sound-wave-line" d="M22,25 L78,25 L78,55 L72,55" style="opacity:0.2; animation-delay:1s"/>
+          </svg>
+        </div>
+        <div class="room-icon speaker-icon">🔊</div>
+        <div class="room-icon listener-icon">👤</div>
+      </div>
+      <div class="room-params">
+        <span class="param-chip">pan: <span>-25°</span></span>
+        <span class="param-chip">dist: <span>2.0m</span></span>
+        <span class="param-chip">room: <span>25×45×18</span></span>
+        <span class="param-chip">reverb: <span>0.30</span></span>
+      </div>
+    </div>
+
+    <!-- 右上: 出力 -->
+    <div class="hud-panel" data-id="SYS-OUT">
+      <div class="panel-title"><span class="indicator"></span> Output Channels</div>
+      <div class="output-list">
+        <div class="output-item">
+          <span class="ext">.wav</span>
+          <span class="desc">空間音響ミックス</span>
+        </div>
+        <div class="output-item">
+          <span class="ext">.srt</span>
+          <span class="desc">字幕ファイル</span>
+        </div>
+        <div class="output-item">
+          <span class="ext">.fcpxml</span>
+          <span class="desc">タイムライン</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下段: パイプライン -->
+    <div class="hud-panel pipeline-panel" data-id="SYS-PIPE">
+      <div class="panel-title"><span class="indicator"></span> Processing Pipeline</div>
+      <div class="pipeline-flow">
+        <div class="pipeline-node">
+          <span class="node-icon">📄</span>
+          <span class="node-label">Parse</span>
+          <span class="node-desc">台本解析</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">🎤</span>
+          <span class="node-label">Synthesize</span>
+          <span class="node-desc">音声合成</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">🔊</span>
+          <span class="node-label">Spatial DSP</span>
+          <span class="node-desc">空間音響処理</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">📦</span>
+          <span class="node-label">Export</span>
+          <span class="node-desc">ファイル出力</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>03 / Architecture</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 4: SCRIPT FORMAT ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">Script Format</div>
+    <h2>台本ファイルの構造</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="two-col">
+    <!-- 左: セクション説明 -->
+    <div class="hud-panel" data-id="DSL-SEC">
+      <div class="panel-title"><span class="indicator"></span> Sections &amp; Commands</div>
+      <div class="block-list">
+        <div class="block-row"><span class="tag">@pause</span><span class="what">文・キャスト・段落ごとの間（無音）を設定</span></div>
+        <div class="block-row"><span class="tag">@asset</span><span class="what">BGM / SE 素材フォルダを指定</span></div>
+        <div class="block-row"><span class="tag">@cast</span><span class="what">登場人物・エンジン・定位・距離を定義</span></div>
+        <div class="block-row"><span class="tag">@scene</span><span class="what">場面・部屋の広さ・残響量を宣言</span></div>
+        <div class="block-row"><span class="tag">@script</span><span class="what">台詞本体と音声指示を記述</span></div>
+        <div class="block-row"><span class="tag"># 行</span><span class="what">#bgm / #se / #pause / #paragraph 等の命令</span></div>
+      </div>
+    </div>
+
+    <!-- 右: 実サンプル -->
+    <div class="hud-panel" data-id="DSL-SRC">
+      <div class="panel-title"><span class="indicator"></span> Sample Script</div>
+      <div class="code-block">
+<span class="ln"><span class="c-sec">@cast</span></span>
+<span class="ln"><span class="c-cast">めたん</span>:四国めたん:ノーマル,voicevox,<span class="c-txt">pan=-30,distance=1.0</span></span>
+<span class="ln"><span class="c-cast">まい</span>:まい:ノーマル,aivis,<span class="c-txt">pan=30,distance=1.0</span></span>
+<span class="ln"> </span>
+<span class="ln"><span class="c-sec">@scene</span> 01_オープニング <span class="c-txt">room_size=0.3 reverb_wet=0.5</span></span>
+<span class="ln"><span class="c-sec">@script</span></span>
+<span class="ln"><span class="c-cmd">#bgm_start</span> morning_breeze.wav</span>
+<span class="ln"><span class="c-cast">めたん</span>:こんにちは、まいさん。</span>
+<span class="ln"><span class="c-cast">めたん</span>(delay=500):きゃっ！何かしら今の音！？</span>
+<span class="ln"><span class="c-cmd">#se</span> thunder_distant.wav</span>
+<span class="ln"><span class="c-cmd">#pause</span> 1500</span>
+<span class="ln"><span class="c-cast">めたん</span>:'東京:とうきょう'にも響いたのかしら…<span class="c-com"># ルビ</span></span>
+<span class="ln"><span class="c-cmd">#bgm_stop</span></span>
+<span class="ln"><span class="c-cmd">#paragraph</span></span>
+<span class="ln"><span class="c-cast">まい</span>:そろそろ向かいましょうか。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>04 / Script Format</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 5: TTS ENGINES ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">TTS Engines</div>
+    <h2>マルチエンジン音声合成</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="engine-grid">
+    <div class="hud-panel engine-card" data-id="ENG-01">
+      <div class="ec-icon">🟦</div>
+      <div class="ec-name">VOICEVOX</div>
+      <div class="ec-id">voicevox</div>
+      <div class="ec-url">127.0.0.1:50021</div>
+      <div class="ec-role">国産キャラクター音声。<br>軽快で表情豊かなナレーションに。</div>
+    </div>
+    <div class="hud-panel engine-card" data-id="ENG-02">
+      <div class="ec-icon">🟪</div>
+      <div class="ec-name">AivisSpeech</div>
+      <div class="ec-id">aivis</div>
+      <div class="ec-url">127.0.0.1:10101</div>
+      <div class="ec-role">自然で落ち着いた発話。<br>感情表現に強い高品質音声。</div>
+    </div>
+    <div class="hud-panel engine-card" data-id="ENG-03">
+      <div class="ec-icon">🟩</div>
+      <div class="ec-name">XTTS</div>
+      <div class="ec-id">xtts</div>
+      <div class="ec-url">localhost:8020</div>
+      <div class="ec-role">Coqui TTS / 多言語・<br>音声クローン対応。</div>
+    </div>
+  </div>
+
+  <div class="feature-row">
+    <div class="feature-pill"><div class="fi">🎭</div><div class="ft">キャスト別割当</div><div class="fd">@cast でエンジン指定</div></div>
+    <div class="feature-pill"><div class="fi">🔌</div><div class="ft">HTTP 接続</div><div class="fd">ローカルAPI経由で合成</div></div>
+    <div class="feature-pill"><div class="fi">⚡</div><div class="ft">自動起動・停止</div><div class="fd">exe_path で起動を自動化</div></div>
+    <div class="feature-pill"><div class="fi">🔀</div><div class="ft">並行合成</div><div class="fd">必要エンジンを同時起動</div></div>
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>05 / TTS Engines</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 6: SPATIAL AUDIO ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">Spatial Audio Engine</div>
+    <h2>空間音響処理 — 早期反射・物理残響</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="spatial-layout">
+    <!-- 左: 部屋モデル -->
+    <div class="hud-panel" data-id="SPA-ROOM">
+      <div class="panel-title"><span class="indicator"></span> Box Room Model</div>
+      <div class="room-view" style="max-width:100%;">
+        <div class="room-grid"></div>
+        <div class="room-walls"></div>
+        <div class="sound-path">
+          <svg viewBox="0 0 100 100">
+            <path class="sound-wave-line" d="M30,35 Q50,55 68,60" style="opacity:0.7"/>
+            <path class="sound-wave-line" d="M30,35 L30,82 L68,82 L68,60" style="opacity:0.3; animation-delay:0.4s"/>
+            <path class="sound-wave-line" d="M30,35 L30,18 L68,18 L68,60" style="opacity:0.3; animation-delay:0.7s"/>
+            <path class="sound-wave-line" d="M30,35 L82,35 L82,60 L68,60" style="opacity:0.25; animation-delay:1s"/>
+          </svg>
+        </div>
+        <div class="room-icon speaker-icon" style="top:30%; left:24%;">🔊</div>
+        <div class="room-icon listener-icon" style="top:55%; right:26%;">🎧</div>
+      </div>
+      <div class="room-params">
+        <span class="param-chip">W×D×H: <span>room_size</span></span>
+        <span class="param-chip">pan: <span>方位角</span></span>
+        <span class="param-chip">dist: <span>距離</span></span>
+        <span class="param-chip">reverb_wet: <span>残響量</span></span>
+      </div>
+    </div>
+
+    <!-- 右: DSPチェーン -->
+    <div class="hud-panel" data-id="SPA-DSP">
+      <div class="panel-title"><span class="indicator"></span> Processing Chain</div>
+      <div class="dsp-chain">
+        <div class="dsp-step">
+          <span class="num">1</span>
+          <div><div class="dsp-name">直接音</div><div class="dsp-desc">左右の定位・距離減衰・空気吸収</div></div>
+        </div>
+        <div class="dsp-step highlight">
+          <span class="num">2</span>
+          <div><div class="dsp-name">早期反射（6面の一次反射）</div><div class="dsp-desc">床・天井・前後左右の鏡像から接地感を生成</div></div>
+          <span class="new-badge">KEY</span>
+        </div>
+        <div class="dsp-step">
+          <span class="num">3</span>
+          <div><div class="dsp-name">拡散リバーブ</div><div class="dsp-desc">部屋寸法と壁素材から導いた残響の尾</div></div>
+        </div>
+        <div class="dsp-step">
+          <span class="num">4</span>
+          <div><div class="dsp-name">リミッター</div><div class="dsp-desc">音割れ防止・出力レベル調整</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="spatial-note">
+      部屋を箱（直方体）としてモデル化し、聴取者＝ステレオマイク中心に。<br>
+      直接音の直後に届く<b>早期反射</b>が「音が宙に浮く」のを防ぎ、<b>実在の空間にいる接地感・外在化</b>を生む。
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>06 / Spatial Audio</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 7: OUTPUTS & BATCH ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">Outputs &amp; Batch</div>
+    <h2>出力物とバッチ処理</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="deliverable-grid">
+    <div class="deliverable">
+      <span class="di">🔊</span>
+      <div>
+        <div class="dpath">audio/voice_0001.wav …</div>
+        <div class="ddesc">台詞ごとに空間音響処理済みのステレオ WAV（連番）。</div>
+      </div>
+    </div>
+    <div class="deliverable">
+      <span class="di">🎚️</span>
+      <div>
+        <div class="dpath">full_dialogue.wav</div>
+        <div class="ddesc">全台詞をタイミング通りに重ねたミックス済み音声。</div>
+      </div>
+    </div>
+    <div class="deliverable">
+      <span class="di">📝</span>
+      <div>
+        <div class="dpath">timeline/subtitles.srt</div>
+        <div class="ddesc">台詞のタイミングと表示テキストをまとめた字幕。</div>
+      </div>
+    </div>
+    <div class="deliverable">
+      <span class="di">🎬</span>
+      <div>
+        <div class="dpath">timeline/timeline.fcpxml</div>
+        <div class="ddesc">台詞・BGM・SE を配置した FCPXML 編集タイムライン。Final Cut Pro 等へ直結。</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hud-panel batch-panel" data-id="SYS-BATCH">
+    <div class="panel-title"><span class="indicator"></span> Batch Processing — 複数台本を一括処理</div>
+    <div class="batch-flow">
+      <div class="batch-scripts">
+        <span class="batch-doc">ep01.txt</span>
+        <span class="batch-doc">ep02.txt</span>
+        <span class="batch-doc">ep03.txt</span>
+      </div>
+      <div class="pipeline-arrow">
+        <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+      </div>
+      <span class="batch-tag">必要エンジンを並行起動</span>
+      <div class="pipeline-arrow">
+        <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+      </div>
+      <span class="batch-tag">1本失敗でも継続（fail-fastしない）</span>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>07 / Outputs &amp; Batch</span>
+  </div>
+</section>
+
+<!-- ==================== SLIDE 8: SUMMARY & ROADMAP ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <div class="kicker">Summary &amp; Roadmap</div>
+    <h2>まとめ と これから</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="summary-cols">
+    <div class="hud-panel" data-id="SUM-NOW">
+      <div class="panel-title"><span class="indicator"></span> What It Delivers</div>
+      <div class="summary-list">
+        <div class="summary-item"><span class="chk">▹</span><span>台本1本から音声・字幕・タイムラインを一括生成</span></div>
+        <div class="summary-item"><span class="chk">▹</span><span>VOICEVOX / AivisSpeech / XTTS のマルチエンジン対応</span></div>
+        <div class="summary-item"><span class="chk">▹</span><span>早期反射＋物理残響による空間音響処理</span></div>
+        <div class="summary-item"><span class="chk">▹</span><span>FCPXML で動画編集ソフトへ直結</span></div>
+        <div class="summary-item"><span class="chk">▹</span><span>複数台本のバッチ処理対応</span></div>
+        <div class="summary-item"><span class="chk">▹</span><span>Rust 製・クレート分割（core / engines / audio / export）</span></div>
+      </div>
+    </div>
+
+    <div class="hud-panel" data-id="SUM-NEXT">
+      <div class="panel-title"><span class="indicator"></span> Roadmap — 動画自動合成へ</div>
+      <div class="roadmap-list">
+        <div class="roadmap-step">
+          <span class="rs-num">1</span>
+          <div><div class="rs-name">SRT への [PARAGRAPH] 埋め込み</div><div class="rs-desc">段落タイミングを字幕に挿入し、シーン分割の基準に。</div></div>
+        </div>
+        <div class="roadmap-step">
+          <span class="rs-num">2</span>
+          <div><div class="rs-name">scene_map.json でシーン画像を対応付け</div><div class="rs-desc">段落番号→画像パスのマッピングを定義。</div></div>
+        </div>
+        <div class="roadmap-step">
+          <span class="rs-num">3</span>
+          <div><div class="rs-name">FFmpeg ラッパーで MP4 自動合成</div><div class="rs-desc">音声＋画像スライドショー＋字幕焼き込み → YouTube 向け動画へ。</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="closing">台本を書けば、動画になる。</div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>08 / Summary</span>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    var dotsWrap = document.getElementById('navDots');
+    var bar = document.getElementById('progressBar');
+
+    // ナビドット生成
+    slides.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.className = 'nav-dot' + (i === 0 ? ' active' : '');
+      b.setAttribute('aria-label', 'スライド ' + (i + 1));
+      b.addEventListener('click', function () {
+        s.scrollIntoView({ behavior: 'smooth' });
+      });
+      dotsWrap.appendChild(b);
+    });
+    var dots = Array.prototype.slice.call(dotsWrap.children);
+    var current = 0;
+
+    // 現在スライドの追跡（IntersectionObserver）
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) {
+          current = slides.indexOf(e.target);
+          dots.forEach(function (d, i) { d.classList.toggle('active', i === current); });
+          bar.style.width = ((current + 1) / slides.length * 100) + '%';
+        }
+      });
+    }, { threshold: 0.6 });
+    slides.forEach(function (s) { io.observe(s); });
+
+    // キーボード操作
+    function go(n) {
+      n = Math.max(0, Math.min(slides.length - 1, n));
+      slides[n].scrollIntoView({ behavior: 'smooth' });
+    }
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault(); go(current + 1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+        e.preventDefault(); go(current - 1);
+      } else if (e.key === 'Home') {
+        e.preventDefault(); go(0);
+      } else if (e.key === 'End') {
+        e.preventDefault(); go(slides.length - 1);
+      }
+    });
+  })();
+</script>
+
+</body>
+</html>

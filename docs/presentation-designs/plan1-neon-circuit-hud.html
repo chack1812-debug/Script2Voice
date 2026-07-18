@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>案1: ネオンサーキットHUD — Script2Voice プレゼンデザイン</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@300;400;700;900&family=JetBrains+Mono:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0A0E17;
+    --bg2: #0D1520;
+    --teal: #14F0C5;
+    --teal-dim: #0A7A64;
+    --amber: #FFB800;
+    --copper: #D4A574;
+    --copper-dim: rgba(212,165,116,0.15);
+    --white: #E8EDF5;
+    --white-dim: rgba(232,237,245,0.6);
+    --glass: rgba(14,20,35,0.65);
+    --glass-border: rgba(20,240,197,0.25);
+  }
+
+  * { margin:0; padding:0; box-sizing:border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ===== 共通パーツ ===== */
+  .slide {
+    width: 100%; min-height: 100vh;
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+
+  /* PCB背景パターン */
+  .pcb-bg {
+    position: absolute; inset:0; z-index:0; opacity: 0.12;
+    background-image:
+      linear-gradient(var(--copper-dim) 1px, transparent 1px),
+      linear-gradient(90deg, var(--copper-dim) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .pcb-bg::after {
+    content:''; position:absolute; inset:0;
+    background:
+      radial-gradient(circle at 20% 30%, var(--copper-dim) 0%, transparent 60%),
+      radial-gradient(circle at 80% 70%, var(--copper-dim) 0%, transparent 60%);
+  }
+
+  /* 六角グリッド */
+  .hex-grid {
+    position: absolute; inset:0; z-index:0; opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='52'%3E%3Cpolygon points='30,2 55,15 55,37 30,50 5,37 5,15' fill='none' stroke='%2314F0C5' stroke-width='0.5'/%3E%3C/svg%3E");
+    background-size: 60px 52px;
+  }
+
+  /* ===== スライド1: タイトル ===== */
+  .slide-title {
+    background: radial-gradient(ellipse at 50% 50%, #0F1A2A 0%, var(--bg) 70%);
+  }
+
+  .title-circuit {
+    position: absolute; width: 100%; height: 100%;
+    z-index: 1;
+  }
+  .title-circuit svg { width: 100%; height: 100%; }
+
+  .title-content {
+    position: relative; z-index: 2;
+    text-align: center;
+  }
+
+  .title-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; letter-spacing: 0.3em;
+    color: var(--teal-dim);
+    text-transform: uppercase;
+    margin-bottom: 0.5rem;
+  }
+
+  .title-main {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(3rem, 7vw, 6rem);
+    font-weight: 900;
+    background: linear-gradient(135deg, var(--teal) 0%, #00D4FF 50%, var(--teal) 100%);
+    background-size: 200% 200%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 30px rgba(20,240,197,0.3));
+  }
+  @keyframes shimmer {
+    0%,100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  .title-sub {
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    font-weight: 300;
+    color: var(--white-dim);
+    margin-top: 1rem;
+    letter-spacing: 0.15em;
+  }
+
+  .title-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    margin-top: 2rem; padding: 0.5rem 1.5rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 100px;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem; color: var(--amber);
+  }
+  .title-badge .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--teal);
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%,100% { opacity: 1; box-shadow: 0 0 4px var(--teal); }
+    50% { opacity: 0.4; box-shadow: 0 0 12px var(--teal); }
+  }
+
+  /* 回路アニメーション */
+  .circuit-line {
+    stroke: var(--copper);
+    stroke-width: 1;
+    fill: none;
+    stroke-dasharray: 8 4;
+    opacity: 0.3;
+  }
+  .circuit-glow {
+    stroke: var(--teal);
+    stroke-width: 2;
+    fill: none;
+    stroke-dasharray: 200;
+    stroke-dashoffset: 200;
+    animation: trace-glow 4s ease-in-out infinite;
+    filter: drop-shadow(0 0 6px var(--teal));
+  }
+  @keyframes trace-glow {
+    0% { stroke-dashoffset: 200; }
+    50% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -200; }
+  }
+
+  /* ===== スライド2: コンテンツ ===== */
+  .slide-content {
+    background: radial-gradient(ellipse at 30% 60%, #0D1925 0%, var(--bg) 70%);
+    padding: 3rem;
+  }
+
+  .content-header {
+    position: relative; z-index: 2;
+    width: 100%; max-width: 1200px;
+    margin-bottom: 2rem;
+  }
+  .content-header h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.2rem, 3vw, 2rem);
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: 0.05em;
+  }
+  .content-header .line {
+    height: 1px; margin-top: 0.5rem;
+    background: linear-gradient(90deg, var(--teal), transparent);
+  }
+
+  .hud-grid {
+    position: relative; z-index: 2;
+    display: grid;
+    grid-template-columns: 1fr 1.5fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 1.2rem;
+    max-width: 1200px; width: 100%;
+  }
+
+  .hud-panel {
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    backdrop-filter: blur(16px);
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, box-shadow 0.3s;
+  }
+  .hud-panel:hover {
+    border-color: var(--teal);
+    box-shadow: 0 0 24px rgba(20,240,197,0.12), inset 0 0 24px rgba(20,240,197,0.04);
+  }
+  .hud-panel::before {
+    content: attr(data-id);
+    position: absolute; top: 8px; right: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; color: var(--teal-dim);
+    opacity: 0.6;
+  }
+
+  .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 0.8rem;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .panel-title .indicator {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 6px var(--teal);
+  }
+
+  /* 中央: 部屋俯瞰 */
+  .room-panel {
+    grid-column: 2; grid-row: 1 / 3;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: 360px;
+  }
+
+  .room-view {
+    width: 100%; max-width: 380px; aspect-ratio: 4/3;
+    border: 1px solid var(--teal-dim);
+    border-radius: 8px;
+    position: relative;
+    background: rgba(20,240,197,0.02);
+    overflow: hidden;
+  }
+  .room-view .room-walls {
+    position: absolute; inset: 15%;
+    border: 2px solid var(--teal);
+    border-radius: 4px;
+    box-shadow: 0 0 20px rgba(20,240,197,0.15), inset 0 0 20px rgba(20,240,197,0.05);
+  }
+  .room-view .room-grid {
+    position: absolute; inset: 15%;
+    background-image:
+      linear-gradient(rgba(20,240,197,0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(20,240,197,0.06) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .room-icon {
+    position: absolute;
+    font-size: 1.8rem;
+    filter: drop-shadow(0 0 10px var(--teal));
+    transition: transform 0.3s;
+  }
+  .room-icon:hover { transform: scale(1.2); }
+  .speaker-icon { top: 30%; left: 28%; }
+  .listener-icon { top: 60%; right: 28%; }
+
+  .sound-path {
+    position: absolute; inset: 15%;
+  }
+  .sound-path svg { width: 100%; height: 100%; }
+  .sound-wave-line {
+    stroke: var(--teal);
+    stroke-width: 1.5;
+    fill: none;
+    opacity: 0.5;
+    stroke-dasharray: 6 3;
+    animation: wave-flow 2s linear infinite;
+  }
+  @keyframes wave-flow {
+    to { stroke-dashoffset: -18; }
+  }
+
+  .room-params {
+    display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;
+    justify-content: center;
+  }
+  .param-chip {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    padding: 0.3rem 0.7rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 4px;
+    color: var(--white-dim);
+    background: rgba(20,240,197,0.04);
+  }
+  .param-chip span { color: var(--teal); }
+
+  /* パイプラインパネル */
+  .pipeline-panel {
+    grid-column: 1 / 4;
+  }
+  .pipeline-flow {
+    display: flex; align-items: center; gap: 0;
+    justify-content: center;
+  }
+  .pipeline-node {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 0.4rem;
+    padding: 0.8rem 1.2rem;
+    border: 1px solid var(--glass-border);
+    border-radius: 8px;
+    background: rgba(20,240,197,0.03);
+    min-width: 130px;
+    transition: all 0.3s;
+  }
+  .pipeline-node:hover {
+    border-color: var(--teal);
+    background: rgba(20,240,197,0.08);
+    transform: translateY(-2px);
+  }
+  .pipeline-node .node-icon {
+    font-size: 1.6rem;
+  }
+  .pipeline-node .node-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: var(--amber);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+  .pipeline-node .node-desc {
+    font-size: 0.75rem;
+    color: var(--white-dim);
+    text-align: center;
+  }
+  .pipeline-arrow {
+    width: 50px; display: flex; align-items: center; justify-content: center;
+  }
+  .pipeline-arrow svg { width: 50px; height: 20px; }
+  .arrow-line {
+    stroke: var(--teal);
+    stroke-width: 2;
+    fill: none;
+    stroke-dasharray: 4 3;
+    animation: arrow-flow 1.5s linear infinite;
+  }
+  @keyframes arrow-flow { to { stroke-dashoffset: -14; } }
+  .arrow-head { fill: var(--teal); }
+
+  /* エンジン・出力パネル */
+  .engine-list, .output-list {
+    display: flex; flex-direction: column; gap: 0.7rem;
+  }
+  .engine-item, .output-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.5rem 0.8rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.02);
+    border-left: 2px solid var(--teal-dim);
+    transition: all 0.3s;
+  }
+  .engine-item:hover, .output-item:hover {
+    background: rgba(20,240,197,0.06);
+    border-left-color: var(--teal);
+  }
+  .engine-item .icon { font-size: 1.2rem; }
+  .engine-item .name {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem; color: var(--white);
+  }
+  .engine-item .status {
+    margin-left: auto;
+    font-size: 0.65rem; color: var(--teal);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .output-item .ext {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; color: var(--amber);
+    min-width: 60px;
+  }
+  .output-item .desc {
+    font-size: 0.8rem; color: var(--white-dim);
+  }
+
+  /* ===== フッタ ===== */
+  .slide-footer {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 0.8rem 2rem;
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6rem; color: var(--teal-dim);
+    z-index: 10;
+    border-top: 1px solid rgba(20,240,197,0.08);
+  }
+
+  /* セクション区切り */
+  .section-divider {
+    width: 100%; text-align: center;
+    padding: 2rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: var(--teal-dim);
+    letter-spacing: 0.3em;
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+  }
+</style>
+</head>
+<body>
+
+<!-- ==================== SLIDE 1: TITLE ==================== -->
+<section class="slide slide-title">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <svg class="title-circuit" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+    <path class="circuit-line" d="M0,350 H300 L350,300 H500"/>
+    <path class="circuit-glow" d="M0,350 H300 L350,300 H500"/>
+    <path class="circuit-line" d="M700,300 H850 L900,350 H1200"/>
+    <path class="circuit-glow" d="M700,300 H850 L900,350 H1200" style="animation-delay: 1s"/>
+    <path class="circuit-line" d="M400,0 V200 L450,250 V300"/>
+    <path class="circuit-glow" d="M400,0 V200 L450,250 V300" style="animation-delay: 0.5s"/>
+    <path class="circuit-line" d="M750,400 V500 L700,550 V700"/>
+    <path class="circuit-glow" d="M750,400 V500 L700,550 V700" style="animation-delay: 1.5s"/>
+    <circle cx="500" cy="300" r="3" fill="#14F0C5" opacity="0.6"/>
+    <circle cx="700" cy="300" r="3" fill="#14F0C5" opacity="0.6"/>
+    <circle cx="450" cy="300" r="2" fill="#D4A574" opacity="0.4"/>
+    <circle cx="750" cy="400" r="2" fill="#D4A574" opacity="0.4"/>
+  </svg>
+
+  <div class="title-content">
+    <div class="title-label">Sound Engineering Automation System</div>
+    <h1 class="title-main">Script2Voice</h1>
+    <p class="title-sub">台本から音声・字幕・タイムラインを自動生成</p>
+    <div class="title-badge">
+      <span class="dot"></span>
+      <span>SYSTEM v0.1.0 // Rust Edition</span>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <span>DESIGN: NEON CIRCUIT HUD</span>
+    <span>案1 — Script2Voice Presentation</span>
+  </div>
+</section>
+
+<!-- ==================== DIVIDER ==================== -->
+<div class="section-divider">▼ CONTENT SLIDE SAMPLE ▼</div>
+
+<!-- ==================== SLIDE 2: CONTENT ==================== -->
+<section class="slide slide-content">
+  <div class="pcb-bg"></div>
+  <div class="hex-grid"></div>
+
+  <div class="content-header">
+    <h2>System Architecture</h2>
+    <div class="line"></div>
+  </div>
+
+  <div class="hud-grid">
+
+    <!-- 左上: エンジン -->
+    <div class="hud-panel" data-id="SYS-ENG">
+      <div class="panel-title"><span class="indicator"></span> TTS Engines</div>
+      <div class="engine-list">
+        <div class="engine-item">
+          <span class="icon">🟢</span>
+          <span class="name">VOICEVOX</span>
+          <span class="status">ACTIVE</span>
+        </div>
+        <div class="engine-item">
+          <span class="icon">🟢</span>
+          <span class="name">AivisSpeech</span>
+          <span class="status">ACTIVE</span>
+        </div>
+        <div class="engine-item">
+          <span class="icon">🟡</span>
+          <span class="name">XTTS</span>
+          <span class="status">STANDBY</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中央: 部屋俯瞰 -->
+    <div class="hud-panel room-panel" data-id="SYS-ROOM">
+      <div class="panel-title"><span class="indicator"></span> Spatial Processor</div>
+      <div class="room-view">
+        <div class="room-grid"></div>
+        <div class="room-walls"></div>
+        <div class="sound-path">
+          <svg viewBox="0 0 100 100">
+            <path class="sound-wave-line" d="M22,25 Q50,10 72,55"/>
+            <path class="sound-wave-line" d="M22,25 L22,75 L72,75 L72,55" style="opacity:0.25; animation-delay:0.5s"/>
+            <path class="sound-wave-line" d="M22,25 L78,25 L78,55 L72,55" style="opacity:0.2; animation-delay:1s"/>
+          </svg>
+        </div>
+        <div class="room-icon speaker-icon">🔊</div>
+        <div class="room-icon listener-icon">👤</div>
+      </div>
+      <div class="room-params">
+        <span class="param-chip">pan: <span>-25°</span></span>
+        <span class="param-chip">dist: <span>2.0m</span></span>
+        <span class="param-chip">room: <span>25×45×18</span></span>
+        <span class="param-chip">reverb: <span>0.30</span></span>
+      </div>
+    </div>
+
+    <!-- 右上: 出力 -->
+    <div class="hud-panel" data-id="SYS-OUT">
+      <div class="panel-title"><span class="indicator"></span> Output Channels</div>
+      <div class="output-list">
+        <div class="output-item">
+          <span class="ext">.wav</span>
+          <span class="desc">空間音響ミックス</span>
+        </div>
+        <div class="output-item">
+          <span class="ext">.srt</span>
+          <span class="desc">字幕ファイル</span>
+        </div>
+        <div class="output-item">
+          <span class="ext">.fcpxml</span>
+          <span class="desc">タイムライン</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 下段: パイプライン -->
+    <div class="hud-panel pipeline-panel" data-id="SYS-PIPE">
+      <div class="panel-title"><span class="indicator"></span> Processing Pipeline</div>
+      <div class="pipeline-flow">
+        <div class="pipeline-node">
+          <span class="node-icon">📄</span>
+          <span class="node-label">Parse</span>
+          <span class="node-desc">台本解析</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">🎤</span>
+          <span class="node-label">Synthesize</span>
+          <span class="node-desc">音声合成</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">🔊</span>
+          <span class="node-label">Spatial DSP</span>
+          <span class="node-desc">空間音響処理</span>
+        </div>
+        <div class="pipeline-arrow">
+          <svg viewBox="0 0 50 20"><line class="arrow-line" x1="0" y1="10" x2="40" y2="10"/><polygon class="arrow-head" points="38,5 48,10 38,15"/></svg>
+        </div>
+        <div class="pipeline-node">
+          <span class="node-icon">📦</span>
+          <span class="node-label">Export</span>
+          <span class="node-desc">ファイル出力</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="slide-footer">
+    <span>Script2Voice // Rust Edition</span>
+    <span>02 / Architecture</span>
+  </div>
+</section>
+
+</body>
+</html>
