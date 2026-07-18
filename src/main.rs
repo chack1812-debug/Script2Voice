@@ -18,7 +18,18 @@ type ScriptFailure = (PathBuf, String);
 
 #[derive(Parser)]
 #[command(name = "script2voice", version, about = "台本から音声・字幕・タイムラインを生成する")]
+#[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 struct Cli {
+    #[command(subcommand)]
+    command: Option<Command>,
+
+    #[command(flatten)]
+    generate: GenerateArgs,
+}
+
+/// 音声・字幕生成(デフォルト動作)の引数。
+#[derive(clap::Args)]
+struct GenerateArgs {
     /// 台本ファイルまたはフォルダ（複数指定可。フォルダは直下の .txt を名前順に処理）
     #[arg(required = true, num_args = 1..)]
     scripts: Vec<PathBuf>,
@@ -30,6 +41,31 @@ struct Cli {
     /// パース警告(未定義キャストの飲み込みなど)が1件でもある台本を失敗として扱う
     #[arg(long)]
     strict: bool,
+}
+
+#[derive(clap::Subcommand)]
+enum Command {
+    /// 音声・字幕とシーン画像(scene_map.json)から動画を合成する
+    Compose(ComposeArgs),
+}
+
+/// 動画合成サブコマンドの引数。
+#[derive(clap::Args)]
+struct ComposeArgs {
+    /// Script2Voice の出力ディレクトリ
+    project_dir: PathBuf,
+
+    /// scene_map.json のパス (省略時は <project_dir>/scene_map.json)
+    #[arg(long)]
+    scene_map: Option<PathBuf>,
+
+    /// 字幕を動画に焼き込む
+    #[arg(long)]
+    burn_subtitle: bool,
+
+    /// 出力先 MP4 (省略時は <project_dir>/output.mp4)
+    #[arg(short, long)]
+    output: Option<PathBuf>,
 }
 
 /// 現在処理中の台本の run.log を指す差し替え可能なファイルハンドル。
@@ -118,19 +154,29 @@ fn open_run_log(project_dir: &Path) -> anyhow::Result<std::fs::File> {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
+
+    if let Some(Command::Compose(args)) = cli.command {
+        return s2v_video::compose::run(&s2v_video::ComposeOptions {
+            project_dir: args.project_dir,
+            scene_map: args.scene_map,
+            burn_subtitle: args.burn_subtitle,
+            output: args.output,
+        });
+    }
+
     let log_file = init_logging();
 
-    let scripts = expand_script_args(&cli.scripts)?;
+    let scripts = expand_script_args(&cli.generate.scripts)?;
     tracing::info!("処理対象: {} 台本", scripts.len());
 
     let exe_path = std::env::current_exe().ok();
-    let config_path = resolve_config_path(cli.config.clone(), exe_path.as_deref());
+    let config_path = resolve_config_path(cli.generate.config.clone(), exe_path.as_deref());
     tracing::info!("設定ファイル: {}", config_path.display());
     let config = Config::from_file(&config_path)
         .with_context(|| format!("設定ファイルの読み込みに失敗しました: {}", config_path.display()))?;
 
     // 事前パース（失敗は継続）
-    let (parsed, parse_failures) = parse_all(&scripts, cli.strict);
+    let (parsed, parse_failures) = parse_all(&scripts, cli.generate.strict);
 
     // 必要エンジンを1回だけ起動（失敗は継続）
     let required = required_engines(&parsed);
@@ -415,14 +461,15 @@ mod tests {
     #[test]
     fn parses_multiple_script_paths() {
         let cli = Cli::try_parse_from(["script2voice", "a.txt", "b.txt"]).unwrap();
-        assert_eq!(cli.scripts, vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
-        assert_eq!(cli.config, None);
+        assert_eq!(cli.generate.scripts, vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
+        assert_eq!(cli.generate.config, None);
+        assert!(cli.command.is_none());
     }
 
     #[test]
     fn parses_custom_config_path() {
         let cli = Cli::try_parse_from(["script2voice", "script.txt", "--config", "custom.toml"]).unwrap();
-        assert_eq!(cli.config, Some(std::path::PathBuf::from("custom.toml")));
+        assert_eq!(cli.generate.config, Some(std::path::PathBuf::from("custom.toml")));
     }
 
     #[test]
@@ -583,9 +630,47 @@ mod tests {
     #[test]
     fn strict_flag_defaults_to_false_and_can_be_set() {
         let cli = Cli::try_parse_from(["script2voice", "a.txt"]).unwrap();
-        assert!(!cli.strict);
+        assert!(!cli.generate.strict);
         let cli = Cli::try_parse_from(["script2voice", "a.txt", "--strict"]).unwrap();
-        assert!(cli.strict);
+        assert!(cli.generate.strict);
+    }
+
+    #[test]
+    fn parses_compose_subcommand_with_defaults() {
+        let cli = Cli::try_parse_from(["script2voice", "compose", "myproject"]).unwrap();
+        match cli.command {
+            Some(Command::Compose(a)) => {
+                assert_eq!(a.project_dir, PathBuf::from("myproject"));
+                assert_eq!(a.scene_map, None);
+                assert_eq!(a.output, None);
+                assert!(!a.burn_subtitle);
+            }
+            _ => panic!("compose サブコマンドとして解釈されるべき"),
+        }
+    }
+
+    #[test]
+    fn parses_compose_subcommand_with_overrides() {
+        let cli = Cli::try_parse_from([
+            "script2voice", "compose", "myproject",
+            "--scene-map", "custom_map.json", "--burn-subtitle", "-o", "final.mp4",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(Command::Compose(a)) => {
+                assert_eq!(a.scene_map, Some(PathBuf::from("custom_map.json")));
+                assert!(a.burn_subtitle);
+                assert_eq!(a.output, Some(PathBuf::from("final.mp4")));
+            }
+            _ => panic!("compose サブコマンドとして解釈されるべき"),
+        }
+    }
+
+    #[test]
+    fn bare_scripts_still_parse_as_generate() {
+        let cli = Cli::try_parse_from(["script2voice", "台本.txt"]).unwrap();
+        assert!(cli.command.is_none());
+        assert_eq!(cli.generate.scripts, vec![PathBuf::from("台本.txt")]);
     }
 
     #[test]

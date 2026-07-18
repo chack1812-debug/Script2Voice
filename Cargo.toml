@@ -26,6 +26,7 @@ s2v-core    = { path = "crates/s2v-core" }
 s2v-engines = { path = "crates/s2v-engines" }
 s2v-audio   = { path = "crates/s2v-audio" }
 s2v-export  = { path = "crates/s2v-export" }
+s2v-video   = { path = "crates/s2v-video" }
 anyhow.workspace = true
 tokio.workspace = true
 futures = "0.3"
