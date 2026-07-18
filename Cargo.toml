@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/s2v-core", "crates/s2v-engines", "crates/s2v-audio", "crates/s2v-export", "crates/s2v-gui"]
+members = [".", "crates/s2v-core", "crates/s2v-engines", "crates/s2v-audio", "crates/s2v-export", "crates/s2v-gui", "crates/s2v-video"]
 resolver = "2"
 
 [workspace.dependencies]
