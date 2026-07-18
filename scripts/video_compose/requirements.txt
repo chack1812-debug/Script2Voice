@@ -1,3 +1,0 @@
-# scripts/video_compose は現状、標準ライブラリ (argparse, json, re, subprocess, pathlib) のみで動作する。
-# 外部Pythonパッケージへの依存はない。FFmpeg/ffprobeはシステムにインストールされ、PATHが通っている前提。
-# 将来的に画像処理(リサイズ等)や高度な字幕レンダリングのために依存を追加する場合はここに追記する。
