@@ -562,6 +562,31 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
   （壁・天井の反射率を 0 にすると屋外＝床反射のみ・ほぼ無残響）。詳しくは
   <a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
 </div>
+
+<h4 id="scene-freetext">情景描写（自由記述）</h4>
+<p>
+  <code>@scene</code> の宣言行の次の行から、次のセクション
+  （<code>@pause</code> / <code>@asset</code> / <code>@cast</code> / <code>@script</code>）が現れるまでの行は、
+  その場面の情景・雰囲気を書いた<strong>自由記述</strong>として扱われます。
+</p>
+<pre><code>@scene 01_オープニング room_size=0.3
+夕暮れの港町。潮風が吹き抜ける石畳の坂道。
+遠くで汽笛が鳴り、カモメの声が響いている。
+
+@cast
+...</code></pre>
+<div class="note">
+  情景描写は<strong>音声合成には使用されません</strong>。<a href="#compose">3.5 動画への書き出し</a>で使う
+  挿絵・動画クリップを用意する際に、画像生成AIへのプロンプトの元ネタとして
+  （Claude等が台本を読んで作成する運用を想定）利用することを目的としています。省略可能です。
+</div>
+<table class="kv-table">
+  <tr><td>開始位置</td><td><code>@scene</code> 宣言行の次の行から</td></tr>
+  <tr><td>終了位置</td><td>次のセクション（<code>@pause</code>/<code>@asset</code>/<code>@cast</code>/<code>@script</code>）の行の直前まで</td></tr>
+  <tr><td>空行の扱い</td><td><strong>区切りにならない</strong>。次のセクションが現れるまで、途中の空行も含めてすべて自由記述として蓄積される（<a href="#sec-cast">@cast の外見描写</a>とは扱いが異なる点に注意）</td></tr>
+  <tr><td>禁止事項</td><td>自由記述の行を <code>@</code> で始めてはならない（行頭の <code>@</code> はセクション区切りとして解釈されるため）</td></tr>
+</table>
+
 <p>
   各場面には <code>@asset</code> / <code>@cast</code> / <code>@script</code> の各セクションを
   含めることができます。新しい <code>@scene</code> が現れると、そこまでの内容で
@@ -625,6 +650,33 @@ se_dir = ./assets/se</code></pre>
   config.toml の <code>mic_directivity</code> / <code>mic_angle</code> で調整できます（値が大きいほど広がりが強い）。
   詳しくは<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
 </div>
+
+<h4 id="cast-freetext">外見描写（自由記述）</h4>
+<p>
+  各役の定義行（書式行）の次の行から、<strong>空行が来るまで</strong>の行は、
+  その役の外見・特徴を書いた<strong>自由記述</strong>として扱われます。
+</p>
+<pre><code>@cast
+めたん:四国めたん:ノーマル,voicevox,pan=-30,distance=1.0
+緑髪をショートボブにした、快活な印象の少女。制服の上に古びたコート。
+
+まい:まい:ノーマル,aivis,pan=30,distance=1.0
+物静かな雰囲気の女性。白いワンピース姿。</code></pre>
+<div class="note">
+  外見描写も情景描写と同様に<strong>音声合成には使用されません</strong>。<a href="#compose">3.5 動画への書き出し</a>で使う
+  挿絵を用意する際の、画像生成AIへのプロンプトの元ネタとして利用することを想定しています。省略可能です。
+</div>
+<div class="warn">
+  <strong>複数の役を定義する場合は、役ごとに空行を1行以上はさんでください。</strong>
+  空行は次の役の定義行との区切りを兼ねるため、空行を入れずに次の役の定義行を続けて書くと、
+  その定義行が<strong>直前の役の外見描写として読み込まれてしまい</strong>、新しい役として登録されません。
+  また、定義行を書かずに自由記述だけを書いた場合は、その役自体が登録されない点にも注意してください。
+</div>
+<table class="kv-table">
+  <tr><td>開始位置</td><td>各役の定義行の次の行から</td></tr>
+  <tr><td>終了位置</td><td>空行が来るまで（空行は次の役の定義行との区切りを兼ねる）</td></tr>
+  <tr><td>禁止事項</td><td>自由記述の行を <code>@</code> で始めてはならない</td></tr>
+</table>
 
 <h3 id="sec-script">4.5 @script セクション — 台詞と音声指示</h3>
 <p>場面内で実際に発声される台詞や、BGM・SE・無音などの指示を記述します。</p>
