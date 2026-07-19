@@ -145,6 +145,7 @@
           <li class="leaf"><a href="#flow">3.2 処理の流れ</a></li>
           <li class="leaf"><a href="#output">3.3 出力されるファイル</a></li>
           <li class="leaf"><a href="#gui">3.4 GUI（ランチャー＋音響ラボ）</a></li>
+          <li class="leaf"><a href="#compose">3.5 動画への書き出し（compose コマンド）</a></li>
         </ul>
       </details>
     </li>
@@ -226,6 +227,12 @@
 <p>
   台本ファイル（テキスト）を1つ用意するだけで、ナレーション動画やボイスドラマなどの
   音声・字幕・編集タイムラインを一括して作成できることが最大の特長です。
+</p>
+<p>
+  さらに、挿絵等の静止画素材を用意すれば、生成した音声・字幕と組み合わせて
+  <strong>MP4動画をそのまま書き出す</strong>こともできます（<code>compose</code> サブコマンド。
+  <a href="#compose">3.5 動画への書き出し</a>を参照）。編集ソフトを使わずに、
+  静止画のスライドショー形式の動画を直接得たい場合に利用します。
 </p>
 
 <h2 id="setup">2. 準備・セットアップ</h2>
@@ -462,6 +469,63 @@ script2voice .\scripts 追加エピソード.txt</code></pre>
   <li><strong>再生バー</strong>: 画面下部に共通の再生バーがあり、<strong>⏹停止</strong>・直前の音の再再生・
     履歴 A/B の交互再生がどのタブからでも行えます。</li>
 </ul>
+
+<h3 id="compose">3.5 動画への書き出し（compose コマンド）</h3>
+<p>
+  3.1〜3.3 の通常処理（<code>script2voice &lt;台本&gt;</code>）で音声・字幕・タイムラインを生成した後、
+  <code>compose</code> サブコマンドを使うと、そのプロジェクトフォルダに挿絵等の静止画（または動画クリップ）を
+  対応付けて、ひとつの<strong>MP4動画</strong>として書き出せます。台詞の区切り（字幕セグメント）ごとに
+  画面を切り替えるスライドショー形式の動画です。
+</p>
+<div class="warn">
+  この機能を使うには、<strong>ffmpeg と ffprobe</strong>（同じパッケージに同梱）が別途インストールされ、
+  <strong>PATH が通っている</strong>必要があります。Script2Voice 本体には同梱されていません。
+</div>
+<pre><code>script2voice compose &lt;プロジェクトフォルダ&gt; [--scene-map &lt;scene_map.jsonのパス&gt;] [--burn-subtitle] [-o &lt;出力ファイル.mp4&gt;]</code></pre>
+<table>
+  <tr><th>引数 / オプション</th><th>説明</th></tr>
+  <tr><td><code>&lt;プロジェクトフォルダ&gt;</code>（必須）</td><td>3.1〜3.3 で生成した出力フォルダ（<code>audio/</code>・<code>timeline/</code>・<code>full_dialogue.wav</code> 等が入っているフォルダ）</td></tr>
+  <tr><td><code>--scene-map &lt;パス&gt;</code></td><td><code>scene_map.json</code> のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/scene_map.json</code></strong> を使用する</td></tr>
+  <tr><td><code>--burn-subtitle</code></td><td>字幕（<code>timeline/subtitles.srt</code>）を動画に焼き込む（ハードサブ）</td></tr>
+  <tr><td><code>-o, --output &lt;パス&gt;</code></td><td>出力するMP4のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/output.mp4</code></strong></td></tr>
+</table>
+<p>実行例:</p>
+<pre><code># プロジェクトフォルダ直下の scene_map.json を使って動画化
+script2voice compose .\scripts\episode01
+
+# scene_map.json の場所と出力先を明示し、字幕を焼き込む
+script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.json --burn-subtitle -o .\out\episode01.mp4</code></pre>
+
+<h4 id="scene-map-format">scene_map.json の書式</h4>
+<p>
+  字幕の段落番号（1始まり。<code>timeline/subtitles.srt</code> のセグメント数と対応）ごとに、
+  表示する画像または動画クリップを指定するJSONファイルです。
+</p>
+<pre><code>{
+  "paragraphs": [
+    { "index": 1, "type": "image", "path": "images/scene01.png" },
+    { "index": 2, "type": "video", "path": "clips/scene02.mp4" },
+    { "index": 3, "image": "images/scene03.png" }
+  ],
+  "default_image": "images/fallback.png"
+}</code></pre>
+<table class="kv-table">
+  <tr><td><code>paragraphs[].index</code></td><td>対応する字幕の段落番号（1始まり、重複不可）</td></tr>
+  <tr><td><code>paragraphs[].type</code></td><td><code>"image"</code> または <code>"video"</code>。省略時は <code>"image"</code> 扱い</td></tr>
+  <tr><td><code>paragraphs[].path</code></td><td>画像/動画ファイルのパス。<code>scene_map.json</code> の置かれたフォルダからの相対パス、または絶対パス</td></tr>
+  <tr><td><code>paragraphs[].image</code></td><td><code>path</code> の代わりに使える旧形式のキー（常に画像として扱われる）。新規に作成する場合は <code>type</code> + <code>path</code> の形式を推奨</td></tr>
+  <tr><td><code>default_image</code></td><td>（任意）<code>paragraphs</code> に対応エントリが無い段落番号に使うフォールバック画像</td></tr>
+</table>
+<div class="note">
+  各段落に対応するエントリが <code>paragraphs</code> になく、<code>default_image</code> も設定されていない場合はエラーになります。
+  すべての字幕段落に画像（または <code>default_image</code>）が行き渡るように用意してください。
+</div>
+<div class="tip">
+  挿絵の用意には、<a href="#sec-scene">4.1 @scene セクション</a>の情景描写（自由記述）や
+  <a href="#sec-cast">4.4 @cast セクション</a>の外見描写（自由記述）を、画像生成AIへのプロンプトのもとにする運用を想定しています。
+  Script2Voice 自体は画像を生成しません。あらかじめ用意した画像ファイルを <code>scene_map.json</code> で
+  段落番号に割り当てる、という役割分担です。
+</div>
 
 <h2 id="script-format">4. 台本ファイルの書き方</h2>
 <p>
