@@ -3,6 +3,12 @@
 テキストから音声・動画を生成する、Rust製のText-to-Speech（TTS）パイプラインです。
 開発・運営: [宇摩コードワークス（UmaCodeWorks）](https://umacodeworks.jp)
 
+## 紹介動画
+
+Script2Voiceの概要と使い方を紹介した動画です。
+
+[![Script2Voice 紹介動画](https://img.youtube.com/vi/nM6yLUMByTA/maxresdefault.jpg)](https://youtu.be/nM6yLUMByTA)
+
 ## 概要
 
 Script2Voiceは、台本形式のテキストを解析し、音声合成エンジン（VOICEVOX / AivisSpeech 等）と連携して音声を生成するパイプラインです。まとまった分量のテキストを継続的に処理する用途を想定し、処理速度とメモリ安定性を重視してRustで実装しています。
