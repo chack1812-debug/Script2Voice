@@ -145,3 +145,53 @@ async fn produces_full_output_set_from_sample_script() {
         .collect();
     assert_eq!(voice_files.len(), 3, "3件の speech アイテムが処理されること");
 }
+
+/// 合成に時間のかかるスタブ。中断のタイミングを作るために使う。
+struct SlowStubEngine;
+
+#[async_trait]
+impl Engine for SlowStubEngine {
+    async fn activate(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn synthesize(&self, _text: &str, _cast: &Cast, _output: &Path) -> anyhow::Result<()> {
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        Ok(())
+    }
+}
+
+/// 生成中に future を drop する（= Ctrl+C で打ち切られた状況）と、
+/// 出力ロック `.s2v_generation*.lock` が確実に解放されること。
+///
+/// 残ったままだと、次回以降の生成が延々と `_1`,`_2`... へフォールバックし、
+/// 出力ファイル名がずれ続ける。
+#[tokio::test]
+async fn dropping_produce_future_releases_generation_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let project_dir = dir.path().join("project");
+    let config = Config::from_toml(SAMPLE_CONFIG).unwrap();
+    let mut parser = ScriptParser::new();
+    let scenes = parser.parse_str(SAMPLE_SCRIPT).unwrap();
+
+    let mut engine_manager = EngineManager::new();
+    engine_manager.register("voicevox", Arc::new(SlowStubEngine));
+    engine_manager.register("aivis", Arc::new(SlowStubEngine));
+    engine_manager.register("xtts", Arc::new(SlowStubEngine));
+    let engine_manager = Arc::new(engine_manager);
+
+    let producer = Producer::new(Arc::clone(&engine_manager), &config, &project_dir).unwrap();
+    let lock_path = project_dir.join(".s2v_generation.lock");
+
+    let mut fut = Box::pin(producer.produce(&scenes));
+    let progressed = tokio::time::timeout(std::time::Duration::from_secs(2), &mut fut).await;
+    assert!(progressed.is_err(), "合成中で未完了のはず（スタブが30秒待つ）");
+    assert!(lock_path.exists(), "生成中は出力ロックを保持しているはず: {}", lock_path.display());
+
+    drop(fut); // Ctrl+C 相当の打ち切り
+    assert!(
+        !lock_path.exists(),
+        "打ち切り時に出力ロックが解放されるべき: {}",
+        lock_path.display()
+    );
+}

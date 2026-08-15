@@ -485,17 +485,49 @@ pub fn is_path_writable(path: &Path) -> bool {
 /// 生成が完了する（または失敗する）まで保持し続けること。
 pub struct GenerationLock {
     lock_path: PathBuf,
-    _file: std::fs::File,
+    /// ロックの保有を表すファイルハンドル。開いている間は他プロセスから
+    /// 「持ち主がいる」と見える（`reclaim_if_unowned` 参照）。
+    file: Option<std::fs::File>,
 }
 
 impl Drop for GenerationLock {
     fn drop(&mut self) {
+        // 先にハンドルを閉じる。残骸から奪い返したロックは共有モード0で開いており、
+        // ハンドルが開いたままでは Windows で削除できない。
+        self.file.take();
         let _ = std::fs::remove_file(&self.lock_path);
     }
 }
 
 fn lock_path_for(lock_dir: &Path, suffix: &str) -> PathBuf {
     lock_dir.join(format!(".s2v_generation{suffix}.lock"))
+}
+
+/// 既存のロックファイルが「持ち主のいない残骸」なら開き直して所有権を奪う。
+///
+/// Ctrl+C はハンドリングして解放するようにしたが、タスクマネージャからの強制終了・
+/// GUI の × 終了・電源断ではデストラクタが走らずロックファイルだけが残る。残骸を
+/// 検出できないと、以降の実行がずっと `_1`,`_2`... へフォールバックし続け、
+/// 出力ファイル名が永久にずれていく。
+///
+/// Windows では共有モード 0（=他のハンドルを一切許さない）でのオープンが、
+/// 他プロセスがそのファイルを開いている間は共有違反で必ず失敗する。
+/// つまり「開けた = 誰も掴んでいない = 残骸」と判定できる。
+#[cfg(windows)]
+fn reclaim_if_unowned(lock_path: &Path) -> Option<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .share_mode(0)
+        .open(lock_path)
+        .ok()
+}
+
+/// Windows 以外には「他プロセスがファイルを開いているか」を標準ライブラリだけで
+/// 判定する手段がないため、残骸の奪い返しは行わない（従来どおり連番へ回避する）。
+#[cfg(not(windows))]
+fn reclaim_if_unowned(_lock_path: &Path) -> Option<std::fs::File> {
+    None
 }
 
 /// 生成の既定名ファイル一式から世代サフィックスを決め、そのサフィックスを排他的に確保する。
@@ -516,8 +548,13 @@ pub fn resolve_generation_suffix(
     fn try_claim(lock_dir: &Path, suffix: &str) -> anyhow::Result<Option<GenerationLock>> {
         let lock_path = lock_path_for(lock_dir, suffix);
         match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
-            Ok(file) => Ok(Some(GenerationLock { lock_path, _file: file })),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),
+            Ok(file) => Ok(Some(GenerationLock { lock_path, file: Some(file) })),
+            // 既にロックがある。生存プロセスが保持しているなら諦めるが、
+            // 強制終了で残った残骸なら奪い返す。
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                Ok(reclaim_if_unowned(&lock_path)
+                    .map(|file| GenerationLock { lock_path, file: Some(file) }))
+            }
             Err(e) => Err(e.into()),
         }
     }
@@ -1056,6 +1093,44 @@ mod tests {
         assert_eq!(third_suffix, "", "ロック解放後は再び\"\"が使えるべき");
 
         drop(second_guard);
+    }
+
+    /// 強制終了（Ctrl+C、タスクマネージャ、GUI の × 終了、電源断）で
+    /// ロックファイルだけが残ると、以降ずっと `_1`,`_2`... へフォールバックし続けて
+    /// 出力ファイル名が永久にずれる。持ち主のいないロックは奪い返せること。
+    #[cfg(windows)]
+    #[test]
+    fn resolve_suffix_reclaims_stale_lock_left_by_killed_process() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
+        let stale = dir.path().join(".s2v_generation.lock");
+        std::fs::write(&stale, b"").unwrap(); // 誰もハンドルを持っていない残骸
+
+        let (suffix, guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(suffix, "", "残骸ロックは奪い返して既定名で出力すべき");
+
+        drop(guard);
+        assert!(!stale.exists(), "奪い返したロックは解放時に削除されるべき");
+    }
+
+    /// 残骸の奪い返しが、生存プロセスのロックまで奪ってしまわないこと。
+    /// （`resolve_suffix_atomically_claims_slot_preventing_concurrent_reuse` の
+    ///   保証が残骸判定の導入で壊れていないかを、残骸ファイル混在下で確認する）
+    #[cfg(windows)]
+    #[test]
+    fn resolve_suffix_does_not_steal_a_held_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let files = vec![dir.path().join("a.wav")];
+
+        let (_first, first_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        // _1 のスロットには残骸ロックを置いておく（こちらは奪えるべき）
+        std::fs::write(dir.path().join(".s2v_generation_1.lock"), b"").unwrap();
+
+        let (second, second_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(second, "_1", "保持中のロックは奪わず、残骸のある _1 を使うべき");
+
+        drop(second_guard);
+        drop(first_guard);
     }
 
     #[test]

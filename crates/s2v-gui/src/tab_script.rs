@@ -104,6 +104,26 @@ impl ScriptTab {
         }
     }
 
+    /// 下部の一括実行ストリップ（区切り線＋ボタン行＋進捗バー＋エラー行）に必要な高さ。
+    /// この分を 2ペインの高さから差し引いて取り置く。
+    fn run_strip_height(&self, ui: &egui::Ui) -> f32 {
+        let spacing = ui.spacing().item_spacing.y;
+        // ボタン・進捗バーの行高（既定の interact_size と実フォントの大きい方）
+        let row_h = ui.spacing().interact_size.y.max(
+            ui.text_style_height(&egui::TextStyle::Button) + 2.0 * ui.spacing().button_padding.y,
+        );
+        const SEPARATOR_H: f32 = 6.0; // egui::Separator の既定 spacing
+
+        let mut h = spacing + SEPARATOR_H + spacing + row_h; // 区切り線 + ボタン行
+        if self.run_progress.is_some() {
+            h += spacing + row_h; // 進捗バー
+        }
+        if self.run_error.is_some() {
+            h += spacing + row_h * 2.0; // エラー行（折返し 2 行ぶんを目安に確保）
+        }
+        h
+    }
+
     pub fn ui(&mut self, ui: &mut egui::Ui, jobs: &Jobs) -> Option<ScriptAction> {
         let mut action = None;
         self.reload_if_changed();
@@ -145,83 +165,92 @@ impl ScriptTab {
         ui.separator();
 
         let busy = jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst);
-        let panes_h = (ui.available_height() - 84.0).max(160.0); // 下部の実行ストリップ分を確保
+        let strip_h = self.run_strip_height(ui);
+        let panes_h = (ui.available_height() - strip_h).max(160.0); // 下部の実行ストリップ分を確保
         let left_w = ui.available_width() * 0.38;
 
-        ui.horizontal_top(|ui| {
-            // ── 左: 行リスト ──
-            ui.vertical(|ui| {
-                ui.set_width(left_w);
-                ui.strong("行リスト");
-                egui::ScrollArea::vertical()
-                    .id_salt("line_list")
-                    .max_height(panes_h)
-                    .show(ui, |ui| {
-                        for line in &model.lines {
-                            let sel = self.selected == Some(line.no);
-                            let head: String = line.display_text.chars().take(22).collect();
-                            if ui
-                                .selectable_label(sel, format!("{:>3} {} {}", line.no, line.cast_name, head))
-                                .clicked()
-                            {
-                                self.selected = Some(line.no);
+        // 2ペインの高さは allocate_ui で明示的に切る。切らないと:
+        //   * `horizontal_top` は残りの高さ全部を子 Ui の max_rect として要求し、
+        //   * その中の `ui.separator()` は横レイアウトでは縦線となり、
+        //     長さに「その Ui の利用可能な高さ全部」を使う（egui の Separator 仕様）
+        // ため、2ペイン行だけで CentralPanel を使い切り、後続の一括実行ストリップが
+        // パネルの下端より外へ押し出されて set_clip_rect により不可視になる。
+        ui.allocate_ui(egui::vec2(ui.available_width(), panes_h), |ui| {
+            ui.horizontal_top(|ui| {
+                // ── 左: 行リスト ──
+                ui.vertical(|ui| {
+                    ui.set_width(left_w);
+                    ui.strong("行リスト");
+                    egui::ScrollArea::vertical()
+                        .id_salt("line_list")
+                        .max_height(panes_h)
+                        .show(ui, |ui| {
+                            for line in &model.lines {
+                                let sel = self.selected == Some(line.no);
+                                let head: String = line.display_text.chars().take(22).collect();
+                                if ui
+                                    .selectable_label(sel, format!("{:>3} {} {}", line.no, line.cast_name, head))
+                                    .clicked()
+                                {
+                                    self.selected = Some(line.no);
+                                }
                             }
+                        });
+                });
+
+                ui.separator();
+
+                // ── 右: 選択行の詳細 ──
+                ui.vertical(|ui| {
+                    let Some(line) = self
+                        .selected
+                        .and_then(|no| model.lines.iter().find(|l| l.no == no))
+                        .cloned()
+                    else {
+                        ui.label("← 行を選択してください");
+                        return;
+                    };
+                    ui.strong(format!("行 {} ／ {}（{}）", line.no, line.cast_name, line.scene_name));
+                    egui::ScrollArea::vertical()
+                        .id_salt("line_detail")
+                        .max_height(panes_h * 0.45)
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new(&line.display_text));
+                        });
+                    let sc = &line.scene_config;
+                    let dims = match (sc.room_w, sc.room_d, sc.room_h) {
+                        (Some(w), Some(d), Some(h)) => format!("{w}×{d}×{h}m"),
+                        _ => format!(
+                            "room_size={}",
+                            sc.room_size.map_or("既定".to_string(), |v| v.to_string())
+                        ),
+                    };
+                    ui.label(format!(
+                        "シーン: {dims} ／ listener z={} reverb_wet={}",
+                        sc.listener_z.map_or("既定".to_string(), |v| v.to_string()),
+                        sc.reverb_wet.map_or("既定".to_string(), |v| v.to_string()),
+                    ));
+                    ui.label(format!(
+                        "cast: pan {:+.1}° ／ 距離 {:.2}m ／ 高さ {} ／ 音量 {:.2}",
+                        line.cast.pan,
+                        line.cast.distance,
+                        line.cast.height.map_or("聴取者と同じ".to_string(), |h| format!("{h}m")),
+                        line.cast.volume,
+                    ));
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(!busy, egui::Button::new("▶ この行を試聴"))
+                            .clicked()
+                        {
+                            self.preview_error = None;
+                            self.preview_pending = Some(line.no);
+                            jobs.preview(line.clone());
+                        }
+                        if ui.button("🎛 ラボでこの行を調整 →").clicked() {
+                            action = Some(ScriptAction::OpenLab { line_no: line.no });
                         }
                     });
-            });
-
-            ui.separator();
-
-            // ── 右: 選択行の詳細 ──
-            ui.vertical(|ui| {
-                let Some(line) = self
-                    .selected
-                    .and_then(|no| model.lines.iter().find(|l| l.no == no))
-                    .cloned()
-                else {
-                    ui.label("← 行を選択してください");
-                    return;
-                };
-                ui.strong(format!("行 {} ／ {}（{}）", line.no, line.cast_name, line.scene_name));
-                egui::ScrollArea::vertical()
-                    .id_salt("line_detail")
-                    .max_height(panes_h * 0.45)
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new(&line.display_text));
-                    });
-                let sc = &line.scene_config;
-                let dims = match (sc.room_w, sc.room_d, sc.room_h) {
-                    (Some(w), Some(d), Some(h)) => format!("{w}×{d}×{h}m"),
-                    _ => format!(
-                        "room_size={}",
-                        sc.room_size.map_or("既定".to_string(), |v| v.to_string())
-                    ),
-                };
-                ui.label(format!(
-                    "シーン: {dims} ／ listener z={} reverb_wet={}",
-                    sc.listener_z.map_or("既定".to_string(), |v| v.to_string()),
-                    sc.reverb_wet.map_or("既定".to_string(), |v| v.to_string()),
-                ));
-                ui.label(format!(
-                    "cast: pan {:+.1}° ／ 距離 {:.2}m ／ 高さ {} ／ 音量 {:.2}",
-                    line.cast.pan,
-                    line.cast.distance,
-                    line.cast.height.map_or("聴取者と同じ".to_string(), |h| format!("{h}m")),
-                    line.cast.volume,
-                ));
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(!busy, egui::Button::new("▶ この行を試聴"))
-                        .clicked()
-                    {
-                        self.preview_error = None;
-                        self.preview_pending = Some(line.no);
-                        jobs.preview(line.clone());
-                    }
-                    if ui.button("🎛 ラボでこの行を調整 →").clicked() {
-                        action = Some(ScriptAction::OpenLab { line_no: line.no });
-                    }
                 });
             });
         });
@@ -260,5 +289,88 @@ impl ScriptTab {
             ui.colored_label(egui::Color32::RED, format!("⚠ {e}"));
         }
         action
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 行リストがスクロールを要する程度の行数を持つ台本。
+    fn sample_script() -> String {
+        let mut s = String::from("@scene 一\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\n");
+        for i in 1..=40 {
+            s.push_str(&format!("A:これは{i}行目の台詞です。長さの目安として少し長めに書いておきます。\n"));
+        }
+        s
+    }
+
+    fn test_jobs() -> Jobs {
+        let cfg: s2v_core::Config = toml::from_str(include_str!("../../../config.toml")).unwrap();
+        Jobs::new(cfg).unwrap()
+    }
+
+    /// 台本タブを数フレーム描画し、(可視領域=クリップ矩形, 実際に使われた矩形) を返す。
+    ///
+    /// `max_rect` はコンテンツがはみ出すと一緒に広がってしまうため判定に使えない。
+    /// CentralPanel は `set_clip_rect` で描画をパネル内に切り詰めるので、
+    /// 「見えているか」の基準はクリップ矩形になる。
+    fn layout_once(size: egui::Vec2, selected: Option<usize>, running: bool) -> (egui::Rect, egui::Rect) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("台本.txt");
+        std::fs::write(&path, sample_script()).unwrap();
+
+        let jobs = test_jobs();
+        let mut tab = ScriptTab {
+            model: Some(crate::script_model::load(&path).unwrap()),
+            selected,
+            // 進捗バー・エラー行が増えるぶんもストリップ用に取り置けているか
+            run_progress: running.then_some((3, 40)),
+            run_error: running.then(|| "合成失敗: エンジンに接続できません".to_string()),
+            ..Default::default()
+        };
+
+        let ctx = egui::Context::default();
+        let mut rects = None;
+        // ScrollArea 等はフレームをまたいで状態を持つため、数フレーム回してから測る。
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                ..Default::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    tab.ui(ui, &jobs);
+                    rects = Some((ui.clip_rect(), ui.min_rect()));
+                });
+            });
+        }
+        rects.unwrap()
+    }
+
+    /// 一括実行ストリップ（▶ 一括実行／⏹ キャンセル／進捗バー）が CentralPanel の
+    /// 下端からはみ出していないこと。
+    ///
+    /// 回帰の内容: 2ペインを `ui.horizontal_top` で描き、その中で `ui.separator()` を
+    /// 呼ぶと、egui の Separator は縦線として「そのUiの利用可能な高さ全部」を占有する。
+    /// 高さを制限せずに描くと 2ペイン行だけで CentralPanel を使い切り、後続の
+    /// ストリップがパネル外へ押し出されて `set_clip_rect` により不可視になる。
+    #[test]
+    fn bulk_run_strip_fits_inside_central_panel() {
+        for size in [egui::vec2(1100.0, 760.0), egui::vec2(1600.0, 1000.0)] {
+            for (selected, running) in
+                [(None, false), (Some(1usize), false), (Some(1usize), true)]
+            {
+                let (clip_rect, min_rect) = layout_once(size, selected, running);
+                assert!(
+                    min_rect.bottom() <= clip_rect.bottom(),
+                    "一括実行ストリップが可視領域からはみ出している \
+                     (size={size:?}, selected={selected:?}, running={running}): \
+                     使用領域 bottom={} > 可視領域 bottom={}",
+                    min_rect.bottom(),
+                    clip_rect.bottom(),
+                );
+            }
+        }
     }
 }

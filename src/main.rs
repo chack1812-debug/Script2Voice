@@ -191,10 +191,26 @@ async fn main() -> anyhow::Result<()> {
     let config_ref = &config;
     let em_ref = &engine_manager;
     let log_ref = &log_file;
-    let summary = run_each(parsed, parse_failures, |path, scenes, warnings| async move {
-        process_one(&path, &scenes, &warnings, config_ref, em_ref, log_ref).await
-    })
+    // Ctrl+C は自分で受ける。既定動作のままだとプロセスが即終了してデストラクタが
+    // 走らず、生成中の出力ロック(.s2v_generation*.lock)が残ってしまう。
+    let summary = run_until_interrupt(
+        run_each(parsed, parse_failures, |path, scenes, warnings| async move {
+            process_one(&path, &scenes, &warnings, config_ref, em_ref, log_ref).await
+        }),
+        async {
+            if tokio::signal::ctrl_c().await.is_err() {
+                // ハンドラを登録できない環境では中断を待てない（永久に待機）
+                std::future::pending::<()>().await
+            }
+        },
+    )
     .await;
+
+    let Some(summary) = summary else {
+        tracing::warn!("中断(Ctrl+C)を検知しました。生成を打ち切り、出力ロックを解放します。");
+        engine_manager.shutdown_all();
+        anyhow::bail!("ユーザーにより中断されました");
+    };
 
     // 全台本終了後にエンジンを停止
     engine_manager.shutdown_all();
@@ -213,6 +229,29 @@ async fn main() -> anyhow::Result<()> {
         anyhow::bail!("{} 台本が失敗しました", summary.failures.len());
     }
     Ok(())
+}
+
+/// `work` を実行し、先に `interrupt` が完了したら `work` を破棄して打ち切る。
+/// 完走したら `Some(結果)`、中断されたら `None`。
+///
+/// 打ち切りに `drop` を使うのが要点。Ctrl+C の既定動作（Windows のコンソール
+/// ハンドラ）はプロセスを即座に終了させるためデストラクタが一切走らず、生成中に
+/// 確保している出力ロック `.s2v_generation*.lock` が出力フォルダに残ってしまう。
+/// シグナルを自分で受けて future を drop すれば、`GenerationLock` を含む
+/// 保持中の RAII ガードの Drop が正常に走る。
+async fn run_until_interrupt<F, S>(work: F, interrupt: S) -> Option<F::Output>
+where
+    F: std::future::Future,
+    S: std::future::Future<Output = ()>,
+{
+    let mut work = Box::pin(work);
+    tokio::pin!(interrupt);
+    let result = tokio::select! {
+        r = &mut work => Some(r),
+        _ = &mut interrupt => None,
+    };
+    drop(work); // 中断時はここで保持中のガード(=出力ロック)が解放される
+    result
 }
 
 /// 台本引数を展開する。
@@ -418,6 +457,41 @@ async fn process_one(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 中断時に実行中 future の Drop が走ること。
+    /// これが走らないと、生成中に確保している出力ロック(`GenerationLock`)の
+    /// デストラクタが動かず、`.s2v_generation*.lock` が出力フォルダに残る。
+    #[tokio::test]
+    async fn run_until_interrupt_drops_work_future_releasing_its_guards() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        struct Guard(Arc<AtomicBool>);
+        impl Drop for Guard {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let guard = Guard(Arc::clone(&dropped));
+        let work = async move {
+            let _guard = guard; // 生成中ずっと保持しているロック相当
+            std::future::pending::<()>().await; // 終わらない処理
+        };
+
+        let out = run_until_interrupt(work, std::future::ready(())).await;
+        assert!(out.is_none(), "中断されたときは結果を返さない");
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "中断時は実行中 future を drop して、保持中のロックを解放すべき"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_until_interrupt_returns_result_when_work_finishes_first() {
+        let out = run_until_interrupt(async { 42 }, std::future::pending::<()>()).await;
+        assert_eq!(out, Some(42));
+    }
 
     #[tokio::test]
     async fn run_each_continues_after_failure_and_counts() {
