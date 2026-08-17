@@ -195,3 +195,64 @@ async fn dropping_produce_future_releases_generation_lock() {
         lock_path.display()
     );
 }
+
+/// 走り出した合成を記録するスタブ。`synthesize` は少し待ってから完了を数える。
+struct CountingSlowEngine {
+    finished: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+#[async_trait]
+impl Engine for CountingSlowEngine {
+    async fn activate(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn synthesize(&self, _text: &str, _cast: &Cast, _output: &Path) -> anyhow::Result<()> {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        self.finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+/// 生成を途中で打ち切ったら、既に走り出していた合成タスクも止まること。
+///
+/// 止めないと、中断したはずなのに裏でエンジンを叩き続け、出力フォルダに音声ファイルが
+/// 遅れて現れる（GUI はプロセスが残り続けるので特に目に見える）。
+#[tokio::test]
+async fn dropping_produce_future_stops_in_flight_synthesis_tasks() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let dir = tempfile::tempdir().unwrap();
+    let project_dir = dir.path().join("project");
+    let config = Config::from_toml(SAMPLE_CONFIG).unwrap();
+    let mut parser = ScriptParser::new();
+    let scenes = parser.parse_str(SAMPLE_SCRIPT).unwrap();
+
+    let finished = Arc::new(AtomicUsize::new(0));
+    let mut engine_manager = EngineManager::new();
+    for name in ["voicevox", "aivis", "xtts"] {
+        engine_manager.register(
+            name,
+            Arc::new(CountingSlowEngine { finished: Arc::clone(&finished) }),
+        );
+    }
+    let engine_manager = Arc::new(engine_manager);
+
+    let producer = Producer::new(Arc::clone(&engine_manager), &config, &project_dir).unwrap();
+    let mut fut = Box::pin(producer.produce(&scenes));
+
+    // 合成タスクが走り出したところで打ち切る（スタブは 300ms 待つのでまだ未完了）。
+    let progressed = tokio::time::timeout(std::time::Duration::from_millis(150), &mut fut).await;
+    assert!(progressed.is_err(), "合成中で未完了のはず");
+    assert_eq!(finished.load(Ordering::SeqCst), 0, "前提: まだ1件も合成が完了していない");
+
+    drop(fut); // Ctrl+C / GUI キャンセル相当の打ち切り
+
+    // スタブの待ち時間より十分長く待ち、それでも完了が増えないことを確かめる。
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    assert_eq!(
+        finished.load(Ordering::SeqCst),
+        0,
+        "打ち切り後に合成タスクが走り続けてはいけない"
+    );
+}

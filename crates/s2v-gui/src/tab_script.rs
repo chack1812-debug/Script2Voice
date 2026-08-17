@@ -267,7 +267,7 @@ impl ScriptTab {
                 jobs.run_all(model.path.clone());
             }
             if ui.add_enabled(running, egui::Button::new("⏹ キャンセル")).clicked() {
-                jobs.cancel.store(true, std::sync::atomic::Ordering::SeqCst);
+                jobs.cancel_run();
             }
             if running {
                 ui.label(format!("実行中: {}", self.run_phase));

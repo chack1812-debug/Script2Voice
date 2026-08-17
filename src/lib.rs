@@ -123,6 +123,21 @@ struct SynthTask {
     duration_ms: f64,
 }
 
+/// Drop 時に保持中のタスクをすべて abort する RAII ガード。
+///
+/// `tokio::spawn` したタスクは `JoinHandle` を落としても止まらず切り離されるだけなので、
+/// 生成が打ち切られた（= produce の future が drop された）あとも走り続けて
+/// エンジンを叩き、出力を書き足してしまう。中断の後始末として明示的に止める。
+struct AbortOnDrop(Vec<tokio::task::AbortHandle>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        for handle in &self.0 {
+            handle.abort();
+        }
+    }
+}
+
 /// 合成または音響処理に失敗した台詞の記録（タイムラインには登録しない）。
 struct TaskFailure {
     text: String,
@@ -261,6 +276,7 @@ impl Producer {
 
         // 各タスクを並列実行
         let mut handles = Vec::with_capacity(tasks.len());
+        let mut aborts = Vec::with_capacity(handles.capacity());
         for (si, ii, mut task) in tasks {
             let sems = sems.clone();
             let proc_sem = Arc::clone(&proc_sem);
@@ -320,8 +336,12 @@ impl Producer {
                     }
                 }
             });
+            aborts.push(handle.abort_handle());
             handles.push((si, ii, task_text, task_cast_name, handle));
         }
+        // 収集の間ずっと保持する。打ち切られたらここで全タスクが止まる
+        // （完走した場合の abort は何もしない）。
+        let _abort_guard = AbortOnDrop(aborts);
 
         // タスク完了を収集。失敗したタスクは task_map へ登録せず、
         // タイムライン・書き出しの対象から除外する（欠落を成功と誤認させない）。
