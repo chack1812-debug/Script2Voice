@@ -20,6 +20,9 @@ output/
 audio/
 timeline/
 
+# graphify (knowledge graph output)
+graphify-out/
+
 # Editor
 .vscode/
 *.swp
