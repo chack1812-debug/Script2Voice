@@ -144,61 +144,85 @@
           <li class="leaf"><a href="#cli">3.1 コマンドラインの使い方</a></li>
           <li class="leaf"><a href="#flow">3.2 処理の流れ</a></li>
           <li class="leaf"><a href="#output">3.3 出力されるファイル</a></li>
-          <li class="leaf"><a href="#gui">3.4 GUI（ランチャー＋音響ラボ）</a></li>
-          <li class="leaf"><a href="#compose">3.5 動画への書き出し（compose コマンド）</a></li>
         </ul>
       </details>
     </li>
     <li>
       <details open>
-        <summary><a href="#script-format">4. 台本ファイルの書き方</a></summary>
+        <summary><a href="#gui">4. GUI（s2v-gui）の使い方</a></summary>
         <ul>
-          <li class="leaf"><a href="#sec-scene">4.1 @scene セクション</a></li>
-          <li class="leaf"><a href="#sec-pause">4.2 @pause セクション</a></li>
-          <li class="leaf"><a href="#sec-asset">4.3 @asset セクション</a></li>
-          <li class="leaf"><a href="#sec-cast">4.4 @cast セクション</a></li>
-          <li class="leaf"><a href="#sec-script">4.5 @script セクション</a></li>
-          <li class="leaf"><a href="#commands">4.6 コマンド一覧 (#行)</a></li>
-          <li class="leaf"><a href="#ruby">4.7 ルビ表記・台詞の書き方</a></li>
-          <li class="leaf"><a href="#sample">4.8 サンプル台本</a></li>
+          <li class="leaf"><a href="#gui-start">4.1 起動と準備</a></li>
+          <li class="leaf"><a href="#gui-layout">4.2 画面構成</a></li>
+          <li class="leaf"><a href="#gui-script-tab">4.3 台本タブ</a></li>
+          <li class="leaf"><a href="#gui-lab">4.4 音響ラボタブ</a></li>
+          <li class="leaf"><a href="#gui-transport">4.5 再生バーと実行ログ</a></li>
         </ul>
       </details>
     </li>
     <li>
       <details open>
-        <summary><a href="#acoustics">5. 空間音響パラメータ解説</a></summary>
+        <summary><a href="#video">5. 動画の作成（compose）</a></summary>
         <ul>
-          <li class="leaf"><a href="#intro">5.1 この機能は何か</a></li>
-          <li class="leaf"><a href="#where">5.2 追加場所（config.toml）</a></li>
-          <li>
-            <details open>
-              <summary><a href="#model">5.3 空間モデルの考え方</a></summary>
-              <ul>
-                <li class="leaf"><a href="#coords">5.3.1 座標系</a></li>
-                <li class="leaf"><a href="#mic">5.3.2 聴取者＝マイク位置</a></li>
-                <li class="leaf"><a href="#chain">5.3.3 処理の流れ</a></li>
-              </ul>
-            </details>
-          </li>
-          <li>
-            <details open>
-              <summary><a href="#params">5.4 パラメータ詳細</a></summary>
-              <ul>
-                <li class="leaf"><a href="#p-basic">5.4.1 全体・部屋・聴取</a></li>
-                <li class="leaf"><a href="#p-dr">5.4.2 距離による残響（D/R）</a></li>
-                <li class="leaf"><a href="#p-material">5.4.3 面ごとの素材</a></li>
-              </ul>
-            </details>
-          </li>
-          <li class="leaf"><a href="#tuning">5.5 チューニング指針</a></li>
-          <li class="leaf"><a href="#compat">5.6 互換性・注意点</a></li>
-          <li class="leaf"><a href="#scene-room">5.7 台本(scene)で部屋を指定する</a></li>
-          <li class="leaf"><a href="#physical-reverb">5.8 残響の物理導出と reverb_wet</a></li>
+          <li class="leaf"><a href="#video-flow">5.1 全体の流れ</a></li>
+          <li class="leaf"><a href="#video-paragraph">5.2 段落と画面の切り替わり</a></li>
+          <li class="leaf"><a href="#compose">5.3 コマンドと引数</a></li>
+          <li class="leaf"><a href="#scene-map-format">5.4 scene_map.json の書式</a></li>
+          <li class="leaf"><a href="#video-spec">5.5 生成される動画の仕様</a></li>
+          <li class="leaf"><a href="#video-assets">5.6 挿絵の用意について</a></li>
+          <li class="leaf"><a href="#video-errors">5.7 うまくいかないときは</a></li>
         </ul>
       </details>
     </li>
-    <li class="leaf"><a href="#troubleshooting">6. トラブルシューティング</a></li>
-    <li class="leaf"><a href="#appendix">7. 付録: パラメータ早見表</a></li>
+    <li>
+      <details open>
+        <summary><a href="#script-format">6. 台本ファイルの書き方</a></summary>
+        <ul>
+          <li class="leaf"><a href="#sec-scene">6.1 @scene セクション</a></li>
+          <li class="leaf"><a href="#sec-pause">6.2 @pause セクション</a></li>
+          <li class="leaf"><a href="#sec-asset">6.3 @asset セクション</a></li>
+          <li class="leaf"><a href="#sec-cast">6.4 @cast セクション</a></li>
+          <li class="leaf"><a href="#sec-script">6.5 @script セクション</a></li>
+          <li class="leaf"><a href="#commands">6.6 コマンド一覧 (#行)</a></li>
+          <li class="leaf"><a href="#ruby">6.7 ルビ表記・台詞の書き方</a></li>
+          <li class="leaf"><a href="#sample">6.8 サンプル台本</a></li>
+        </ul>
+      </details>
+    </li>
+    <li>
+      <details open>
+        <summary><a href="#acoustics">7. 空間音響パラメータ解説</a></summary>
+        <ul>
+          <li class="leaf"><a href="#intro">7.1 この機能は何か</a></li>
+          <li class="leaf"><a href="#where">7.2 追加場所（config.toml）</a></li>
+          <li>
+            <details open>
+              <summary><a href="#model">7.3 空間モデルの考え方</a></summary>
+              <ul>
+                <li class="leaf"><a href="#coords">7.3.1 座標系</a></li>
+                <li class="leaf"><a href="#mic">7.3.2 聴取者＝マイク位置</a></li>
+                <li class="leaf"><a href="#chain">7.3.3 処理の流れ</a></li>
+              </ul>
+            </details>
+          </li>
+          <li>
+            <details open>
+              <summary><a href="#params">7.4 パラメータ詳細</a></summary>
+              <ul>
+                <li class="leaf"><a href="#p-basic">7.4.1 全体・部屋・聴取</a></li>
+                <li class="leaf"><a href="#p-dr">7.4.2 距離による残響（D/R）</a></li>
+                <li class="leaf"><a href="#p-material">7.4.3 面ごとの素材</a></li>
+              </ul>
+            </details>
+          </li>
+          <li class="leaf"><a href="#tuning">7.5 チューニング指針</a></li>
+          <li class="leaf"><a href="#compat">7.6 互換性・注意点</a></li>
+          <li class="leaf"><a href="#scene-room">7.7 台本(scene)で部屋を指定する</a></li>
+          <li class="leaf"><a href="#physical-reverb">7.8 残響の物理導出と reverb_wet</a></li>
+        </ul>
+      </details>
+    </li>
+    <li class="leaf"><a href="#troubleshooting">8. トラブルシューティング</a></li>
+    <li class="leaf"><a href="#appendix">9. 付録: パラメータ早見表</a></li>
   </ul>
 </nav>
 
@@ -207,8 +231,9 @@
 <p>
   本書は、台本ファイルから音声合成・空間音響処理・字幕(SRT)・編集タイムライン(FCPXML)・
   ミックス済み音声(WAV)を一括生成するツール <strong>Script2Voice</strong>（Rust 版）の
-  取扱説明書です。インストールから台本の書き方、出力物の確認方法までを解説します。
-  早期反射・物理残響などの<strong>空間音響パラメータの詳細解説（<a href="#acoustics">第5章</a>）</strong>も本書に統合されています。
+  取扱説明書です。インストールから台本の書き方、GUI の操作、挿絵を組み合わせた
+  MP4 動画の書き出しまでを解説します。
+  早期反射・物理残響などの<strong>空間音響パラメータの詳細解説（<a href="#acoustics">第7章</a>）</strong>も本書に統合されています。
 </p>
 
 <h2 id="overview">1. Script2Voice とは</h2>
@@ -229,9 +254,15 @@
   音声・字幕・編集タイムラインを一括して作成できることが最大の特長です。
 </p>
 <p>
+  操作方法は<strong>コマンドライン（CLI）と GUI の2通り</strong>があります。
+  台本をまとめて処理するなら CLI（<a href="#usage">第3章</a>）、
+  台詞を1行ずつ聴きながら空間音響を調整するなら GUI（<a href="#gui">第4章</a>）が向いています。
+  どちらで実行しても生成される成果物は同じです。
+</p>
+<p>
   さらに、挿絵等の静止画素材を用意すれば、生成した音声・字幕と組み合わせて
   <strong>MP4動画をそのまま書き出す</strong>こともできます（<code>compose</code> サブコマンド。
-  <a href="#compose">3.5 動画への書き出し</a>を参照）。編集ソフトを使わずに、
+  <a href="#video">第5章 動画の作成</a>を参照）。編集ソフトを使わずに、
   静止画のスライドショー形式の動画を直接得たい場合に利用します。
 </p>
 
@@ -247,10 +278,18 @@ cargo build --release</code></pre>
 <p>
   ビルドが成功すると、実行ファイルは
   <code>target/release/script2voice.exe</code>（Windows の場合）に生成されます。
+  GUI（<a href="#gui">第4章</a>）を使う場合は、同じビルドで
+  <code>target/release/s2v-gui.exe</code> も生成されます（GUI だけをビルドするなら
+  <code>cargo build --release -p s2v-gui</code>）。
 </p>
+<div class="note">
+  <code>script2voice.exe</code> / <code>s2v-gui.exe</code> を任意の場所へコピーして使う場合は、
+  <strong><code>config.toml</code> を実行ファイルと同じフォルダに置いてください</strong>
+  （<a href="#config">2.3</a>）。GUI では音響ラボのプリセット <code>presets.toml</code> も同じ規約で読まれます。
+</div>
 <div class="tip">
   動作確認やテストには <code>cargo test --workspace</code> を実行してください。
-  全クレート（s2v-core / s2v-engines / s2v-audio / s2v-export / script2voice）の
+  全クレート（s2v-core / s2v-engines / s2v-audio / s2v-export / s2v-video / s2v-gui / script2voice）の
   ユニットテストと統合テスト（E2E テスト）が一括で実行されます。
 </div>
 
@@ -345,7 +384,7 @@ args = ["-m", "xtts_api_server", "--port", "8020"]</pre>
   <tr><td><code>[audio] reverb_wet</code></td><td>残響量の<strong>倍率</strong>（既定 1.0＝物理量どおり）。部屋寸法と壁素材から算出される残響基準値に掛ける。<code>@scene</code> で上書き可</td></tr>
   <tr><td><code>[audio] reference_dist / reference_gain_db / max_gain_db</code></td><td>距離減衰や音量の基準値・上限値</td></tr>
   <tr><td><code>[audio] mic_directivity / mic_angle</code></td><td>仮想マイクの指向性の強さと向き（外開き ORTF 配置）。値が大きいほど定位の広がりが強くなる</td></tr>
-  <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照</td></tr>
+  <tr><td><code>[audio.early_reflections]</code></td><td>空間音響（早期反射・物理残響）の設定。<code>enabled</code>（ON/OFF）、<code>ear_height</code>（聴取者の床からの高さ）、<code>listener_offset</code>、<code>room_dims_min</code>/<code>room_dims_max</code>（<code>room_size</code> 0→1 に対応する部屋寸法 [幅,奥行,高さ]m）、<code>early_level</code>、<code>wet_distance_slope</code>、および 5 素材（<code>floor</code>/<code>ceiling</code>/<code>front_wall</code>/<code>back_wall</code>/<code>side_walls</code>）の <code>reflection_coeff</code>・<code>absorption_cutoff_hz</code>。詳細は<a href="#acoustics">第7章 空間音響パラメータ解説</a>を参照</td></tr>
   <tr><td><code>[audio.engine_volume_offsets]</code></td><td>エンジンごとの音量補正係数 (例: <code>voicevox = 1.2</code>)</td></tr>
   <tr><td><code>[concurrency]</code></td><td>エンジンごとの同時合成数、音響処理の並列数（<code>0</code> = CPU コア数を自動使用）。
     ただし XTTS はエンジン側がリクエスト単位ではなくグローバルな音声設定APIしか持たないため、
@@ -451,43 +490,270 @@ script2voice .\scripts 追加エピソード.txt</code></pre>
   台詞・BGM・SE がタイムライン上に自動配置された状態から動画編集を開始できます。
 </div>
 
-<h3 id="gui">3.4 GUI（ランチャー＋音響ラボ）</h3>
+<h2 id="gui">4. GUI（s2v-gui）の使い方</h2>
 <p>
-  <code>s2v-gui.exe</code>（<code>cargo build --release -p s2v-gui</code> で生成）を起動すると、
-  コマンドラインなしで台本の実行・確認ができます。<code>config.toml</code>・<code>presets.toml</code> は
-  実行ファイルと同じフォルダに置いてください。
+  Script2Voice には、コマンドラインを使わずに台本の試聴・一括実行・音響パラメータの調整ができる
+  GUI アプリ <strong><code>s2v-gui.exe</code></strong> が付属します。用途は大きく2つです。
 </p>
 <ul>
-  <li><strong>台本タブ</strong>: 左の行リストで行を選ぶと、右に台詞全文・シーン・キャスト設定が表示されます。
-    「▶この行を試聴」で1行だけ合成・音響処理して確認、「🎛ラボでこの行を調整」でその行を音源にして音響ラボへ移動します。
-    台本の編集はお使いのエディタで行い、保存すると自動再読込されます（UTF-8 保存）。一括実行は下部のボタンから（CLI と同一出力）。</li>
-  <li><strong>音響ラボタブ</strong>: 部屋を上から見た図の中で<strong>聴取者👤と話者🔊をドラッグ</strong>すると、
-    定位（pan）・距離・聴取者位置が連動して変わります。部屋の<strong>幅W・奥行D・高さH はそれぞれ独立</strong>に
-    スライダーまたは数値入力で設定でき、残響時間（RT60）の目安が図の下に表示されます。
-    結果はパラメータとペアで履歴に残り、A/B を指定して下部の再生バーで交互に聴き比べできます。
-    決まった値は <code>@scene</code> 行としてコピーできます。</li>
-  <li><strong>再生バー</strong>: 画面下部に共通の再生バーがあり、<strong>⏹停止</strong>・直前の音の再再生・
-    履歴 A/B の交互再生がどのタブからでも行えます。</li>
+  <li><strong>台本タブ</strong> — 台本を開いて行ごとに<strong>試聴</strong>し、問題なければ<strong>一括実行</strong>（CLI と同一の出力）する。</li>
+  <li><strong>音響ラボタブ</strong> — 部屋の広さ・立ち位置・残響を<strong>図とスライダーで試行錯誤</strong>し、決まった値を <code>@scene</code> 行として台本に貼り付ける。</li>
+</ul>
+<div class="note">
+  一括実行で生成されるファイルは CLI（<a href="#usage">3. 基本操作</a>）とまったく同じです。
+  GUI は CLI の代替であって、別の出力形式を持つわけではありません。
+</div>
+
+<h3 id="gui-start">4.1 起動と準備</h3>
+<pre><code># GUI のビルド
+cargo build --release -p s2v-gui
+# → target/release/s2v-gui.exe</code></pre>
+<p>
+  <code>s2v-gui.exe</code> は、<strong>実行ファイルと同じフォルダ</strong>に置かれた
+  <code>config.toml</code>（CLI と同じ規約）と <code>presets.toml</code>（音響ラボのプリセット。任意）を読み込みます。
+  GUI には <code>--config</code> に相当する指定手段がないため、この配置が必須です。
+</p>
+<table>
+  <tr><th>ファイル</th><th>置き場所</th><th>無い場合</th></tr>
+  <tr><td><code>config.toml</code></td><td>exe と同じフォルダ</td><td>画面に「config.toml を読めません」と赤字で表示され、試聴・一括実行はできません</td></tr>
+  <tr><td><code>presets.toml</code></td><td>exe と同じフォルダ</td><td>組込みプリセットのみ使用（正常動作。<a href="#gui-lab">4.4</a> 参照）</td></tr>
+  <tr><td><code>s2v-gui.last</code></td><td>exe と同じフォルダ（自動生成）</td><td>前回開いた台本のパスを記録するファイル。起動時にその台本を自動で開きます</td></tr>
+</table>
+<div class="tip">
+  <strong>音声合成エンジンの扱い</strong><br>
+  GUI は、試聴や一括実行で<strong>実際に必要になった時点</strong>で、台本が使っているエンジンだけを起動します
+  （<code>config.toml</code> に <code>exe_path</code> を設定してある場合。<a href="#engines">2.2</a> 参照）。
+  一度起動したエンジンは GUI を使っている間ずっと使い回され、
+  <strong>GUI を終了するときに、GUI 自身が起動したエンジンだけを停止</strong>します。
+</div>
+
+<h3 id="gui-layout">4.2 画面構成</h3>
+<table>
+  <tr><th>位置</th><th>内容</th></tr>
+  <tr><td>最上部</td><td>タブ切替（<strong>📜 台本</strong> / <strong>🎛 音響ラボ</strong>）</td></tr>
+  <tr><td>中央</td><td>選択中のタブの本体</td></tr>
+  <tr><td>下部</td><td><strong>再生バー</strong>（どのタブからでも共通。<a href="#gui-transport">4.5</a>）と、合成中・エラーの表示</td></tr>
+  <tr><td>最下部</td><td><strong>実行ログ</strong>（折りたたみ式。直近 500 行）</td></tr>
+</table>
+
+<h3 id="gui-script-tab">4.3 台本タブ — 試聴と一括実行</h3>
+<h4>台本を開く</h4>
+<p>
+  <strong>「📂 台本を開く...」</strong>で <code>.txt</code> の台本を選びます（UTF-8 保存。BOM 付きでも読めます）。
+  開いたパスは記憶され、次回起動時に自動で開かれます。
+</p>
+<p>
+  <strong>「保存時に自動再読込」</strong>にチェックを入れておくと（既定 ON）、
+  お使いのエディタで台本を編集して保存するたびに GUI 側が読み直します。
+  台本の編集機能は GUI にはありません。<strong>編集はエディタ、確認は GUI</strong> という分担です。
+</p>
+<div class="note">
+  再読込すると<strong>行番号がずれる可能性がある</strong>ため、選択中の行と、
+  音響ラボが参照している「台本の行」の音源はいったんクリアされます。
+</div>
+<p>
+  台本にパース上の警告（未定義キャストの台詞、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）があると、
+  <strong>「⚠ ○行目: …」</strong>という橙色の行が画面上部に一覧表示されます。CLI の <code>--strict</code> に相当する
+  「警告を失敗として扱う」設定は GUI にはないため、警告は自分で確認してください。
+</p>
+
+<h4>行リストと詳細</h4>
+<p>
+  画面は左右2ペインです。左の<strong>行リスト</strong>には「行番号・役名・台詞の冒頭」が並び、
+  クリックすると右の<strong>詳細</strong>に切り替わります。詳細では次が確認できます。
+</p>
+<ul>
+  <li>台詞の全文（ルビを解決した表示テキスト）</li>
+  <li>シーン: 部屋寸法（<code>room_w×room_d×room_h</code>。未指定なら <code>room_size</code>）／ <code>listener_z</code> ／ <code>reverb_wet</code></li>
+  <li>キャスト: <code>pan</code>（度）／ 距離（m）／ 高さ ／ 音量</li>
 </ul>
 
-<h3 id="compose">3.5 動画への書き出し（compose コマンド）</h3>
+<h4>1行だけ試聴する</h4>
+<table>
+  <tr><th>ボタン</th><th>動作</th></tr>
+  <tr><td><strong>▶ この行を試聴</strong></td><td>その行だけを合成し、空間音響処理をかけて再生します。結果はファイルとして残らず、一時フォルダに置かれます</td></tr>
+  <tr><td><strong>🎛 ラボでこの行を調整 →</strong></td><td>音響ラボタブへ移動し、その行の音を音源に設定します。まだ試聴していない行なら自動で合成を始めます</td></tr>
+</table>
+<div class="warn">
+  試聴は<strong>同時に1件だけ</strong>実行されます（実行中はボタンが無効になります）。
+  また、エンジンの初回起動（特に AivisSpeech のモデルロード）を含むため、
+  最初の1回は<strong>30秒以上かかることがあります</strong>。
+  下部の再生バーに「行N を合成中…」と出ている間はお待ちください。
+</div>
+
+<h4>一括実行（全台詞の生成）</h4>
+<p>画面下部の<strong>一括実行ストリップ</strong>から、開いている台本を丸ごと処理します。</p>
+<table>
+  <tr><th>表示 / ボタン</th><th>説明</th></tr>
+  <tr><td><strong>▶ 一括実行</strong></td><td>台本全体を処理します。出力は CLI と同一で、<strong>台本ファイルと同じ場所の「台本名」フォルダ</strong>に生成されます（<a href="#output">3.3 出力されるファイル</a>）</td></tr>
+  <tr><td><strong>⏹ キャンセル</strong></td><td>実行中の処理を中断します</td></tr>
+  <tr><td>実行中: ○○</td><td>現在のフェーズ（合成中・ミックス中など）</td></tr>
+  <tr><td>進捗バー</td><td><code>done/total 行</code> の形で進捗を表示</td></tr>
+  <tr><td><strong>✅ 完了</strong> / <strong>📁 出力フォルダを開く</strong></td><td>完了後、出力先をエクスプローラーで開けます</td></tr>
+  <tr><td>⚠ 赤字</td><td>失敗の理由。詳細は最下部の実行ログに出ます</td></tr>
+</table>
+<div class="tip">
+  <strong>キャンセルと途中終了について</strong><br>
+  「⏹ キャンセル」は、音声合成がエンジンの応答待ちで止まっている最中でも<strong>即座に</strong>効きます。
+  中断すると、生成中に確保していた出力ロック（出力フォルダ内の <code>.s2v_generation.lock</code>）は解放され、
+  そのまま再実行できる状態に戻ります。GUI のウィンドウを「×」で閉じて途中終了した場合も同じ後始末が行われます。
+</div>
+<div class="note">
+  <strong>GUI と CLI の機能差</strong><br>
+  GUI で一括実行できるのは<strong>開いている台本 1 本だけ</strong>です。
+  複数台本のバッチ処理（<a href="#cli">3.1</a>）、<code>--strict</code>、
+  動画への書き出し（<a href="#video">第5章 compose</a>）は CLI から実行してください。
+</div>
+
+<h3 id="gui-lab">4.4 音響ラボタブ — 空間音響の試行錯誤</h3>
 <p>
-  3.1〜3.3 の通常処理（<code>script2voice &lt;台本&gt;</code>）で音声・字幕・タイムラインを生成した後、
-  <code>compose</code> サブコマンドを使うと、そのプロジェクトフォルダに挿絵等の静止画（または動画クリップ）を
-  対応付けて、ひとつの<strong>MP4動画</strong>として書き出せます。台詞の区切り（字幕セグメント）ごとに
-  画面を切り替えるスライドショー形式の動画です。
+  同じ台詞に対して部屋の広さ・立ち位置・残響量を変えながら聴き比べ、
+  決まった値を <code>@scene</code> 行として台本へ持ち帰るためのタブです。
+  各パラメータの意味は<a href="#acoustics">第7章 空間音響パラメータ解説</a>を参照してください。
+</p>
+
+<h4>音源を選ぶ</h4>
+<table>
+  <tr><td><strong>台本の行</strong></td><td>台本タブで試聴した行の音（<strong>空間音響処理をかける前</strong>の合成音）。まだ試聴していないと選べません</td></tr>
+  <tr><td><strong>WAVファイル</strong></td><td>「選択...」で任意の WAV を読み込みます。合成エンジンを使わずに音響処理だけ試したいときに便利です</td></tr>
+</table>
+
+<h4>部屋の俯瞰図（ドラッグ操作）</h4>
+<p>
+  左側には部屋を真上から見た図が表示されます。<strong>聴取者 👤 と話者 🔊 をドラッグ</strong>すると、
+  その位置関係から <code>listener_dx</code> / <code>listener_dy</code> と <code>pan</code> / <code>distance</code> が自動で計算されます
+  （逆に数値を変えれば図が動きます）。位置は部屋の内側にクランプされ、話者と聴取者は 0.1m 以上離れます。
+  図の下には現在の寸法と、そこから物理計算した<strong>残響時間 RT60 の目安</strong>が表示されます。
+</p>
+
+<h4>パラメータ</h4>
+<table class="kv-table">
+  <tr><td><code>部屋 幅 W</code></td><td>2〜60 m（<code>room_w</code>）</td></tr>
+  <tr><td><code>部屋 奥行 D</code></td><td>2〜80 m（<code>room_d</code>）</td></tr>
+  <tr><td><code>部屋 高さ H</code></td><td>2〜30 m（<code>room_h</code>）</td></tr>
+  <tr><td><code>聴取 高さ z</code></td><td>0.2〜5 m（<code>listener_z</code>）</td></tr>
+  <tr><td><code>話者 高さ</code></td><td>0〜5 m（<code>height</code>）</td></tr>
+  <tr><td><code>残響倍率</code></td><td>0〜3（<code>reverb_wet</code>）</td></tr>
+  <tr><td><code>pan</code></td><td>−180〜+180 度（+ が右）</td></tr>
+  <tr><td><code>距離</code></td><td>0.1〜30 m</td></tr>
+</table>
+<p>
+  幅 W・奥行 D・高さ H は<strong>それぞれ独立</strong>に、スライダーでも数値入力でも設定できます。
+</p>
+
+<h4>プリセット</h4>
+<p>次の4つが組み込まれています。「適用」を押すと現在の値に反映されます。</p>
+<table>
+  <tr><th>名前</th><th>W×D×H</th><th>備考</th></tr>
+  <tr><td>ラジオスタジオ</td><td>4×5×3 m</td><td>デッドな小部屋</td></tr>
+  <tr><td>会議室</td><td>8×12×2.7 m</td><td>標準的な室内</td></tr>
+  <tr><td>2000席ホール</td><td>25×45×18 m</td><td>聴取者は中央より後ろ寄り（<code>listener_dy=-15</code>）</td></tr>
+  <tr><td>屋外風（残響なし）</td><td>50×50×30 m</td><td><code>reverb_wet=0</code></td></tr>
+</table>
+<p>
+  独自のプリセットは、exe と同じフォルダの <code>presets.toml</code> に追記すると一覧の末尾に追加されます。
+  <strong>書かなかった項目は現在の値が維持</strong>されます（部屋だけ切り替えて pan/距離は保つ、といった使い方ができます）。
+</p>
+<pre><code># presets.toml
+[[preset]]
+name = "録音ブース"
+room_w = 2.5
+room_d = 3.0
+room_h = 2.4
+listener_dx = 0.0
+listener_dy = 0.0
+listener_z = 1.2
+reverb_wet = 0.6
+# pan / distance / height は書かなければ現在値のまま</code></pre>
+<div class="note">
+  <code>presets.toml</code> の書式が壊れている場合は、橙色の警告を出したうえで
+  <strong>組込みプリセットだけ</strong>で動作します（GUI は起動します）。
+</div>
+
+<h4>試聴と @scene 行の書き出し</h4>
+<ol>
+  <li><strong>▶ 処理して試聴</strong> — 現在のパラメータで音響処理し、再生します。</li>
+  <li>結果はパラメータとセットで<strong>試聴履歴</strong>（最大 50 件）に積まれます。</li>
+  <li>履歴の行をクリックすると <strong>A</strong> / <strong>B</strong> が付き、下部の再生バーの「▶ A」「▶ B」で<strong>交互に聴き比べ</strong>できます。</li>
+  <li>気に入った設定が決まったら、画面中央に表示されている <code>@scene …</code> の行を <strong>📋 コピー</strong> して台本に貼り付けます。</li>
+</ol>
+<pre><code>@scene シーン名 room_w=25 room_d=45 room_h=18 listener_dx=0 listener_dy=-15 listener_z=1.1 reverb_wet=1</code></pre>
+<table>
+  <tr><th>履歴の操作</th><th>説明</th></tr>
+  <tr><td><strong>▶</strong></td><td>その履歴の音を単体で再生</td></tr>
+  <tr><td><strong>呼び戻す</strong></td><td>その履歴のパラメータをスライダーに戻す</td></tr>
+  <tr><td><strong>💾 書き出し</strong></td><td>その履歴の WAV を任意の場所に保存</td></tr>
+  <tr><td><strong>クリア</strong></td><td>履歴を空にする</td></tr>
+</table>
+<div class="warn">
+  試聴・履歴の WAV は<strong>一時フォルダ</strong>に置かれ、GUI を終了すると削除されます。
+  残しておきたい音は「💾 書き出し」で保存してください。
+</div>
+
+<h3 id="gui-transport">4.5 再生バーと実行ログ</h3>
+<p>画面下部の再生バーは、どちらのタブにいても共通で使えます。</p>
+<table class="kv-table">
+  <tr><td><strong>▶</strong></td><td>直前に鳴らした音をもう一度再生</td></tr>
+  <tr><td><strong>⏹</strong></td><td>再生停止</td></tr>
+  <tr><td>再生中: ○○.wav</td><td>いま鳴っているファイル名</td></tr>
+  <tr><td><strong>▶ A</strong> / <strong>▶ B</strong></td><td>音響ラボの履歴で A/B 指定した音を再生（聴き比べ用）</td></tr>
+</table>
+<p>
+  最下部の<strong>「実行ログ」</strong>を展開すると、合成・音響処理・エラーの詳細が時系列で確認できます。
+  試聴や一括実行がうまくいかないときは、まずここを確認してください。
+</p>
+
+<h2 id="video">5. 動画の作成（compose コマンド）</h2>
+<p>
+  <a href="#usage">3. 基本操作</a>で音声・字幕・タイムラインを生成したあと、
+  <code>compose</code> サブコマンドを使うと、そのプロジェクトフォルダに挿絵などの静止画（または動画クリップ）を
+  対応付けて、ひとつの <strong>MP4 動画</strong>として書き出せます。
+  台詞の<strong>段落</strong>ごとに画面が切り替わるスライドショー形式の動画です。
 </p>
 <div class="warn">
   この機能を使うには、<strong>ffmpeg と ffprobe</strong>（同じパッケージに同梱）が別途インストールされ、
   <strong>PATH が通っている</strong>必要があります。Script2Voice 本体には同梱されていません。
 </div>
+
+<h3 id="video-flow">5.1 全体の流れ</h3>
+<ol>
+  <li>台本に <code>#paragraph</code> を入れて<strong>画面を切り替えたい位置</strong>を決める（<a href="#video-paragraph">5.2</a>）</li>
+  <li><code>script2voice &lt;台本&gt;</code> で音声・字幕を生成する（<a href="#usage">3章</a>）</li>
+  <li>段落数だけ<strong>画像（または動画クリップ）を用意</strong>する</li>
+  <li>段落番号と素材の対応を <code>scene_map.json</code> に書く（<a href="#scene-map-format">5.4</a>）</li>
+  <li><code>script2voice compose &lt;プロジェクトフォルダ&gt;</code> で MP4 を書き出す（<a href="#compose">5.3</a>）</li>
+</ol>
+
+<h3 id="video-paragraph">5.2 段落（#paragraph）と画面の切り替わり</h3>
+<p>
+  画面が切り替わる位置は、台本の <code>#paragraph</code> コマンド（<a href="#commands">6.6 コマンド一覧</a>）で決まります。
+  <code>#paragraph</code> は台詞の間に<code>@pause</code> の <code>paragraph</code> 設定ぶんの無音を入れると同時に、
+  字幕 <code>timeline/subtitles.srt</code> に<strong>長さ0の <code>[PARAGRAPH]</code> マーカー</strong>を書き込みます。
+  <code>compose</code> はこのマーカーを読んで区間を切ります。
+</p>
+<table>
+  <tr><th>台本の <code>#paragraph</code> の数</th><th>動画の段落（＝画面）数</th></tr>
+  <tr><td>0 個</td><td>1（全編を1枚の画像で通す）</td></tr>
+  <tr><td>1 個</td><td>2</td></tr>
+  <tr><td>N 個</td><td>N + 1</td></tr>
+</table>
+<p>
+  各段落の長さは「前のマーカー〜次のマーカー」、最後の段落は「最後のマーカー〜音声全体の終わり」です。
+  音声の総時間は <code>ffprobe</code> で <code>full_dialogue.wav</code>（無ければ <code>full_dialogue.mp3</code>）から取得します。
+</p>
+<div class="tip">
+  段落番号は <strong>1 始まり</strong>で、<code>scene_map.json</code> の <code>index</code> と対応します。
+  つまり「用意すべき画像の枚数 = <code>#paragraph</code> の数 + 1」です。
+</div>
+
+<h3 id="compose">5.3 コマンドと引数</h3>
 <pre><code>script2voice compose &lt;プロジェクトフォルダ&gt; [--scene-map &lt;scene_map.jsonのパス&gt;] [--burn-subtitle] [-o &lt;出力ファイル.mp4&gt;]</code></pre>
 <table>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
-  <tr><td><code>&lt;プロジェクトフォルダ&gt;</code>（必須）</td><td>3.1〜3.3 で生成した出力フォルダ（<code>audio/</code>・<code>timeline/</code>・<code>full_dialogue.wav</code> 等が入っているフォルダ）</td></tr>
+  <tr><td><code>&lt;プロジェクトフォルダ&gt;</code>（必須）</td><td>3章で生成した出力フォルダ（<code>audio/</code>・<code>timeline/</code>・<code>full_dialogue.wav</code> 等が入っているフォルダ）</td></tr>
   <tr><td><code>--scene-map &lt;パス&gt;</code></td><td><code>scene_map.json</code> のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/scene_map.json</code></strong> を使用する</td></tr>
-  <tr><td><code>--burn-subtitle</code></td><td>字幕（<code>timeline/subtitles.srt</code>）を動画に焼き込む（ハードサブ）</td></tr>
-  <tr><td><code>-o, --output &lt;パス&gt;</code></td><td>出力するMP4のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/output.mp4</code></strong></td></tr>
+  <tr><td><code>--burn-subtitle</code></td><td>字幕（<code>timeline/subtitles.srt</code>）を映像に焼き込む（ハードサブ）</td></tr>
+  <tr><td><code>-o, --output &lt;パス&gt;</code></td><td>出力する MP4 のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/output.mp4</code></strong></td></tr>
 </table>
 <p>実行例:</p>
 <pre><code># プロジェクトフォルダ直下の scene_map.json を使って動画化
@@ -495,11 +761,15 @@ script2voice compose .\scripts\episode01
 
 # scene_map.json の場所と出力先を明示し、字幕を焼き込む
 script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.json --burn-subtitle -o .\out\episode01.mp4</code></pre>
+<div class="note">
+  <code>compose</code> は<strong>音声合成を行いません</strong>。既に生成済みのプロジェクトフォルダを入力にする、
+  独立した後処理コマンドです（音声合成エンジンの起動も不要）。
+  台本を修正したときは、先に通常の生成をやり直してから <code>compose</code> を実行してください。
+</div>
 
-<h4 id="scene-map-format">scene_map.json の書式</h4>
+<h3 id="scene-map-format">5.4 scene_map.json の書式</h3>
 <p>
-  字幕の段落番号（1始まり。<code>timeline/subtitles.srt</code> のセグメント数と対応）ごとに、
-  表示する画像または動画クリップを指定するJSONファイルです。
+  段落番号（1始まり）ごとに、表示する画像または動画クリップを指定する JSON ファイルです。
 </p>
 <pre><code>{
   "paragraphs": [
@@ -510,24 +780,61 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
   "default_image": "images/fallback.png"
 }</code></pre>
 <table class="kv-table">
-  <tr><td><code>paragraphs[].index</code></td><td>対応する字幕の段落番号（1始まり、重複不可）</td></tr>
-  <tr><td><code>paragraphs[].type</code></td><td><code>"image"</code> または <code>"video"</code>。省略時は <code>"image"</code> 扱い</td></tr>
+  <tr><td><code>paragraphs[].index</code></td><td>対応する段落番号（1始まり、重複不可。段落数を超える番号もエラー）</td></tr>
+  <tr><td><code>paragraphs[].type</code></td><td><code>"image"</code> または <code>"video"</code>。省略時は <code>"image"</code> 扱い（他の値はエラー）</td></tr>
   <tr><td><code>paragraphs[].path</code></td><td>画像/動画ファイルのパス。<code>scene_map.json</code> の置かれたフォルダからの相対パス、または絶対パス</td></tr>
   <tr><td><code>paragraphs[].image</code></td><td><code>path</code> の代わりに使える旧形式のキー（常に画像として扱われる）。新規に作成する場合は <code>type</code> + <code>path</code> の形式を推奨</td></tr>
   <tr><td><code>default_image</code></td><td>（任意）<code>paragraphs</code> に対応エントリが無い段落番号に使うフォールバック画像</td></tr>
 </table>
 <div class="note">
   各段落に対応するエントリが <code>paragraphs</code> になく、<code>default_image</code> も設定されていない場合はエラーになります。
-  すべての字幕段落に画像（または <code>default_image</code>）が行き渡るように用意してください。
-</div>
-<div class="tip">
-  挿絵の用意には、<a href="#sec-scene">4.1 @scene セクション</a>の情景描写（自由記述）や
-  <a href="#sec-cast">4.4 @cast セクション</a>の外見描写（自由記述）を、画像生成AIへのプロンプトのもとにする運用を想定しています。
-  Script2Voice 自体は画像を生成しません。あらかじめ用意した画像ファイルを <code>scene_map.json</code> で
-  段落番号に割り当てる、という役割分担です。
+  すべての段落に画像（または <code>default_image</code>）が行き渡るように用意してください。
+  指定したファイルが実在しない場合も、ffmpeg を起動する前にエラーとして報告されます。
 </div>
 
-<h2 id="script-format">4. 台本ファイルの書き方</h2>
+<h3 id="video-spec">5.5 生成される動画の仕様</h3>
+<table class="kv-table">
+  <tr><td>解像度</td><td>1920×1080（フル HD 固定）</td></tr>
+  <tr><td>映像コーデック</td><td>H.264（libx264）／ CRF 18 ／ <code>yuv420p</code></td></tr>
+  <tr><td>音声</td><td><code>full_dialogue.wav</code>（無ければ <code>.mp3</code>）を AAC に変換して収録</td></tr>
+  <tr><td>素材の収め方</td><td>アスペクト比を保って縮小し、余白は<strong>中央寄せの黒帯</strong>で埋めます（切り取りはしません）</td></tr>
+  <tr><td>その他</td><td><code>+faststart</code>（ストリーミング再生向けにインデックスを先頭へ配置）</td></tr>
+</table>
+<p>素材の種類による違いは次の通りです。</p>
+<table>
+  <tr><th>素材</th><th>段落の長さに対する挙動</th></tr>
+  <tr><td>画像（<code>image</code>）</td><td>段落の長さぶん静止表示します（画像1枚を引き伸ばして表示）</td></tr>
+  <tr><td>動画クリップ（<code>video</code>）</td><td>クリップが段落より<strong>長ければ先頭から切り詰め</strong>、<strong>短ければ最終フレームで静止</strong>して不足分を埋めます。クリップの音声は使われません（音声は <code>full_dialogue</code> のみ）</td></tr>
+</table>
+<div class="tip">
+  1920×1080 に合わせた素材（16:9）を用意すると黒帯が出ません。
+  縦長・正方形の画像でも動作しますが、左右に黒帯が入ります。
+</div>
+
+<h3 id="video-assets">5.6 挿絵の用意について</h3>
+<p>
+  Script2Voice は<strong>画像を生成しません</strong>。あらかじめ用意した画像ファイルを
+  <code>scene_map.json</code> で段落番号に割り当てる、という役割分担です。
+</p>
+<p>
+  挿絵のもとになるプロンプトは、<a href="#scene-freetext">@scene の情景描写（自由記述）</a>や
+  <a href="#cast-freetext">@cast の外見描写（自由記述）</a>に書いておき、
+  それを画像生成 AI に渡す運用を想定しています。台本の中に「その場面がどう見えるか」を書いておけば、
+  台本ファイル1つで音と絵の両方の指示がまとまります。
+</p>
+
+<h3 id="video-errors">5.7 うまくいかないときは</h3>
+<table>
+  <tr><th>症状</th><th>主な原因と対処</th></tr>
+  <tr><td>「ffprobe の起動に失敗しました」「ffmpeg の起動に失敗しました」</td><td>ffmpeg / ffprobe がインストールされていないか、PATH が通っていません。<code>ffmpeg -version</code> がコマンドプロンプトで通ることを確認してください</td></tr>
+  <tr><td>「字幕を読めません」</td><td>指定したフォルダが Script2Voice の出力フォルダではありません（<code>timeline/subtitles.srt</code> が必要です）。台本ファイルではなく、<strong>生成されたプロジェクトフォルダ</strong>を指定してください</td></tr>
+  <tr><td>「full_dialogue.wav / full_dialogue.mp3 が見つかりません」</td><td>音声のミックスまで完了していません。先に通常の生成を成功させてください</td></tr>
+  <tr><td>「段落番号 N に対応するアセットが無く、default_image も設定されていません」</td><td>段落数（<code>#paragraph</code> の数 + 1）ぶんのエントリが <code>scene_map.json</code> にありません。<code>default_image</code> を設定するか、不足分を追加してください</td></tr>
+  <tr><td>画像が切り替わらない／全編が1枚のまま</td><td>台本に <code>#paragraph</code> が1つも入っていません。切り替えたい位置に <code>#paragraph</code> を追加して、通常の生成からやり直してください</td></tr>
+  <tr><td>字幕が動画に出ない</td><td><code>--burn-subtitle</code> を付けていません。付けない場合、字幕は動画に含まれず <code>subtitles.srt</code> のまま残ります（プレイヤー側で外部字幕として読み込むこともできます）</td></tr>
+</table>
+
+<h2 id="script-format">6. 台本ファイルの書き方</h2>
 <p>
   台本ファイルはプレーンテキストで記述します。台本は次の5種類のセクションから構成され、
   これらを場面ごとに繰り返し記述できます。
@@ -541,10 +848,10 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
 </ol>
 <div class="note">
   <code>#</code> で始まる行はコメント、または特殊コマンドとして扱われます（詳細は
-  <a href="#commands">4.6 コマンド一覧</a>を参照）。空行は無視されます。
+  <a href="#commands">6.6 コマンド一覧</a>を参照）。空行は無視されます。
 </div>
 
-<h3 id="sec-scene">4.1 @scene セクション — 場面の宣言</h3>
+<h3 id="sec-scene">6.1 @scene セクション — 場面の宣言</h3>
 <p>場面（シーン）の先頭で宣言します。場面名と音響場（部屋の大きさ・聴取者の位置・残響量）を指定できます。いずれのパラメータも省略可能です。</p>
 <pre><code>@scene 01_オープニング room_size=0.3 reverb_wet=1.0
 @scene ホール room_w=25 room_d=45 room_h=18 listener_dy=-15 listener_z=1.1</code></pre>
@@ -560,7 +867,7 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
   残響の長さ・量、および床・壁・天井からの早期反射は、部屋寸法と各面の素材（反射率・吸音特性）から
   物理的に決まります。素材の既定値や各面の調整は config.toml の <code>[audio.early_reflections]</code> で行います
   （壁・天井の反射率を 0 にすると屋外＝床反射のみ・ほぼ無残響）。詳しくは
-  <a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
+  <a href="#acoustics">第7章 空間音響パラメータ解説</a>を参照してください。
 </div>
 
 <h4 id="scene-freetext">情景描写（自由記述）</h4>
@@ -576,7 +883,7 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
 @cast
 ...</code></pre>
 <div class="note">
-  情景描写は<strong>音声合成には使用されません</strong>。<a href="#compose">3.5 動画への書き出し</a>で使う
+  情景描写は<strong>音声合成には使用されません</strong>。<a href="#video">第5章 動画の作成</a>で使う
   挿絵・動画クリップを用意する際に、画像生成AIへのプロンプトの元ネタとして
   （Claude等が台本を読んで作成する運用を想定）利用することを目的としています。省略可能です。
 </div>
@@ -593,7 +900,7 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
   ひとつの場面が確定し、次の場面の解析が始まります。
 </p>
 
-<h3 id="sec-pause">4.2 @pause セクション — 間（無音）の設定</h3>
+<h3 id="sec-pause">6.2 @pause セクション — 間（無音）の設定</h3>
 <p>台詞と台詞の間、話者交替時、段落の区切りに挿入する無音時間（ミリ秒）を設定します。</p>
 <pre><code>@pause
 sentence 200
@@ -606,7 +913,7 @@ paragraph 1000</code></pre>
 </table>
 <p>省略した項目は既定値（sentence: 200ms、cast: 500ms、paragraph: 1000ms）が使用されます。</p>
 
-<h3 id="sec-asset">4.3 @asset セクション — 素材フォルダの指定</h3>
+<h3 id="sec-asset">6.3 @asset セクション — 素材フォルダの指定</h3>
 <p>BGM・効果音 (SE) の音源ファイルを格納したフォルダを指定します。</p>
 <pre><code>@asset
 bgm_dir = ./assets/bgm
@@ -616,7 +923,7 @@ se_dir = ./assets/se</code></pre>
   <tr><td><code>se_dir</code></td><td>効果音 (SE) 音源フォルダのパス</td></tr>
 </table>
 
-<h3 id="sec-cast">4.4 @cast セクション — キャスト（登場人物）の定義</h3>
+<h3 id="sec-cast">6.4 @cast セクション — キャスト（登場人物）の定義</h3>
 <p>台本中で発声する役（キャスト）ごとに、話者・音声合成エンジン・各種パラメータを定義します。</p>
 <pre><code>@cast
 役名:話者名:スタイル,エンジン名,パラメータ1=値1,パラメータ2=値2,...</code></pre>
@@ -648,7 +955,7 @@ se_dir = ./assets/se</code></pre>
   到達時間差（ITD）・音量差（ILD）・床/壁/天井の早期反射を計算して定位を再現します。
   <code>pan</code> は仕様どおり <strong>+ で右、− で左</strong>に定位します。定位の強さ（広がり）は
   config.toml の <code>mic_directivity</code> / <code>mic_angle</code> で調整できます（値が大きいほど広がりが強い）。
-  詳しくは<a href="#acoustics">第5章 空間音響パラメータ解説</a>を参照してください。
+  詳しくは<a href="#acoustics">第7章 空間音響パラメータ解説</a>を参照してください。
 </div>
 
 <h4 id="cast-freetext">外見描写（自由記述）</h4>
@@ -663,7 +970,7 @@ se_dir = ./assets/se</code></pre>
 まい:まい:ノーマル,aivis,pan=30,distance=1.0
 物静かな雰囲気の女性。白いワンピース姿。</code></pre>
 <div class="note">
-  外見描写も情景描写と同様に<strong>音声合成には使用されません</strong>。<a href="#compose">3.5 動画への書き出し</a>で使う
+  外見描写も情景描写と同様に<strong>音声合成には使用されません</strong>。<a href="#video">第5章 動画の作成</a>で使う
   挿絵を用意する際の、画像生成AIへのプロンプトの元ネタとして利用することを想定しています。省略可能です。
 </div>
 <div class="warn">
@@ -678,7 +985,7 @@ se_dir = ./assets/se</code></pre>
   <tr><td>禁止事項</td><td>自由記述の行を <code>@</code> で始めてはならない</td></tr>
 </table>
 
-<h3 id="sec-script">4.5 @script セクション — 台詞と音声指示</h3>
+<h3 id="sec-script">6.5 @script セクション — 台詞と音声指示</h3>
 <p>場面内で実際に発声される台詞や、BGM・SE・無音などの指示を記述します。</p>
 <pre><code>役名:台詞テキスト
 役名(臨時パラメータ):台詞テキスト
@@ -697,7 +1004,7 @@ se_dir = ./assets/se</code></pre>
 <pre><code>めたん(pan=15,distance=2):このセリフだけ定位と距離が変わります
 めたん(pitchScale=+0.01,speedScale=+0.5):感情の高まりを声の変化で表現する例</code></pre>
 
-<h3 id="commands">4.6 コマンド一覧 (#行)</h3>
+<h3 id="commands">6.6 コマンド一覧 (#行)</h3>
 <p><code>#</code> で始まる行はコマンドとして解釈されます。</p>
 <table>
   <tr><th>コマンド</th><th>書式</th><th>説明</th></tr>
@@ -718,7 +1025,7 @@ se_dir = ./assets/se</code></pre>
   同時発声の基準時刻からその台詞の発声開始を ****ms 遅らせることができます。
 </p>
 
-<h3 id="ruby">4.7 ルビ表記・台詞の書き方</h3>
+<h3 id="ruby">6.7 ルビ表記・台詞の書き方</h3>
 <p>
   誤読されやすい単語は、シングルクォーテーションで囲んで
   <code>'表記:読み'</code> の形式で指定すると、
@@ -733,7 +1040,7 @@ se_dir = ./assets/se</code></pre>
 <p>複数のルビを1つの台詞に含めることもできます。</p>
 <pre><code>解説:「'深淵:しんえん'より出でし'者:もの'、'黎明:れいめい'の光を掲げよ」……？</code></pre>
 
-<h3 id="sample">4.8 サンプル台本</h3>
+<h3 id="sample">6.8 サンプル台本</h3>
 <p>ここまでの要素を組み合わせた台本の例を示します。</p>
 <pre><code>@pause
 sentence 200
@@ -766,14 +1073,14 @@ se_dir = ./assets/se
 #paragraph
 まい:そろそろ向かいましょうか。</code></pre>
 
-<h2 id="acoustics">5. 空間音響パラメータ解説（早期反射・物理残響）</h2>
+<h2 id="acoustics">7. 空間音響パラメータ解説（早期反射・物理残響）</h2>
 <p>
 本章は、<strong>早期反射（イメージソース法）</strong>と
 <strong>距離依存の残響量制御</strong>に関する設定パラメータの意味・追加場所・調整方法をまとめたものです。
 すべて <code>config.toml</code> の数値設定のみで調整でき、プログラムの再ビルドは不要です。
 </p>
 
-<h3 id="intro">5.1 この機能は何か</h3>
+<h3 id="intro">7.1 この機能は何か</h3>
 <p>
 従来の音響処理は「<strong>直接音</strong>（左右の定位・距離減衰）→ いきなり<strong>拡散リバーブ</strong>（残響の尾）」
 という構成で、その間を埋める<strong>早期反射が存在しませんでした</strong>。
@@ -791,7 +1098,7 @@ se_dir = ./assets/se
 本機能は水平面のモデルですが、<strong>床反射などで「接地感」を補う</strong>ことで「浮き」を軽減します。
 </div>
 
-<h3 id="where">5.2 追加場所（config.toml）</h3>
+<h3 id="where">7.2 追加場所（config.toml）</h3>
 <p>
 設定は実行ファイル（<code>script2voice.exe</code>）と同じフォルダにある <code>config.toml</code> の
 <code>[audio]</code> セクション内、新しいサブセクション <code>[audio.early_reflections]</code> に記述します。
@@ -824,9 +1131,9 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 省略した項目は上記の既定値が使われます。既存の <code>config.toml</code> をそのまま使っても問題ありません。
 </div>
 
-<h3 id="model">5.3 空間モデルの考え方</h3>
+<h3 id="model">7.3 空間モデルの考え方</h3>
 
-<h4 id="coords">5.3.1 座標系</h4>
+<h4 id="coords">7.3.1 座標系</h4>
 <div class="axis">
   <strong>箱（部屋）</strong>：x∈[0,W]、y∈[0,D]、z∈[0,H]（単位：メートル）<br>
   <strong>X 軸＝幅</strong>（左右。+x が右）／<strong>Y 軸＝奥行</strong>（前後。+y が聴取者の正面）／
@@ -838,7 +1145,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 <code>room_size=0.0</code> で最小（小スタジオ）、<code>1.0</code> で最大（大ホール）です。
 </p>
 
-<h4 id="mic">5.3.2 聴取者＝マイク位置</h4>
+<h4 id="mic">7.3.2 聴取者＝マイク位置</h4>
 <p>
 <strong>聴取者の位置 = ステレオマイクペアの中心</strong>です。部屋の水平中央
 （<code>listener_offset</code> でずらせる）・高さ <code>ear_height</code> に置かれます。
@@ -847,20 +1154,20 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 </p>
 <p>
 音源は、聴取者から見て台本の <code>pan</code>（方位角）・<code>distance</code>（距離）・<code>height</code>（高さ）の位置に
-置かれます（<code>height</code> 省略時は聴取者と同じ高さ。<a href="#scene-room">5.7節</a>参照）。各面の鏡像（イメージソース）から届く反射の
+置かれます（<code>height</code> 省略時は聴取者と同じ高さ。<a href="#scene-room">7.7節</a>参照）。各面の鏡像（イメージソース）から届く反射の
 <strong>遅延・音量・左右方向</strong>がこの幾何から自動計算されます。
 </p>
 
-<h4 id="chain">5.3.3 処理の流れ</h4>
+<h4 id="chain">7.3.3 処理の流れ</h4>
 <p>音響処理は次の順で行われます。早期反射はこの2番目に挿入されました。</p>
 <pre><code>直接音（定位・距離減衰）
   → 早期反射（6面の一次反射）
   → 拡散リバーブ（残響の尾）
   → リミッター（音割れ防止）</code></pre>
 
-<h3 id="params">5.4 パラメータ詳細</h3>
+<h3 id="params">7.4 パラメータ詳細</h3>
 
-<h4 id="p-basic">5.4.1 全体・部屋・聴取</h4>
+<h4 id="p-basic">7.4.1 全体・部屋・聴取</h4>
 <table class="kv-table">
   <tr><th>パラメータ</th><th>既定値</th><th>意味・効果</th></tr>
   <tr>
@@ -894,7 +1201,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 大ホールでも前方からの早期反射を強めたい場合は <code>listener_offset</code> の前後成分で前壁に寄せてください。
 </div>
 
-<h4 id="p-dr">5.4.2 距離による残響（D/R：直接音／残響比）</h4>
+<h4 id="p-dr">7.4.2 距離による残響（D/R：直接音／残響比）</h4>
 <table class="kv-table">
   <tr><th>パラメータ</th><th>既定値</th><th>意味・効果</th></tr>
   <tr>
@@ -912,7 +1219,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 「遠いほど残響に包まれる」自然な距離感を作ります。
 </p>
 
-<h4 id="p-material">5.4.3 面ごとの素材（反射率・吸音）</h4>
+<h4 id="p-material">7.4.3 面ごとの素材（反射率・吸音）</h4>
 <p>
 反射面を <strong>5つの素材グループ</strong>に分け、それぞれに2つの値を設定します。インラインテーブル
 （<code>{ reflection_coeff = …, absorption_cutoff_hz = … }</code>）で記述します。
@@ -942,7 +1249,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
 左右の側壁は同一素材として扱います（位置は <code>listener_offset</code> で左右非対称にできます）。
 </div>
 
-<h3 id="tuning">5.5 チューニング指針</h3>
+<h3 id="tuning">7.5 チューニング指針</h3>
 <p>すべて <code>config.toml</code> の数値変更のみ。試聴しながら少しずつ調整してください。</p>
 <table>
   <tr><th>狙い・症状</th><th>調整</th></tr>
@@ -956,7 +1263,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
   </tr>
 </table>
 
-<h3 id="compat">5.6 互換性・注意点</h3>
+<h3 id="compat">7.6 互換性・注意点</h3>
 <ul>
   <li><span class="badge">後方互換</span><code>[audio.early_reflections]</code> セクションや個々の項目を省略しても動作し、省略分は既定値が使われます。</li>
   <li><span class="badge">回帰なし</span><code>enabled = false</code> の出力は、本機能追加前と<strong>完全に同一</strong>です。</li>
@@ -965,7 +1272,7 @@ side_walls = { reflection_coeff = 0.70, absorption_cutoff_hz = 8000.0 }
   <li>各反射は3D経路長で遅延・距離減衰を、水平方位で左右差（ITD/ILD）を計算します。上下方向は水平面に畳み込みます。</li>
 </ul>
 
-<h3 id="scene-room">5.7 台本(scene)で部屋を指定する</h3>
+<h3 id="scene-room">7.7 台本(scene)で部屋を指定する</h3>
 <p>
 config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既定値・素材</strong>を決めますが、
 <strong>部屋の大きさと聴取者の位置は台本の <code>@scene</code> 行で場面ごとに指定</strong>できます。
@@ -991,7 +1298,7 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
   </tr>
   <tr>
     <td>reverb_wet</td>
-    <td>残響量の倍率（<a href="#physical-reverb">5.8節</a>参照）。場面ごとに残響の効きを調整できる。</td>
+    <td>残響量の倍率（<a href="#physical-reverb">7.8節</a>参照）。場面ごとに残響の効きを調整できる。</td>
   </tr>
 </table>
 <pre><code>@scene ホール room_w=25 room_d=45 room_h=18 listener_dy=-15 listener_z=1.1 reverb_wet=1.0
@@ -1012,15 +1319,15 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
   <tr><td>行内 <code>A(height=0.3):台詞</code></td><td><strong>その行限定の加算</strong>（基準＋0.3m）。<code>pan</code>/<code>distance</code> の臨時パラメータと同じ扱い。</td></tr>
 </table>
 <div class="tip">
-高さは早期反射の床/天井反射の幾何にのみ効きます（Sabine 残響＝<a href="#physical-reverb">5.8節</a>には影響しません）。値は部屋の高さ <code>room_h</code> 内にクランプされます。
+高さは早期反射の床/天井反射の幾何にのみ効きます（Sabine 残響＝<a href="#physical-reverb">7.8節</a>には影響しません）。値は部屋の高さ <code>room_h</code> 内にクランプされます。
 </div>
 <div class="tip">
 <strong>屋外</strong>にするには、config の <code>[audio.early_reflections]</code> で壁・天井の <code>reflection_coeff</code> を 0 にします
-（床のみ反射）。これにより <a href="#physical-reverb">5.8節</a>の物理計算で残響もほぼ無くなります。場面によって屋内/屋外を変えたい場合は、現状は
+（床のみ反射）。これにより <a href="#physical-reverb">7.8節</a>の物理計算で残響もほぼ無くなります。場面によって屋内/屋外を変えたい場合は、現状は
 素材が config 全体共通のため、屋外専用の config.toml を用意して使い分けてください。
 </div>
 
-<h3 id="physical-reverb">5.8 残響の物理導出と reverb_wet</h3>
+<h3 id="physical-reverb">7.8 残響の物理導出と reverb_wet</h3>
 <p>
 拡散リバーブ（残響の尾）は、<strong>部屋寸法と各面の素材から物理的に導出</strong>されます。手動の固定値ではありません。
 </p>
@@ -1046,7 +1353,7 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
 反射率を上げると早期反射が強まり、残響も長く・大きくなります（物理的に一貫）。
 </div>
 
-<h2 id="troubleshooting">6. トラブルシューティング</h2>
+<h2 id="troubleshooting">8. トラブルシューティング</h2>
 <table>
   <tr><th>症状</th><th>主な原因と対処</th></tr>
   <tr>
@@ -1071,7 +1378,7 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
   </tr>
   <tr>
     <td>音が宙に浮いて聞こえる／距離感・上下感が弱い</td>
-    <td>床・壁・天井の早期反射が接地感を与えます。<code>[audio.early_reflections]</code> の <code>floor.reflection_coeff</code> や <code>early_level</code> を上げる、<code>@scene</code> で部屋寸法（<code>room_w/d/h</code>）や聴取者高さ（<code>listener_z</code>）を指定する等で調整できます（<a href="#acoustics">第5章 空間音響パラメータ解説</a>参照）。</td>
+    <td>床・壁・天井の早期反射が接地感を与えます。<code>[audio.early_reflections]</code> の <code>floor.reflection_coeff</code> や <code>early_level</code> を上げる、<code>@scene</code> で部屋寸法（<code>room_w/d/h</code>）や聴取者高さ（<code>listener_z</code>）を指定する等で調整できます（<a href="#acoustics">第7章 空間音響パラメータ解説</a>参照）。</td>
   </tr>
   <tr>
     <td>処理が遅い／メモリ消費が大きい</td>
@@ -1085,9 +1392,21 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
     <td>GUI で「▶試聴」を押しても音が出ない・反応がないように見える</td>
     <td>エンジンの初回起動（特に AivisSpeech のモデルロード）と合成で<strong>数十秒</strong>かかることがあります。画面下部の再生バーに「行N を合成中…」と表示されている間はお待ちください。起動が遅い環境では config.toml の各エンジンに <code>startup_timeout_s = 120</code> のように待機秒数を指定できます。失敗した場合は再生バーとログ（フッター）に理由が表示されます。</td>
   </tr>
+  <tr>
+    <td>GUI に「config.toml を読めません」と赤字で表示され、何も操作できない</td>
+    <td><code>s2v-gui.exe</code> は<strong>実行ファイルと同じフォルダの <code>config.toml</code></strong> を読みます（GUI に <code>--config</code> 相当の指定手段はありません）。exe をコピーして使っている場合は <code>config.toml</code> も一緒に置いてください（<a href="#gui-start">4.1 起動と準備</a>）。</td>
+  </tr>
+  <tr>
+    <td>GUI で音響ラボの試聴音を残したい／終了したら消えた</td>
+    <td>試聴・履歴の WAV は一時フォルダに置かれ、GUI 終了時に削除されます。残したい音は履歴の<strong>「💾 書き出し」</strong>で保存してください（<a href="#gui-lab">4.4 音響ラボタブ</a>）。</td>
+  </tr>
+  <tr>
+    <td><code>compose</code>（動画書き出し）が失敗する／画像が切り替わらない</td>
+    <td>ffmpeg・ffprobe の PATH、<code>#paragraph</code> の有無、<code>scene_map.json</code> の段落番号を確認してください。症状別の対処は<a href="#video-errors">5.7 うまくいかないときは</a>にまとめています。</td>
+  </tr>
 </table>
 
-<h2 id="appendix">7. 付録: パラメータ早見表</h2>
+<h2 id="appendix">9. 付録: パラメータ早見表</h2>
 <h4>@cast / 台詞の臨時パラメータで指定できる定位パラメータ</h4>
 <table class="kv-table">
   <tr><td><code>pan</code></td><td>左右の定位（度）。+ = 右、- = 左</td></tr>
@@ -1120,7 +1439,7 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
 </div>
 <footer>
   Script2Voice 取扱説明書・操作マニュアル（空間音響パラメータ解説 統合版）／ 本書は Script2Voice (Rust 版) の利用者向けに作成されています。<br>
-  第5章（空間音響）関連設計書:
+  第7章（空間音響）関連設計書:
   <code>docs/superpowers/specs/2026-06-08-early-reflections-image-source-design.md</code>,
   <code>docs/superpowers/specs/2026-06-09-physical-room-acoustics-design.md</code>,
   <code>docs/superpowers/specs/2026-06-09-listener-speaker-height-design.md</code>
