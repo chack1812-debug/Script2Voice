@@ -236,6 +236,7 @@ impl Producer {
             .chain([
                 self.project_root.join("timeline").join("subtitles.srt"),
                 self.project_root.join("timeline").join("timeline.fcpxml"),
+                self.project_root.join("timeline").join("timeline.json"),
                 self.project_root.join("full_dialogue.wav"),
             ])
             .collect();
@@ -443,6 +444,7 @@ impl Producer {
         let exporter = Exporter::new(&timeline_events, &self.project_root, self.sample_rate, self.bgm_config.clone())
             .with_fcpxml_fps(self.fcpxml_fps);
         exporter.generate_srt(&suffix)?;
+        exporter.generate_timeline_json(&suffix)?;
         exporter.generate_fcpxml(&suffix)?;
         exporter.generate_combined_audio(&suffix)?;
         info!("--- Export Finished: {} ---", self.project_root.display());
@@ -619,6 +621,7 @@ mod produce_events_tests {
         let srt = std::fs::read_to_string(&srt_path).unwrap();
         assert!(srt.contains("成功する台詞"), "成功した台詞はSRTに含まれるべき: {srt}");
         assert!(!srt.contains("失敗する台詞"), "失敗した台詞はSRTに含まれてはいけない: {srt}");
+        assert!(tmp.path().join("timeline").join("timeline.json").exists());
     }
 }
 

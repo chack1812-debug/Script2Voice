@@ -103,6 +103,44 @@ impl<'a> Exporter<'a> {
         Ok(())
     }
 
+    /// タイムラインを機械可読な JSON として書き出す（動画合成の正式入力）。
+    pub fn generate_timeline_json(&self, suffix: &str) -> anyhow::Result<()> {
+        let dir = self.output_dir.join("timeline");
+        std::fs::create_dir_all(&dir)?;
+        let path = with_suffix(&dir.join("timeline.json"), suffix);
+
+        let total_ms = self
+            .events
+            .iter()
+            .map(|e| e.start_ms + e.duration_ms)
+            .fold(0.0_f64, f64::max);
+
+        let events: Vec<JsonEvent> = self
+            .events
+            .iter()
+            .map(|e| JsonEvent {
+                event_type: e.event_type.clone(),
+                start_ms: e.start_ms,
+                duration_ms: e.duration_ms,
+                path: e.path.as_ref().map(|p| rel_path_string(p, &self.output_dir)),
+                name: e.name.clone(),
+                text: e.text.clone(),
+                display_text: e.display_text.clone(),
+                cast: e.cast.clone(),
+            })
+            .collect();
+
+        let doc = serde_json::json!({
+            "version": 1,
+            "sample_rate": self.sample_rate,
+            "total_ms": total_ms,
+            "events": events,
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&doc)?)?;
+        info!("timeline.json exported to: {}", path.display());
+        Ok(())
+    }
+
     pub fn generate_fcpxml(&self, suffix: &str) -> anyhow::Result<()> {
         let dir = self.output_dir.join("timeline");
         std::fs::create_dir_all(&dir)?;
@@ -452,6 +490,30 @@ impl<'a> Exporter<'a> {
             }
         }).collect()
     }
+}
+
+/// timeline.json に書き出すイベント表現。パスは project_dir 相対・スラッシュ区切りに正規化する。
+#[derive(serde::Serialize)]
+struct JsonEvent {
+    event_type: EventType,
+    start_ms: f64,
+    duration_ms: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cast: Option<String>,
+}
+
+/// project_dir 配下ならその相対パスを、外部ならフルパスを、いずれもスラッシュ区切りで返す。
+fn rel_path_string(path: &Path, base: &Path) -> String {
+    let p = path.strip_prefix(base).unwrap_or(path);
+    p.to_string_lossy().replace('\\', "/")
 }
 
 /// ファイル名の拡張子の前に suffix を挿入する。suffix が空ならパスをそのまま返す。
@@ -1217,5 +1279,47 @@ mod tests {
     fn xml_escape_handles_all_reserved_characters() {
         assert_eq!(xml_escape(r#"A&B<C>"D""#), "A&amp;B&lt;C&gt;&quot;D&quot;");
         assert_eq!(xml_escape("plain"), "plain");
+    }
+
+    #[test]
+    fn timeline_json_has_relative_paths_and_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let audio_path = dir.path().join("audio").join("voice_0001.wav");
+        let events = vec![
+            TimelineEvent {
+                event_type: EventType::Audio,
+                start_ms: 0.0,
+                duration_ms: 1500.0,
+                path: Some(audio_path),
+                text: Some("とうきょう".to_string()),
+                display_text: Some("東京".to_string()),
+                cast: Some("A".to_string()),
+                name: None,
+            },
+            make_named_paragraph_event(1500.0, "オープニング"),
+        ];
+        Exporter::new(&events, dir.path(), 48000, default_bgm())
+            .generate_timeline_json("")
+            .unwrap();
+
+        let text = std::fs::read_to_string(dir.path().join("timeline/timeline.json")).unwrap();
+        let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(doc["version"], 1);
+        assert_eq!(doc["sample_rate"], 48000);
+        assert_eq!(doc["total_ms"], 1500.0);
+        assert_eq!(doc["events"][0]["path"], "audio/voice_0001.wav");
+        assert_eq!(doc["events"][0]["cast"], "A");
+        assert_eq!(doc["events"][1]["event_type"], "paragraph");
+        assert_eq!(doc["events"][1]["name"], "オープニング");
+    }
+
+    #[test]
+    fn timeline_json_respects_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = vec![make_paragraph_event(100.0)];
+        Exporter::new(&events, dir.path(), 48000, default_bgm())
+            .generate_timeline_json("_2")
+            .unwrap();
+        assert!(dir.path().join("timeline/timeline_2.json").exists());
     }
 }
