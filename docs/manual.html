@@ -731,7 +731,7 @@ reverb_wet = 0.6
   <code>#paragraph</code> は台詞の間に<code>@pause</code> の <code>paragraph</code> 設定ぶんの無音を入れると同時に、
   字幕 <code>timeline/subtitles.srt</code> に<strong>長さ0の <code>[PARAGRAPH]</code> マーカー</strong>を書き込みます。
   <code>compose</code> はこのマーカーを読んで区間を切ります。
-  <code>#paragraph 名称</code> と書くと <code>[PARAGRAPH 名称]</code> として出力され、動画合成でカット名として使えます。
+  <code>#paragraph 名称</code> と書くと <code>[PARAGRAPH 名称]</code> として出力されます（動画合成でカット名として使う機能は今後追加予定）。
 </p>
 <table>
   <tr><th>台本の <code>#paragraph</code> の数</th><th>動画の段落（＝画面）数</th></tr>
@@ -1015,7 +1015,7 @@ se_dir = ./assets/se</code></pre>
   <tr><td>BGM 停止</td><td><code>#bgm_stop</code></td><td>再生中の BGM を停止します（クロスフェードあり）</td></tr>
   <tr><td>効果音 (SE)</td><td><code>#se ファイル名.wav</code></td><td>指定した効果音を挿入します。ファイルは <code>@asset</code> の <code>se_dir</code> から検索されます</td></tr>
   <tr><td>無音の挿入</td><td><code>#pause ****</code></td><td>その位置に ****ms の無音を挿入します</td></tr>
-  <tr><td>段落区切り</td><td><code>#paragraph</code> または <code>#paragraph 名称</code></td><td>段落の切れ目を示し、<code>@pause</code> の <code>paragraph</code> 設定の無音を挿入します。名称を付けると字幕に <code>[PARAGRAPH 名称]</code> として出力され、動画合成のカット名・素材ファイル名に使われます（<a href="#video-paragraph">5.2</a>）</td></tr>
+  <tr><td>段落区切り</td><td><code>#paragraph</code> または <code>#paragraph 名称</code></td><td>段落の切れ目を示し、<code>@pause</code> の <code>paragraph</code> 設定の無音を挿入します。名称を付けると字幕に <code>[PARAGRAPH 名称]</code> として出力されます（動画合成でカット名・素材ファイル名として使う機能は今後追加予定。<a href="#video-paragraph">5.2</a>）</td></tr>
   <tr><td>同時発声</td><td><code>#数字</code>（例: <code>#2</code>）</td><td>続く指定数の台詞を同時刻から同時に発声させます（複数キャラが同時に話す演出など）</td></tr>
 </table>
 <p>同時発声の例（2人が同時に驚く演出）:</p>
