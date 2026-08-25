@@ -60,7 +60,10 @@ pub fn run(opts: &ComposeOptions) -> anyhow::Result<()> {
     let audio_path = find_audio_file(project_dir)?;
     let srt_text = std::fs::read_to_string(&srt_path)
         .with_context(|| format!("字幕を読めません: {}", srt_path.display()))?;
-    let markers = parse_paragraph_markers(&srt_text);
+    let markers: Vec<f64> = parse_paragraph_markers(&srt_text)
+        .iter()
+        .map(|m| m.time_s)
+        .collect();
     let total_duration = probe_duration_seconds(&audio_path)?;
     let segments = compute_segments(&markers, total_duration)?;
 

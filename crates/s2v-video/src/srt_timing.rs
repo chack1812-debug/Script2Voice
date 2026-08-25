@@ -3,25 +3,36 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 
+/// SRT の [PARAGRAPH] マーカー1件。
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParagraphMarker {
+    pub time_s: f64,
+    pub name: Option<String>,
+}
+
 fn paragraph_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
         Regex::new(
-            r"\d+\r?\n(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> \d{2}:\d{2}:\d{2},\d{3}\r?\n\[PARAGRAPH\]",
+            r"\d+\r?\n(\d{2}):(\d{2}):(\d{2}),(\d{3}) --> \d{2}:\d{2}:\d{2},\d{3}\r?\n\[PARAGRAPH(?: ([^\]\r\n]*))?\]",
         )
         .expect("PARAGRAPH 正規表現が不正")
     })
 }
 
-/// SRTテキストから [PARAGRAPH] エントリの開始時刻(秒)を出現順に返す。
-pub fn parse_paragraph_markers(srt_text: &str) -> Vec<f64> {
+/// SRTテキストから [PARAGRAPH] エントリを出現順に返す。
+pub fn parse_paragraph_markers(srt_text: &str) -> Vec<ParagraphMarker> {
     let mut markers = Vec::new();
     for cap in paragraph_re().captures_iter(srt_text) {
         let h: f64 = cap[1].parse().unwrap();
         let m: f64 = cap[2].parse().unwrap();
         let s: f64 = cap[3].parse().unwrap();
         let ms: f64 = cap[4].parse().unwrap();
-        markers.push(h * 3600.0 + m * 60.0 + s + ms / 1000.0);
+        let name = cap.get(5).map(|g| g.as_str().trim().to_string()).filter(|s| !s.is_empty());
+        markers.push(ParagraphMarker {
+            time_s: h * 3600.0 + m * 60.0 + s + ms / 1000.0,
+            name,
+        });
     }
     markers
 }
@@ -62,12 +73,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_extracts_start_times_in_order() {
+    fn parses_paragraph_marker_times() {
         let srt = "1\n00:00:00,000 --> 00:00:01,500\nこんにちは\n\n\
                    2\n00:00:01,500 --> 00:00:01,500\n[PARAGRAPH]\n\n\
                    3\n00:00:03,000 --> 00:00:03,800\nさようなら\n\n\
                    4\n00:01:05,250 --> 00:01:05,250\n[PARAGRAPH]\n\n";
-        assert_eq!(parse_paragraph_markers(srt), vec![1.5, 65.25]);
+        let times: Vec<f64> = parse_paragraph_markers(srt).iter().map(|m| m.time_s).collect();
+        assert_eq!(times, vec![1.5, 65.25]);
+    }
+
+    #[test]
+    fn parses_paragraph_marker_names() {
+        let srt = "1\n00:00:01,500 --> 00:00:01,500\n[PARAGRAPH オープニング]\n\n\
+                   2\n00:01:05,250 --> 00:01:05,250\n[PARAGRAPH]\n\n";
+        let markers = parse_paragraph_markers(srt);
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers[0].time_s, 1.5);
+        assert_eq!(markers[0].name.as_deref(), Some("オープニング"));
+        assert_eq!(markers[1].time_s, 65.25);
+        assert_eq!(markers[1].name, None);
     }
 
     #[test]
@@ -123,6 +147,7 @@ mod tests {
         let srt = "1\r\n00:00:00,000 --> 00:00:01,500\r\nこんにちは\r\n\r\n\
                    2\r\n00:00:01,500 --> 00:00:01,500\r\n[PARAGRAPH]\r\n\r\n\
                    3\r\n00:01:05,250 --> 00:01:05,250\r\n[PARAGRAPH]\r\n\r\n";
-        assert_eq!(parse_paragraph_markers(srt), vec![1.5, 65.25]);
+        let times: Vec<f64> = parse_paragraph_markers(srt).iter().map(|m| m.time_s).collect();
+        assert_eq!(times, vec![1.5, 65.25]);
     }
 }
