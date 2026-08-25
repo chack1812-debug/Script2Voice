@@ -294,15 +294,16 @@ impl ScriptParser {
             };
         }
 
-        // 台詞行: `役名(params):テキスト` or `役名:テキスト`
-        let sep = if line.contains(':') {
-            ':'
-        } else if line.contains('：') {
-            '：'
-        } else {
+        // 台詞行: `役名(params):テキスト`（区切りは半角コロンのみ）
+        let Some((name_part, raw_text)) = line.split_once(':') else {
+            if line.contains('：') {
+                self.warnings.push(ParseWarning {
+                    line_no,
+                    message: "行に全角「：」が使われています。役名の区切りは半角「:」です（この行は無視されます）".to_string(),
+                });
+            }
             return None;
         };
-        let (name_part, raw_text) = line.split_once(sep)?;
         let name_part = name_part.trim();
         let raw_text = raw_text.trim();
 
@@ -315,9 +316,14 @@ impl ScriptParser {
         };
 
         if !self.casts.contains_key(role) {
+            let hint = if role.contains('：') {
+                "（役名の区切りが全角「：」になっていないか確認してください）"
+            } else {
+                ""
+            };
             self.warnings.push(ParseWarning {
                 line_no,
-                message: format!("キャスト「{role}」が未定義です（この行は無視されます）"),
+                message: format!("キャスト「{role}」が未定義です（この行は無視されます）{hint}"),
             });
             return None;
         }
@@ -926,5 +932,45 @@ A(pan=15,distance=2):セリフ
             scenes[0].config.description.as_deref(),
             Some("一行目の描写。\n二行目の描写。")
         );
+    }
+
+    #[test]
+    fn fullwidth_role_separator_is_rejected_with_warning() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A：こんにちは
+"#;
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(script).unwrap();
+        assert!(scenes[0].items.is_empty(), "全角：の行は台詞として扱わない");
+        assert!(
+            parser.warnings.iter().any(|w| w.message.contains("全角")),
+            "全角：の警告が出るべき: {:?}", parser.warnings
+        );
+    }
+
+    #[test]
+    fn halfwidth_colon_in_dialogue_does_not_break_role_split() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:開始は'13:00|じゅうさんじ'です
+"#;
+        let scenes = ScriptParser::new().parse_str(script).unwrap();
+        if let ScriptItem::Speech { cast_name, text, .. } = &scenes[0].items[0] {
+            assert_eq!(cast_name, "A");
+            assert_eq!(text, "開始はじゅうさんじです");
+        } else {
+            panic!("expected speech");
+        }
     }
 }
