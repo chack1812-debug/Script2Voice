@@ -322,6 +322,13 @@ impl ScriptParser {
             return None;
         }
 
+        if raw_text.contains('｜') {
+            self.warnings.push(ParseWarning {
+                line_no,
+                message: "台詞に全角「｜」が含まれます。ルビの区切りは半角「|」です（全角は区切りとして扱われません）".to_string(),
+            });
+        }
+
         let (text, display_text) = expand_ruby(raw_text);
         let offset_params = extract_kv_params(params_str);
 
@@ -341,13 +348,18 @@ impl Default for ScriptParser {
     }
 }
 
-/// `'word:reading'` → (reading_text, display_text) に展開
+/// ルビ記法の正規表現。半角パイプのみを区切りとする（全角｜は対象外）。
+fn ruby_re() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"'([^'|]+?)\|([^'|]+?)'").expect("ルビ正規表現が不正"))
+}
+
+/// `'word|reading'` → (reading_text, display_text) に展開
 fn expand_ruby(text: &str) -> (String, String) {
     let mut synthesis = text.to_string();
     let mut display = text.to_string();
 
-    let re = regex::Regex::new(r"'([^':：]+?)[:：]([^':：]+?)'").unwrap();
-    for cap in re.captures_iter(text) {
+    for cap in ruby_re().captures_iter(text) {
         let full = &cap[0];
         let word = &cap[1];
         let reading = &cap[2];
@@ -561,7 +573,7 @@ B:セリフB
 A:A:スタイル,voicevox
 
 @script
-A:'東京:とうきょう'に行く
+A:'東京|とうきょう'に行く
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
         if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
@@ -570,6 +582,70 @@ A:'東京:とうきょう'に行く
         } else {
             panic!("expected speech");
         }
+    }
+
+    #[test]
+    fn ruby_word_may_contain_colon() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:'13:00|じゅうさんじ'に始めます
+"#;
+        let scenes = ScriptParser::new().parse_str(script).unwrap();
+        if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
+            assert_eq!(text, "じゅうさんじに始めます");
+            assert_eq!(display_text, "13:00に始めます");
+        } else {
+            panic!("expected speech");
+        }
+    }
+
+    #[test]
+    fn legacy_colon_ruby_is_not_expanded() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:'東京:とうきょう'に行く
+"#;
+        let scenes = ScriptParser::new().parse_str(script).unwrap();
+        if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
+            assert_eq!(text, "'東京:とうきょう'に行く");
+            assert_eq!(display_text, "'東京:とうきょう'に行く");
+        } else {
+            panic!("expected speech");
+        }
+    }
+
+    #[test]
+    fn fullwidth_pipe_is_not_a_ruby_separator() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:'東京｜とうきょう'に行く
+"#;
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(script).unwrap();
+        if let ScriptItem::Speech { text, .. } = &scenes[0].items[0] {
+            assert_eq!(text, "'東京｜とうきょう'に行く");
+        } else {
+            panic!("expected speech");
+        }
+        assert!(
+            parser.warnings.iter().any(|w| w.message.contains("｜")),
+            "全角パイプの警告が出るべき: {:?}", parser.warnings
+        );
     }
 
     #[test]
