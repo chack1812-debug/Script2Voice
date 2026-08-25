@@ -483,6 +483,7 @@ script2voice .\scripts 追加エピソード.txt</code></pre>
   <tr><td><code>audio/voice_0001.wav, voice_0002.wav, ...</code></td><td>台詞ごとに空間音響処理済みのステレオ WAV ファイル（連番）</td></tr>
   <tr><td><code>timeline/subtitles.srt</code></td><td>台詞のタイミングと表示テキストをまとめた字幕ファイル</td></tr>
   <tr><td><code>timeline/timeline.fcpxml</code></td><td>各音声クリップ・BGM・SE の配置を記録した FCPXML 形式の編集タイムライン（Final Cut Pro 等で読み込み可能）</td></tr>
+  <tr><td><code>timeline/timeline.json</code></td><td>動画合成の正式入力となる、機械可読な JSON 形式のタイムライン</td></tr>
   <tr><td><code>full_dialogue.wav</code></td><td>すべての台詞をタイミング通りに重ね合わせてミックスしたステレオ音声</td></tr>
 </table>
 <div class="tip">
@@ -730,6 +731,7 @@ reverb_wet = 0.6
   <code>#paragraph</code> は台詞の間に<code>@pause</code> の <code>paragraph</code> 設定ぶんの無音を入れると同時に、
   字幕 <code>timeline/subtitles.srt</code> に<strong>長さ0の <code>[PARAGRAPH]</code> マーカー</strong>を書き込みます。
   <code>compose</code> はこのマーカーを読んで区間を切ります。
+  <code>#paragraph 名称</code> と書くと <code>[PARAGRAPH 名称]</code> として出力され、動画合成でカット名として使えます。
 </p>
 <table>
   <tr><th>台本の <code>#paragraph</code> の数</th><th>動画の段落（＝画面）数</th></tr>
@@ -1013,7 +1015,7 @@ se_dir = ./assets/se</code></pre>
   <tr><td>BGM 停止</td><td><code>#bgm_stop</code></td><td>再生中の BGM を停止します（クロスフェードあり）</td></tr>
   <tr><td>効果音 (SE)</td><td><code>#se ファイル名.wav</code></td><td>指定した効果音を挿入します。ファイルは <code>@asset</code> の <code>se_dir</code> から検索されます</td></tr>
   <tr><td>無音の挿入</td><td><code>#pause ****</code></td><td>その位置に ****ms の無音を挿入します</td></tr>
-  <tr><td>段落区切り</td><td><code>#paragraph</code></td><td>段落の切れ目を示し、<code>@pause</code> の <code>paragraph</code> 設定の無音を挿入します</td></tr>
+  <tr><td>段落区切り</td><td><code>#paragraph</code> または <code>#paragraph 名称</code></td><td>段落の切れ目を示し、<code>@pause</code> の <code>paragraph</code> 設定の無音を挿入します。名称を付けると字幕に <code>[PARAGRAPH 名称]</code> として出力され、動画合成のカット名・素材ファイル名に使われます（<a href="#video-paragraph">5.2</a>）</td></tr>
   <tr><td>同時発声</td><td><code>#数字</code>（例: <code>#2</code>）</td><td>続く指定数の台詞を同時刻から同時に発声させます（複数キャラが同時に話す演出など）</td></tr>
 </table>
 <p>同時発声の例（2人が同時に驚く演出）:</p>
@@ -1028,17 +1030,19 @@ se_dir = ./assets/se</code></pre>
 <h3 id="ruby">6.7 ルビ表記・台詞の書き方</h3>
 <p>
   誤読されやすい単語は、シングルクォーテーションで囲んで
-  <code>'表記:読み'</code> の形式で指定すると、
+  <code>'表記|読み'</code> の形式で指定すると、
   音声合成では「読み」、字幕表示では「表記」が使われます。
+  区切りは半角の <code>|</code> のみで、全角の <code>｜</code> は区切りとして扱われません。
+  表記・読みのどちらにも <code>:</code> を含めることができます。
 </p>
-<pre><code>めたん:'東京:とうきょう'に行く</code></pre>
+<pre><code>めたん:'東京|とうきょう'に行く</code></pre>
 <table>
   <tr><th>項目</th><th>結果</th></tr>
   <tr><td>音声合成（読み上げ）に使われるテキスト</td><td>とうきょうに行く</td></tr>
   <tr><td>字幕(SRT)に表示されるテキスト</td><td>東京に行く</td></tr>
 </table>
 <p>複数のルビを1つの台詞に含めることもできます。</p>
-<pre><code>解説:「'深淵:しんえん'より出でし'者:もの'、'黎明:れいめい'の光を掲げよ」……？</code></pre>
+<pre><code>解説:「'深淵|しんえん'より出でし'者|もの'、'黎明|れいめい'の光を掲げよ」……？</code></pre>
 
 <h3 id="sample">6.8 サンプル台本</h3>
 <p>ここまでの要素を組み合わせた台本の例を示します。</p>
@@ -1067,7 +1071,7 @@ se_dir = ./assets/se
 
 #se thunder_distant.wav
 #pause 1500
-めたん:'東京:とうきょう'にも、こんな音が響いたのかしら……。
+めたん:'東京|とうきょう'にも、こんな音が響いたのかしら……。
 
 #bgm_stop
 #paragraph

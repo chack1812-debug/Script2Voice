@@ -57,7 +57,7 @@ HH:MM:SS,mmm --> HH:MM:SS,mmm
 
 - タイムスタンプは`#paragraph`直前のセリフの終了時刻と同じ値を使う（ゼロ秒エントリ）
 - 連番Nは通常の字幕と連続した番号にする
-- テキストは`[PARAGRAPH]`固定とする
+- テキストは`[PARAGRAPH]`固定とする（`#paragraph 名称`のように名称を書いた場合は`[PARAGRAPH 名称]`になる）
 
 **実装箇所**：Rust版Script2VoiceのSRT出力モジュール
 
