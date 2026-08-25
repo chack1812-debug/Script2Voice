@@ -64,7 +64,8 @@ pub enum ScriptItem {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum ScriptCommand {
     Pause(f64),
-    Paragraph,
+    /// 段落区切り。`Some(name)` は `#paragraph 名称` で付けられた名称。
+    Paragraph(Option<String>),
     BgmStart(String),
     BgmStop,
     Se(String),
@@ -159,7 +160,7 @@ mod tests {
     fn script_command_variants_are_constructible() {
         let cmds = vec![
             ScriptCommand::Pause(300.0),
-            ScriptCommand::Paragraph,
+            ScriptCommand::Paragraph(None),
             ScriptCommand::BgmStart("bgm01.wav".to_string()),
             ScriptCommand::BgmStop,
             ScriptCommand::Se("se_door.wav".to_string()),

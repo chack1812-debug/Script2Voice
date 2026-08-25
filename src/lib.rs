@@ -421,7 +421,7 @@ impl Producer {
                     ScriptItem::Command(cmd) => {
                         match cmd {
                             ScriptCommand::Pause(ms) => timeline.advance_pause(*ms),
-                            ScriptCommand::Paragraph => {
+                            ScriptCommand::Paragraph(_name) => {
                                 timeline.register_paragraph();
                                 timeline.advance_paragraph();
                             }

@@ -286,7 +286,29 @@ impl ScriptParser {
             let arg = parts.get(1).map(|s| s.trim()).unwrap_or("");
             return match cmd {
                 "pause" => arg.parse::<f64>().ok().map(|ms| ScriptItem::Command(ScriptCommand::Pause(ms))),
-                "paragraph" => Some(ScriptItem::Command(ScriptCommand::Paragraph)),
+                "paragraph" => {
+                    let name = if arg.is_empty() { None } else { Some(arg.to_string()) };
+                    let name = match name {
+                        Some(n) if n.contains(']') => {
+                            self.warnings.push(ParseWarning {
+                                line_no,
+                                message: format!("#paragraph の名称に「]」は使えません（名称なしとして扱います）: {n}"),
+                            });
+                            None
+                        }
+                        Some(n) => {
+                            if n.contains(['\\', '/', ':', '*', '?', '"', '<', '>', '|']) {
+                                self.warnings.push(ParseWarning {
+                                    line_no,
+                                    message: format!("#paragraph の名称にファイル名として使えない文字が含まれます（素材の自動検索が失敗します）: {n}"),
+                                });
+                            }
+                            Some(n)
+                        }
+                        None => None,
+                    };
+                    Some(ScriptItem::Command(ScriptCommand::Paragraph(name)))
+                }
                 "bgm_start" => Some(ScriptItem::Command(ScriptCommand::BgmStart(arg.to_string()))),
                 "bgm_stop" => Some(ScriptItem::Command(ScriptCommand::BgmStop)),
                 "se" => Some(ScriptItem::Command(ScriptCommand::Se(arg.to_string()))),
@@ -500,9 +522,74 @@ paragraph 1000
     fn parses_paragraph_command() {
         let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
         let found = scenes[0].items.iter().any(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::Paragraph))
+            matches!(i, ScriptItem::Command(ScriptCommand::Paragraph(None)))
         });
         assert!(found);
+    }
+
+    #[test]
+    fn parses_paragraph_with_name() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:こんにちは
+#paragraph オープニング 前半
+A:さようなら
+"#;
+        let scenes = ScriptParser::new().parse_str(script).unwrap();
+        let name = scenes[0].items.iter().find_map(|i| match i {
+            ScriptItem::Command(ScriptCommand::Paragraph(n)) => Some(n.clone()),
+            _ => None,
+        });
+        assert_eq!(name, Some(Some("オープニング 前半".to_string())));
+    }
+
+    #[test]
+    fn paragraph_name_with_bracket_is_dropped_with_warning() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:こんにちは
+#paragraph 変な]名前
+"#;
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(script).unwrap();
+        let name = scenes[0].items.iter().find_map(|i| match i {
+            ScriptItem::Command(ScriptCommand::Paragraph(n)) => Some(n.clone()),
+            _ => None,
+        });
+        assert_eq!(name, Some(None), "]を含む名称は無名として扱う");
+        assert!(parser.warnings.iter().any(|w| w.message.contains("]")));
+    }
+
+    #[test]
+    fn paragraph_name_with_invalid_filename_char_warns_but_is_kept() {
+        let script = r#"
+@scene テスト room_size=0.1
+
+@cast
+A:A:スタイル,voicevox
+
+@script
+A:こんにちは
+#paragraph a/b
+"#;
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(script).unwrap();
+        let name = scenes[0].items.iter().find_map(|i| match i {
+            ScriptItem::Command(ScriptCommand::Paragraph(n)) => Some(n.clone()),
+            _ => None,
+        });
+        assert_eq!(name, Some(Some("a/b".to_string())));
+        assert!(parser.warnings.iter().any(|w| w.message.contains("ファイル名")));
     }
 
     #[test]
