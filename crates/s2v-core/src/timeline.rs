@@ -23,6 +23,9 @@ pub struct TimelineEvent {
     pub text: Option<String>,
     pub display_text: Option<String>,
     pub cast: Option<String>,
+    /// 段落名（`#paragraph 名称`）。段落イベント以外は None。
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 pub struct TimelineProcessor {
@@ -62,6 +65,7 @@ impl TimelineProcessor {
             text: Some(text),
             display_text: Some(display_text),
             cast: Some(cast_name),
+            name: None,
         });
     }
 
@@ -92,6 +96,7 @@ impl TimelineProcessor {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         });
     }
 
@@ -104,6 +109,7 @@ impl TimelineProcessor {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         });
     }
 
@@ -116,18 +122,24 @@ impl TimelineProcessor {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         });
     }
 
-    pub fn register_paragraph(&mut self) {
+    pub fn register_paragraph(&mut self, name: Option<String>) {
+        let display = match &name {
+            Some(n) => format!("[PARAGRAPH {n}]"),
+            None => "[PARAGRAPH]".to_string(),
+        };
         self.events.push(TimelineEvent {
             event_type: EventType::Paragraph,
             start_ms: self.current_ms,
             duration_ms: 0.0,
             path: None,
             text: None,
-            display_text: Some("[PARAGRAPH]".to_string()),
+            display_text: Some(display),
             cast: None,
+            name,
         });
     }
 
@@ -230,7 +242,7 @@ mod tests {
         let mut tp = TimelineProcessor::new(&default_pause());
         tp.advance_after_speech(1000.0, None);
         let before = tp.current_ms;
-        tp.register_paragraph();
+        tp.register_paragraph(None);
         let events = tp.get_events();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].event_type, EventType::Paragraph);
@@ -239,6 +251,16 @@ mod tests {
         assert_eq!(events[0].display_text.as_deref(), Some("[PARAGRAPH]"));
         // current_ms は変化しない (advance は呼び出し側が別途行う)
         assert!((tp.current_ms - before).abs() < 1e-10);
+    }
+
+    #[test]
+    fn register_paragraph_with_name_writes_named_marker() {
+        let mut tp = TimelineProcessor::new(&default_pause());
+        tp.current_ms = 1500.0;
+        tp.register_paragraph(Some("オープニング".to_string()));
+        let events = tp.get_events();
+        assert_eq!(events[0].display_text.as_deref(), Some("[PARAGRAPH オープニング]"));
+        assert_eq!(events[0].name.as_deref(), Some("オープニング"));
     }
 
     #[test]

@@ -421,8 +421,8 @@ impl Producer {
                     ScriptItem::Command(cmd) => {
                         match cmd {
                             ScriptCommand::Pause(ms) => timeline.advance_pause(*ms),
-                            ScriptCommand::Paragraph(_name) => {
-                                timeline.register_paragraph();
+                            ScriptCommand::Paragraph(name) => {
+                                timeline.register_paragraph(name.clone());
                                 timeline.advance_paragraph();
                             }
                             ScriptCommand::BgmStart(path) => timeline.register_bgm(PathBuf::from(path)),

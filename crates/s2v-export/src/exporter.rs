@@ -668,6 +668,7 @@ mod tests {
             text: Some(text.to_string()),
             display_text: Some(text.to_string()),
             cast: Some("テスト".to_string()),
+            name: None,
         }
     }
 
@@ -680,6 +681,20 @@ mod tests {
             text: None,
             display_text: Some("[PARAGRAPH]".to_string()),
             cast: None,
+            name: None,
+        }
+    }
+
+    fn make_named_paragraph_event(start_ms: f64, name: &str) -> TimelineEvent {
+        TimelineEvent {
+            event_type: EventType::Paragraph,
+            start_ms,
+            duration_ms: 0.0,
+            path: None,
+            text: None,
+            display_text: Some(format!("[PARAGRAPH {name}]")),
+            cast: None,
+            name: Some(name.to_string()),
         }
     }
 
@@ -739,6 +754,17 @@ mod tests {
         assert!(content.contains("2\n00:00:01,500 --> 00:00:01,500\n[PARAGRAPH]\n"));
         // 3: 通常の字幕（連番が続く）
         assert!(content.contains("3\n00:00:03,000 --> 00:00:03,800\nさようなら\n"));
+    }
+
+    #[test]
+    fn srt_writes_named_paragraph_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = vec![make_named_paragraph_event(1500.0, "オープニング")];
+        Exporter::new(&events, dir.path(), 48000, default_bgm())
+            .generate_srt("")
+            .unwrap();
+        let content = std::fs::read_to_string(dir.path().join("timeline/subtitles.srt")).unwrap();
+        assert!(content.contains("[PARAGRAPH オープニング]"), "実際の内容: {content}");
     }
 
     #[test]
@@ -852,6 +878,7 @@ mod tests {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         }
     }
 
@@ -864,6 +891,7 @@ mod tests {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         }
     }
 
@@ -876,6 +904,7 @@ mod tests {
             text: None,
             display_text: None,
             cast: None,
+            name: None,
         }
     }
 
