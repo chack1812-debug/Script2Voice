@@ -13,12 +13,19 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// 自動起動の既定待機時間。AivisSpeech の初回モデルロードが 30 秒で足りない事例を受け 60 秒。
 pub const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
-/// 自動起動したエンジンプロセスと、その後始末用に割り当てた Job Object をまとめて保持する。
+/// 使用中のエンジンへの参照を保持する。
 ///
-/// `job` を Drop すると Job ハンドルが閉じられ、`JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` により
-/// OS が Job 配下の全プロセス（ランチャー＋孫プロセス）を自動的に終了する。
+/// `job` は名前付き Job Object のハンドル。自分がエンジンを spawn したかどうかに関わらず、
+/// エンジンを使っている間ずっと保持する。Drop するとハンドルが閉じ、自分が最後の保持者なら
+/// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` により OS がエンジンツリーを終了させる。
+///
+/// `child` は自分が spawn した場合のみ `Some`。既に起動していたエンジンを使う場合は `None`。
+///
+/// どちらのフィールドも「読む」ためではなく Drop させるために保持しているので、
+/// 通常のビルドでは never read になる（`dead_code` はそれを承知で抑止している）。
+#[allow(dead_code)]
 pub(crate) struct EngineProcess {
-    child: Child,
+    child: Option<Child>,
     job: EngineJob,
 }
 
@@ -26,6 +33,7 @@ pub(crate) struct EngineProcess {
 /// 起動完了まで待機する。既に起動済みなら何もしない。
 pub(crate) async fn ensure_running<F, Fut>(
     name: &str,
+    key: &str,
     exe_path: Option<&str>,
     args: &[String],
     timeout: Duration,
@@ -36,17 +44,21 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = bool>,
 {
+    let job = EngineJob::open_or_create(&format!("Local\\Script2Voice_Engine_{key}"))
+        .map_err(|e| anyhow::anyhow!("{name}: Job Object の作成に失敗しました: {e}"))?;
+
     if is_alive().await {
         info!("[{name}] 既に起動しています。");
+        // 自分が起動していなくても Job ハンドルは保持する。
+        // これを保持しないと、エンジンを起動したプロセスが先に終了した時点で
+        // 使用中のエンジンが終了してしまう。
+        *process.lock().unwrap() = Some(EngineProcess { child: None, job });
         return Ok(());
     }
 
     let path = exe_path.ok_or_else(|| {
         anyhow::anyhow!("{name}: サーバーに接続できず、exe_path も未設定のため起動できません")
     })?;
-
-    let job = EngineJob::new()
-        .map_err(|e| anyhow::anyhow!("{name}: Job Object の作成に失敗しました: {e}"))?;
 
     info!("[{name}] 起動を確認できません。プロセスを起動します: {path} {}", args.join(" "));
     // `path` は絶対パス（実行ファイル）と PATH 上のコマンド名（例: "python"）の両方を許容する。
@@ -70,7 +82,7 @@ where
         );
     }
 
-    *process.lock().unwrap() = Some(EngineProcess { child, job });
+    *process.lock().unwrap() = Some(EngineProcess { child: Some(child), job });
 
     let retries = timeout.as_secs().max(1);
     for _ in 0..retries {
@@ -83,16 +95,16 @@ where
     anyhow::bail!("{name}: 起動待機が {} 秒でタイムアウトしました", retries)
 }
 
-/// activate() でプロセスを起動していた場合、それを終了する。起動していなければ何もしない。
+/// エンジンへの参照（名前付き Job のハンドル）を解放する。
+///
+/// 明示的にエンジンを終了させることはしない。自分が最後の保持者であれば、ハンドルが閉じた
+/// 時点で OS が `KILL_ON_JOB_CLOSE` によりエンジンツリーを終了させる。他の Script2Voice
+/// プロセスがまだ同じエンジンを使っている場合はエンジンが生き残る。
 pub(crate) fn terminate_process(name: &str, process: &Mutex<Option<EngineProcess>>) {
     let mut guard = process.lock().unwrap();
-    if let Some(mut entry) = guard.take() {
-        info!("[{name}] エンジンプロセスを停止します。");
-        if let Err(e) = entry.job.terminate() {
-            warn!("[{name}] Job Object 経由の終了に失敗しました: {e}");
-        }
-        let _ = entry.child.kill();
-        let _ = entry.child.wait();
+    if let Some(entry) = guard.take() {
+        info!("[{name}] エンジンへの参照を解放します（最後の利用者ならエンジンも終了します）。");
+        drop(entry);
     }
 }
 
@@ -119,6 +131,12 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Arc;
+
+    /// Job 名・ロックキーはテストごとに一意にする（テストは同一プロセス内で並列実行されるため）。
+    fn unique_key(tag: &str) -> String {
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        format!("test_{}_{}_{}", tag, std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst))
+    }
 
     /// cmd.exe の `%~dp0` でバッチファイル自身のディレクトリを解決させることで、
     /// 日本語ユーザー名を含む一時ディレクトリでもパスのエンコード崩れを避ける。
@@ -149,8 +167,11 @@ mod tests {
         launcher
     }
 
+    /// 最後の参照が解放されたとき、ランチャーだけでなく孫プロセスまで終了することを確認する。
+    /// VOICEVOX / AivisSpeech の run.exe はエンジン本体を孫プロセスとして起動するため、
+    /// Job Object を使わないと孫プロセスが残ってしまう。
     #[tokio::test]
-    async fn terminate_process_kills_grandchild_processes_via_job_object() {
+    async fn releasing_last_reference_kills_grandchild_processes_via_job_object() {
         let dir = tempfile::tempdir().unwrap();
         let launcher = write_launcher_with_grandchild(dir.path());
         let marker = dir.path().join("launcher_marker.txt");
@@ -158,7 +179,7 @@ mod tests {
 
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
-        ensure_running("test", launcher.to_str(), &[], Duration::from_secs(30), &process, move || {
+        ensure_running("test", &unique_key("grandchild"), launcher.to_str(), &[], Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })
@@ -195,7 +216,7 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls2 = Arc::clone(&calls);
 
-        ensure_running("test", None, &[], Duration::from_secs(30), &process, move || {
+        ensure_running("test", &unique_key("alive"), None, &[], Duration::from_secs(30), &process, move || {
             calls2.fetch_add(1, Ordering::SeqCst);
             async { true }
         })
@@ -203,14 +224,16 @@ mod tests {
         .unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert!(process.lock().unwrap().is_none());
+        let guard = process.lock().unwrap();
+        let entry = guard.as_ref().expect("既存エンジンを使う場合も Job ハンドルを保持すること");
+        assert!(entry.child.is_none(), "自分では spawn していないこと");
     }
 
     #[tokio::test]
     async fn ensure_running_errors_when_not_alive_and_no_exe_path() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", None, &[], Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running("test", &unique_key("noexe"), None, &[], Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
     }
@@ -219,7 +242,7 @@ mod tests {
     async fn ensure_running_errors_when_exe_path_does_not_exist() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", Some("C:/no/such/engine.exe"), &[], Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running("test", &unique_key("missing"), Some("C:/no/such/engine.exe"), &[], Duration::from_secs(30), &process, || async { false }).await;
 
         assert!(result.is_err());
         assert!(process.lock().unwrap().is_none());
@@ -240,7 +263,7 @@ mod tests {
         let marker_for_check = marker.clone();
         let args = vec!["/c".to_string(), script.to_str().unwrap().to_string()];
 
-        ensure_running("test", Some("cmd"), &args, Duration::from_secs(30), &process, move || {
+        ensure_running("test", &unique_key("pathcmd"), Some("cmd"), &args, Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })
@@ -261,7 +284,7 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
 
-        ensure_running("test", script.to_str(), &[], Duration::from_secs(30), &process, move || {
+        ensure_running("test", &unique_key("spawnwait"), script.to_str(), &[], Duration::from_secs(30), &process, move || {
             let marker = marker_for_check.clone();
             async move { marker.exists() }
         })
@@ -283,10 +306,13 @@ mod tests {
             .spawn()
             .unwrap();
 
-        let job = EngineJob::new().unwrap();
+        let job =
+            EngineJob::open_or_create(&format!("Local\\Script2Voice_Engine_{}", unique_key("clear")))
+                .unwrap();
         job.assign(&child).unwrap();
 
-        let process: Mutex<Option<EngineProcess>> = Mutex::new(Some(EngineProcess { child, job }));
+        let process: Mutex<Option<EngineProcess>> =
+            Mutex::new(Some(EngineProcess { child: Some(child), job }));
         terminate_process("test", &process);
 
         assert!(process.lock().unwrap().is_none(), "ハンドルが解放されていること");

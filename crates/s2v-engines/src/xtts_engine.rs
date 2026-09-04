@@ -11,7 +11,9 @@ use tokio::sync::{Mutex as AsyncMutex, RwLock};
 use tracing::{info, warn};
 
 use crate::engine::Engine;
-use crate::process::{ensure_running, terminate_process, EngineProcess, DEFAULT_STARTUP_TIMEOUT};
+use crate::process::{
+    engine_resource_key, ensure_running, terminate_process, EngineProcess, DEFAULT_STARTUP_TIMEOUT,
+};
 
 pub struct XttsEngine {
     name: String,
@@ -75,7 +77,16 @@ impl XttsEngine {
 #[async_trait]
 impl Engine for XttsEngine {
     async fn activate(&self) -> anyhow::Result<()> {
-        ensure_running(&self.name, self.exe_path.as_deref(), &self.args, self.startup_timeout, &self.process, || self.is_alive()).await?;
+        ensure_running(
+            &self.name,
+            &engine_resource_key(&self.name, &self.url),
+            self.exe_path.as_deref(),
+            &self.args,
+            self.startup_timeout,
+            &self.process,
+            || self.is_alive(),
+        )
+        .await?;
 
         let res = self
             .client
