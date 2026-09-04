@@ -96,6 +96,24 @@ pub(crate) fn terminate_process(name: &str, process: &Mutex<Option<EngineProcess
     }
 }
 
+/// エンジンごとに一意な資源名（Job Object 名・ロックファイル名）の材料を作る。
+///
+/// 同じエンジン種別でもポートが違えば別インスタンスなので、`url` のポート番号まで含める。
+/// ポートを取り出せない `url` の場合は、`url` 全体の英数字以外を `_` に潰したものを使う
+/// （Job 名・ファイル名として使えるようにするため）。
+pub(crate) fn engine_resource_key(name: &str, url: &str) -> String {
+    let port = url.rsplit_once(':').and_then(|(_, rest)| {
+        let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        (!digits.is_empty()).then_some(digits)
+    });
+    let suffix = port.unwrap_or_else(|| sanitize_for_resource_name(url));
+    format!("{}_{}", sanitize_for_resource_name(name), suffix)
+}
+
+fn sanitize_for_resource_name(s: &str) -> String {
+    s.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +298,29 @@ mod tests {
         // パニックしないことを確認する
         terminate_process("test", &process);
         let _ = AtomicBool::new(false);
+    }
+
+    #[test]
+    fn engine_resource_key_uses_port_from_url() {
+        assert_eq!(engine_resource_key("voicevox", "http://127.0.0.1:50021"), "voicevox_50021");
+        assert_eq!(engine_resource_key("aivis", "http://127.0.0.1:10101/"), "aivis_10101");
+        assert_eq!(engine_resource_key("xtts", "http://127.0.0.1:8020/api"), "xtts_8020");
+    }
+
+    #[test]
+    fn engine_resource_key_differs_per_port_for_same_engine() {
+        assert_ne!(
+            engine_resource_key("voicevox", "http://127.0.0.1:50021"),
+            engine_resource_key("voicevox", "http://127.0.0.1:50022"),
+        );
+    }
+
+    #[test]
+    fn engine_resource_key_falls_back_to_sanitized_url_without_port() {
+        // ポートを取り出せない URL は、英数字以外を '_' に潰した URL 全体を使う。
+        // Job 名・ファイル名に使うため、'/' や ':' が残っていてはいけない。
+        let key = engine_resource_key("voicevox", "http://localhost");
+        assert_eq!(key, "voicevox_http___localhost");
+        assert!(key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
     }
 }
