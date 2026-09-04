@@ -11,7 +11,9 @@ use tokio::sync::RwLock;
 use tracing::{info, warn, error};
 
 use crate::engine::Engine;
-use crate::process::{ensure_running, terminate_process, EngineProcess, DEFAULT_STARTUP_TIMEOUT};
+use crate::process::{
+    engine_resource_key, ensure_running, terminate_process, EngineProcess, DEFAULT_STARTUP_TIMEOUT,
+};
 
 /// スピーカーキャッシュの型: speaker_name -> style_name -> style_id
 type SpeakerCache = HashMap<String, HashMap<String, u32>>;
@@ -117,7 +119,16 @@ impl HttpEngine {
 #[async_trait]
 impl Engine for HttpEngine {
     async fn activate(&self) -> anyhow::Result<()> {
-        ensure_running(&self.name, self.exe_path.as_deref(), &self.args, self.startup_timeout, &self.process, || self.is_alive()).await?;
+        ensure_running(
+            &self.name,
+            &engine_resource_key(&self.name, &self.url),
+            self.exe_path.as_deref(),
+            &self.args,
+            self.startup_timeout,
+            &self.process,
+            || self.is_alive(),
+        )
+        .await?;
         info!("[{}] 接続確認 OK", self.name);
         self.refresh_cache().await?;
         Ok(())

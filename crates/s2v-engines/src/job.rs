@@ -1,18 +1,18 @@
 //! Windows Job Object の RAII ラッパー。
 //!
-//! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` を設定した Job にエンジンプロセスを割り当てることで、
-//! - 明示的に `terminate()` を呼べばランチャーと孫プロセスを含むツリー全体を即座に終了でき、
-//! - 本体プロセスがクラッシュ・Ctrl+C 等で不意に終了し Job ハンドルが閉じられた場合も、
-//!   OS が自動的にツリー全体を後始末してくれる。
+//! `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` を設定した名前付き Job にエンジンプロセスを割り当て、
+//! そのエンジンを使う全プロセスが同名 Job のハンドルを保持する。
+//! ハンドルが1つでも残っている間はエンジンが生き続け、最後の1つが閉じられた瞬間に
+//! OS がエンジンツリー全体を終了させる。正常終了・クラッシュ・強制終了のいずれでも動く。
 
 use std::io;
 use std::os::windows::io::AsRawHandle;
 use std::process::Child;
 
-use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 
@@ -21,17 +21,28 @@ pub(crate) struct EngineJob {
 }
 
 // SAFETY: HANDLE はカーネルオブジェクトへの不透明なポインタであり、
-// 対応する Win32 API（AssignProcessToJobObject/TerminateJobObject 等）は
+// 対応する Win32 API（CreateJobObjectW/AssignProcessToJobObject 等）は
 // どのスレッドから呼んでもよい。
 unsafe impl Send for EngineJob {}
 unsafe impl Sync for EngineJob {}
 
 impl EngineJob {
-    /// `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` を設定した無名 Job Object を作成する。
-    pub(crate) fn new() -> io::Result<Self> {
-        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+    /// 名前付き Job Object を開く（存在しなければ作成する）。
+    ///
+    /// 同じ名前で開いたハンドルはプロセスを跨いで同じ Job を指す。エンジンを共有する
+    /// 全プロセスがハンドルを保持することで、「そのエンジンを使っている最後のプロセスが
+    /// 終了した瞬間に、OS が `KILL_ON_JOB_CLOSE` でエンジンツリーを終了させる」という意味になる。
+    pub(crate) fn open_or_create(name: &str) -> io::Result<Self> {
+        let wide: Vec<u16> = name.encode_utf16().chain(std::iter::once(0)).collect();
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), wide.as_ptr()) };
         if handle.is_null() {
             return Err(io::Error::last_os_error());
+        }
+
+        // 既存の Job を開いた場合は作成者が設定済みなので触らない。
+        // 新規作成時だけ KILL_ON_JOB_CLOSE を設定する。
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            return Ok(Self { handle });
         }
 
         let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -64,22 +75,13 @@ impl EngineJob {
         }
         Ok(())
     }
-
-    /// Job 配下の全プロセス（ツリー全体）を即座に終了する。
-    pub(crate) fn terminate(&self) -> io::Result<()> {
-        let ok = unsafe { TerminateJobObject(self.handle, 1) };
-        if ok == 0 {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
-    }
 }
 
 impl Drop for EngineJob {
     fn drop(&mut self) {
-        // ハンドルを閉じる。terminate() を呼ばずにここに到達した場合
-        // (例: 本体プロセスのクラッシュで最後のハンドルとして閉じられる場合)でも、
-        // KILL_ON_JOB_CLOSE によりOSがJob配下のプロセスを自動的に終了する。
+        // ハンドルを閉じる。自分が最後の保持者なら、KILL_ON_JOB_CLOSE により
+        // OS が Job 配下のプロセス(ランチャー＋孫プロセス)を自動的に終了する。
+        // 他の Script2Voice プロセスがまだ同じ Job を保持していればエンジンは生き残る。
         unsafe { CloseHandle(self.handle) };
     }
 }
@@ -98,17 +100,38 @@ mod tests {
             .unwrap()
     }
 
+    /// Rust のテストは同一プロセス内のスレッドで並列実行されるため、
+    /// Job 名が固定だと別テスト同士が同じ Job を共有してしまう。テストごとに一意にする。
+    fn unique_job_name(tag: &str) -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        format!("Local\\s2v_test_{}_{}_{}", tag, std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst))
+    }
+
+    /// 今回のバグ(先に終了したプロセスが共有エンジンを殺す)に対応する回帰テスト。
+    /// 同名 Job のハンドルを2つ開くことで、2プロセスが共有している状況を同一プロセス内で再現する。
     #[test]
-    fn terminate_kills_assigned_process() {
+    fn assigned_process_survives_until_last_handle_is_dropped() {
+        let name = unique_job_name("shared");
         let mut child = spawn_long_running();
-        assert!(child.try_wait().unwrap().is_none(), "プロセスが起動していること");
 
-        let job = EngineJob::new().unwrap();
-        job.assign(&child).unwrap();
-        job.terminate().unwrap();
+        let first = EngineJob::open_or_create(&name).unwrap();
+        first.assign(&child).unwrap();
+        let second = EngineJob::open_or_create(&name).unwrap();
 
-        std::thread::sleep(Duration::from_millis(300));
-        assert!(child.try_wait().unwrap().is_some(), "Job経由で終了していること");
+        drop(first);
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "他プロセス相当のハンドルが残っている間はエンジンが生き続けること"
+        );
+
+        drop(second);
+        std::thread::sleep(Duration::from_millis(500));
+        assert!(
+            child.try_wait().unwrap().is_some(),
+            "最後のハンドルが閉じた時点でエンジンが終了すること"
+        );
     }
 
     #[test]
@@ -117,9 +140,9 @@ mod tests {
         assert!(child.try_wait().unwrap().is_none(), "プロセスが起動していること");
 
         {
-            let job = EngineJob::new().unwrap();
+            let job = EngineJob::open_or_create(&unique_job_name("drop")).unwrap();
             job.assign(&child).unwrap();
-            // ここで terminate() を呼ばずに job をドロップする(クラッシュ相当の状況を模す)
+            // 明示的な後始末をせずに job をドロップする(クラッシュ相当の状況を模す)
         }
 
         std::thread::sleep(Duration::from_millis(300));
