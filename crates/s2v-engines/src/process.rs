@@ -6,6 +6,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::job::EngineJob;
+use crate::lock;
 
 /// 起動待機のポーリング間隔。Python 版の `await sleep(1)` に合わせて 1 秒固定。
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -44,6 +45,14 @@ where
     F: Fn() -> Fut,
     Fut: Future<Output = bool>,
 {
+    // 「起動確認 → spawn → 起動完了待ち」を跨いで排他する。ここを覆わないと、
+    // P1 が spawn した直後（まだ /version が応答しない間）に P2 が来て二重に spawn してしまう。
+    // ロックガードはこの関数を抜けるまで保持する。
+    let startup_lock = lock::acquire(key, timeout).await;
+    if startup_lock.is_none() {
+        warn!("[{name}] 起動ロックを取得できませんでした。排他せずに続行します。");
+    }
+
     let job = EngineJob::open_or_create(&format!("Local\\Script2Voice_Engine_{key}"))
         .map_err(|e| anyhow::anyhow!("{name}: Job Object の作成に失敗しました: {e}"))?;
 
@@ -324,6 +333,64 @@ mod tests {
         // パニックしないことを確認する
         terminate_process("test", &process);
         let _ = AtomicBool::new(false);
+    }
+
+    /// 起動されるたびに `count.txt` へ1行追記するダミーエンジン。
+    /// 二重 spawn が起きれば行数が2以上になる。
+    fn write_counting_script(dir: &std::path::Path) -> std::path::PathBuf {
+        let script = dir.join("counting_engine.cmd");
+        std::fs::write(&script, "@echo off\r\necho spawned >> \"%~dp0count.txt\"\r\n").unwrap();
+        script
+    }
+
+    /// 2プロセスがほぼ同時に起動を試みても、排他により engine の spawn は1回だけであること。
+    #[tokio::test]
+    async fn concurrent_ensure_running_spawns_engine_only_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = write_counting_script(dir.path());
+        let count = dir.path().join("count.txt");
+        let key = unique_key("dup");
+
+        let p1: Mutex<Option<EngineProcess>> = Mutex::new(None);
+        let p2: Mutex<Option<EngineProcess>> = Mutex::new(None);
+        let c1 = count.clone();
+        let c2 = count.clone();
+
+        let a = ensure_running("t1", &key, script.to_str(), &[], Duration::from_secs(30), &p1, move || {
+            let c = c1.clone();
+            async move { c.exists() }
+        });
+        let b = ensure_running("t2", &key, script.to_str(), &[], Duration::from_secs(30), &p2, move || {
+            let c = c2.clone();
+            async move { c.exists() }
+        });
+
+        let (ra, rb) = tokio::join!(a, b);
+        ra.unwrap();
+        rb.unwrap();
+
+        let lines = std::fs::read_to_string(&count).unwrap().lines().count();
+        assert_eq!(lines, 1, "排他により spawn は1回だけであること");
+
+        terminate_process("t1", &p1);
+        terminate_process("t2", &p2);
+    }
+
+    /// ロックを取れないまま timeout した場合は、警告のうえ従来どおりの経路に進むこと
+    /// （待ち続けてハングしない）。
+    #[tokio::test]
+    async fn ensure_running_falls_through_when_lock_is_unavailable() {
+        let key = unique_key("busy");
+        let _held = crate::lock::try_acquire(&key).unwrap().unwrap();
+
+        let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
+        let start = std::time::Instant::now();
+
+        ensure_running("test", &key, None, &[], Duration::from_secs(1), &process, || async { true })
+            .await
+            .unwrap();
+
+        assert!(start.elapsed() >= Duration::from_secs(1), "ロック待ちを経てからフォールスルーすること");
     }
 
     #[test]
