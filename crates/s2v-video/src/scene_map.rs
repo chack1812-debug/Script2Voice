@@ -63,15 +63,20 @@ pub fn resolve_assets(scene_map: &SceneMap, segment_count: usize) -> anyhow::Res
         by_index.insert(entry.index, normalize_entry(entry)?);
     }
 
-    for (index, (type_str, _)) in &by_index {
-        if !(1..=segment_count as i64).contains(index) {
+    for entry in &scene_map.paragraphs {
+        let (type_str, _) = by_index
+            .get(&entry.index)
+            .expect("entries are inserted into by_index before validation");
+        if !(1..=segment_count as i64).contains(&entry.index) {
             anyhow::bail!(
-                "scene_map.json: 段落番号 {index} はSRTの段落数(1..{segment_count})の範囲外です"
+                "scene_map.json: 段落番号 {} はSRTの段落数(1..{segment_count})の範囲外です",
+                entry.index
             );
         }
         if type_str != "image" && type_str != "video" {
             anyhow::bail!(
-                "scene_map.json: 段落番号 {index} の type が不正です: {type_str:?} (有効な値: image, video)"
+                "scene_map.json: 段落番号 {} の type が不正です: {type_str:?} (有効な値: image, video)",
+                entry.index
             );
         }
     }
@@ -208,6 +213,21 @@ mod tests {
         let sm = sm_from(r#"{"paragraphs":[{"index":1,"type":"audio","path":"a.mp3"}],"default_image":"d.png"}"#);
         let e = resolve_assets(&sm, 1).unwrap_err();
         assert!(e.to_string().contains("type"));
+    }
+
+    #[test]
+    fn resolve_reports_first_invalid_entry_in_paragraph_order() {
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"type":"audio","path":"a.mp3"},{"index":5,"image":"b.png"}],"default_image":"d.png"}"#,
+        );
+
+        for _ in 0..64 {
+            let e = resolve_assets(&sm, 2).unwrap_err();
+            assert!(
+                e.to_string().contains("type"),
+                "expected the first paragraph's type error, got: {e}"
+            );
+        }
     }
 
     #[test]
