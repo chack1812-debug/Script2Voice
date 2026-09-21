@@ -423,7 +423,8 @@ args = ["-m", "xtts_api_server", "--port", "8020"]</pre>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
   <tr><td><code>&lt;台本ファイル/フォルダ&gt;</code>（1個以上必須）</td><td>処理対象の台本テキストファイル、または台本（<code>.txt</code>）を格納したフォルダのパス。複数指定・混在可</td></tr>
   <tr><td><code>-c, --config &lt;パス&gt;</code></td><td>設定ファイル (config.toml) のパス。<strong>省略時は実行ファイルと同じフォルダの <code>config.toml</code></strong> が使用される</td></tr>
-  <tr><td><code>--strict</code></td><td>パース警告（未定義キャストの台詞や、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）が1件でもある台本を、その場で失敗として扱う。省略時は警告をコンソールと <code>run.log</code> に出力したうえで処理を続行する（台詞が静かに欠落する事態を避けたい場合に指定する）</td></tr>
+  <tr><td><code>--strict</code></td><td>パース警告（未定義キャストの台詞や、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）が1件でもある台本を、その場で失敗として扱う。省略時は警告を画面と <code>run.log</code> に出力したうえで処理を続行する（台詞が静かに欠落する事態を避けたい場合に指定する）</td></tr>
+  <tr><td><code>-v, --verbose</code></td><td>画面に出すログを詳しくする。<code>-v</code> で進捗（各フェーズの経過）まで、<code>-vv</code> でデバッグログまで表示する。<strong>省略時は警告・エラー・最終サマリだけ</strong>を表示する（詳細は常にログファイルに残るため、通常は指定不要）</td></tr>
 </table>
 <p>実行例:</p>
 <pre><code># 台本を1つ処理（従来どおり）
@@ -448,6 +449,19 @@ script2voice .\scripts 追加エピソード.txt</code></pre>
   途中の台本でエラーが発生しても<strong>処理は中断されず</strong>、残りの台本を最後まで処理します。
   終了時に<strong>成功・失敗の件数と、失敗した台本名・理由のサマリ</strong>がログに出力されます
   （失敗が1件でもあれば終了コードは非0になります）。
+</div>
+<div class="tip">
+  <strong>ログの出力先</strong><br>
+  画面（標準エラー出力）には、既定では<strong>警告・エラー・最終サマリだけ</strong>が出ます。
+  進捗を画面で追いたいときは <code>-v</code> を付けてください。標準出力には何も出さないため、
+  <code>script2voice .\scripts &gt; result.txt</code> のようなリダイレクトやパイプの邪魔になりません。<br>
+  詳細ログは、画面表示の設定にかかわらず<strong>常に次の2か所のファイルに残ります</strong>（<code>-vv</code> で表示されるデバッグログは画面のみで、ファイルには残りません）。
+  <table>
+    <tr><th>ファイル</th><th>内容</th></tr>
+    <tr><td><code>&lt;出力フォルダ&gt;\run.log</code></td><td>その台本1本分の全ログ。失敗した場合は<strong>失敗理由</strong>も末尾に記録される</td></tr>
+    <tr><td><code>%LOCALAPPDATA%\Script2Voice\logs\script2voice.log.&lt;日付&gt;</code></td><td>起動から最終サマリまでの全ログ。バッチ全体の流れ、エンジンの起動状況、どの台本が失敗したかはここに残る。日付ごとに新しいファイルへ切り替わる</td></tr>
+  </table>
+  エクスプローラーのアドレス欄に <code>%LOCALAPPDATA%\Script2Voice\logs</code> と入力すると、全体ログのフォルダを開けます。
 </div>
 <p>設定ファイルの探索順序は次の通りです。</p>
 <ol>

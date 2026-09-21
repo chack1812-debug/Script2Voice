@@ -7,6 +7,8 @@ use clap::Parser;
 use s2v_core::{Config, ParseWarning, Scene, ScriptParser};
 use s2v_engines::EngineManager;
 use script2voice::{build_engine_manager, resolve_config_path, Producer};
+use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
+use tracing_appender::rolling::{Builder, InitError, RollingFileAppender, Rotation};
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -17,7 +19,11 @@ type ParsedScript = (PathBuf, Vec<Scene>, Vec<ParseWarning>);
 type ScriptFailure = (PathBuf, String);
 
 #[derive(Parser)]
-#[command(name = "script2voice", version, about = "台本から音声・字幕・タイムラインを生成する")]
+#[command(
+    name = "script2voice",
+    version,
+    about = "台本から音声・字幕・タイムラインを生成する"
+)]
 #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
 struct Cli {
     #[command(subcommand)]
@@ -41,6 +47,11 @@ struct GenerateArgs {
     /// パース警告(未定義キャストの飲み込みなど)が1件でもある台本を失敗として扱う
     #[arg(long)]
     strict: bool,
+
+    /// 画面(標準エラー出力)へのログを詳しくする。-v で進捗、-vv で詳細まで出す
+    /// (既定は警告・エラー・最終サマリのみ。全ログは常にログファイルに残る)
+    #[arg(short, long, action = clap::ArgAction::Count)]
+    verbose: u8,
 }
 
 #[derive(clap::Subcommand)]
@@ -117,28 +128,149 @@ impl Drop for LogScope<'_> {
     }
 }
 
-/// コンソール + 差し替え可能ファイルの subscriber をプロセスで1回だけ初期化する。
-/// 返した `SharedLogFile` を台本の境界で `set` してファイル出力先を切り替える。
-fn init_logging() -> SharedLogFile {
+/// run.log にだけ残したいログの target。画面と全体ログの層では落とす。
+/// `record_outcome` の `tracing::error!(target: "runlog", ...)` と対になっている
+/// (マクロの target には定数を書けないため、値を変えるときは両方直すこと)。
+const RUN_LOG_ONLY_TARGET: &str = "runlog";
+
+/// `--verbose` の段数から画面の既定ディレクティブを決める。
+///
+/// 段数 0 が `warn,summary=info` なのは、進捗の info を画面から落としつつ、
+/// バッチサマリ(target="summary")だけは必ず手元に残すためである。
+fn default_console_directives(verbose: u8) -> String {
+    match verbose {
+        0 => "warn,summary=info",
+        1 => "info",
+        _ => "debug",
+    }
+    .to_string()
+}
+
+/// 指定のディレクティブに「run.log 専用ログを落とす」指定を足したフィルタを作る。
+///
+/// `runlog=off` は必ず末尾に付くため、`RUST_LOG` で `runlog` を名指ししても
+/// 画面と全体ログでは抑制される(同じ target の指定は後勝ちになる)。
+/// `runlog` は run.log へ失敗理由を残すための内部用 target であり、
+/// 利用者が調整するつまみではないので、これは意図した挙動である。
+fn hide_run_log_only(directives: &str) -> EnvFilter {
+    EnvFilter::new(format!("{directives},{RUN_LOG_ONLY_TARGET}=off"))
+}
+
+/// `RUST_LOG` を解釈する。解釈できた場合は `Ok(Some(..))`、未設定なら `Ok(None)`、
+/// 解釈できなかった場合は呼び出し元が警告できるよう `Err(元の文字列)` を返す。
+///
+/// 解釈をこの1か所に閉じ込めているのは、層ごとに解釈すると同じ警告が層の数だけ
+/// 出てしまうため。以降の各フィルタは解釈済みのディレクティブだけを受け取る。
+fn resolve_rust_log(raw: Option<String>) -> Result<Option<String>, String> {
+    match raw {
+        Some(directives) if EnvFilter::try_new(&directives).is_ok() => Ok(Some(directives)),
+        Some(directives) => Err(directives),
+        None => Ok(None),
+    }
+}
+
+/// 画面(標準エラー出力)層のフィルタ。解釈済みの `RUST_LOG` があればそれを優先し、
+/// なければ `--verbose` の段数で決める。
+fn console_filter_from(rust_log: Option<String>, verbose: u8) -> EnvFilter {
+    hide_run_log_only(&rust_log.unwrap_or_else(|| default_console_directives(verbose)))
+}
+
+/// run.log 層のフィルタ。画面と違い、ファイルには info 以上を常に残す。
+/// ここだけ `runlog` を通す(台本の失敗理由を run.log に残すため)。
+fn file_filter(rust_log: Option<String>) -> EnvFilter {
+    EnvFilter::new(rust_log.unwrap_or_else(|| "info".to_string()))
+}
+
+/// 全体ログ層のフィルタ。run.log 層と同じ内容を残すが、run.log 専用ログだけは落とす。
+/// 台本の失敗理由は `run_each` 側でも記録されるため、ここに通すと同じ失敗が二重に載る。
+fn global_filter(rust_log: Option<String>) -> EnvFilter {
+    hide_run_log_only(&rust_log.unwrap_or_else(|| "info".to_string()))
+}
+
+/// 全体ログの出力先ディレクトリ。`%LOCALAPPDATA%` が取れない環境では `None` を返し、
+/// 呼び出し側は全体ログなしで続行する(ログのために本処理を止めない)。
+fn global_log_dir(local_app_data: Option<PathBuf>) -> Option<PathBuf> {
+    Some(local_app_data?.join("Script2Voice").join("logs"))
+}
+
+/// 全体ログ(`%LOCALAPPDATA%\Script2Voice\logs\script2voice.log`、日次ローテーション)を開く。
+/// 置き場所が決まらない、または作成できない場合は警告だけ出して `None` を返す。
+fn open_global_log() -> Option<(NonBlocking, WorkerGuard)> {
+    let Some(dir) = global_log_dir(std::env::var_os("LOCALAPPDATA").map(PathBuf::from)) else {
+        eprintln!("%LOCALAPPDATA% を取得できません。全体ログなしで続行します。");
+        return None;
+    };
+    match build_global_appender(&dir) {
+        Ok(appender) => Some(tracing_appender::non_blocking(appender)),
+        Err(e) => {
+            eprintln!(
+                "全体ログを開けません。全体ログなしで続行します: {} — {e}",
+                dir.display()
+            );
+            None
+        }
+    }
+}
+
+/// 全体ログの appender を作る。出力先フォルダは必要なら appender 側が作る。
+///
+/// `tracing_appender::rolling::daily` を使わないのは、あれが内部で
+/// `expect("initializing rolling file appender failed")` しており、ディスクフルや
+/// 排他ロックのような実行時の失敗でバッチ全体を巻き込んで落ちるため。
+/// ログを取れないことを理由に音声生成を止めない。
+fn build_global_appender(dir: &Path) -> Result<RollingFileAppender, InitError> {
+    Builder::new()
+        .rotation(Rotation::DAILY)
+        .filename_prefix("script2voice.log")
+        .build(dir)
+}
+
+/// 3層の subscriber をプロセスで1回だけ初期化する。
+///
+/// - 画面(標準エラー出力): 既定は警告・エラー・最終サマリのみ。`--verbose` で戻す。
+/// - `run.log`: 台本ごとの全量。返した `SharedLogFile` を台本の境界で `set` して切り替える。
+/// - 全体ログ: 起動からサマリまでの全量。`run.log` のスコープ外のログはここにしか残らない。
+///
+/// 返す `WorkerGuard` は全体ログの書き出しスレッドを生かすためのもので、`main` が終わるまで
+/// 保持する必要がある(先に drop すると終盤のログを取りこぼす)。
+fn init_logging(verbose: u8) -> (SharedLogFile, Option<WorkerGuard>) {
     let shared = SharedLogFile::default();
     let time_format = "%Y-%m-%d %H:%M:%S%.3f".to_string();
+    let rust_log = resolve_rust_log(std::env::var("RUST_LOG").ok()).unwrap_or_else(|raw| {
+        eprintln!("RUST_LOG を解釈できません。既定のログ設定で続行します: {raw}");
+        None
+    });
 
     let console_layer = fmt::layer()
+        .with_writer(std::io::stderr)
         .with_timer(ChronoLocal::new(time_format.clone()))
-        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+        .with_filter(console_filter_from(rust_log.clone(), verbose));
 
-    let file_layer = fmt::layer()
+    let run_log_layer = fmt::layer()
         .with_ansi(false)
         .with_writer(shared.clone())
-        .with_timer(ChronoLocal::new(time_format))
-        .with_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")));
+        .with_timer(ChronoLocal::new(time_format.clone()))
+        .with_filter(file_filter(rust_log.clone()));
+
+    let (global_writer, guard) = match open_global_log() {
+        Some((writer, guard)) => (Some(writer), Some(guard)),
+        None => (None, None),
+    };
+    let global_layer = global_writer.map(|writer| {
+        fmt::layer()
+            .with_ansi(false)
+            .with_writer(writer)
+            .with_timer(ChronoLocal::new(time_format))
+            .with_filter(global_filter(rust_log))
+    });
 
     tracing_subscriber::registry()
         .with(console_layer)
-        .with(file_layer)
+        .with(run_log_layer)
+        .with(global_layer)
         .init();
 
-    shared
+    (shared, guard)
 }
 
 /// 台本の出力フォルダに run.log を追記オープンする。
@@ -164,7 +296,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let log_file = init_logging();
+    // WorkerGuard は全体ログの書き出しスレッドを生かすため main の最後まで保持する。
+    let (log_file, _global_log_guard) = init_logging(cli.generate.verbose);
 
     let scripts = expand_script_args(&cli.generate.scripts)?;
     tracing::info!("処理対象: {} 台本", scripts.len());
@@ -172,8 +305,12 @@ async fn main() -> anyhow::Result<()> {
     let exe_path = std::env::current_exe().ok();
     let config_path = resolve_config_path(cli.generate.config.clone(), exe_path.as_deref());
     tracing::info!("設定ファイル: {}", config_path.display());
-    let config = Config::from_file(&config_path)
-        .with_context(|| format!("設定ファイルの読み込みに失敗しました: {}", config_path.display()))?;
+    let config = Config::from_file(&config_path).with_context(|| {
+        format!(
+            "設定ファイルの読み込みに失敗しました: {}",
+            config_path.display()
+        )
+    })?;
 
     // 事前パース（失敗は継続）
     let (parsed, parse_failures) = parse_all(&scripts, cli.generate.strict);
@@ -194,9 +331,13 @@ async fn main() -> anyhow::Result<()> {
     // Ctrl+C は自分で受ける。既定動作のままだとプロセスが即終了してデストラクタが
     // 走らず、生成中の出力ロック(.s2v_generation*.lock)が残ってしまう。
     let summary = run_until_interrupt(
-        run_each(parsed, parse_failures, |path, scenes, warnings| async move {
-            process_one(&path, &scenes, &warnings, config_ref, em_ref, log_ref).await
-        }),
+        run_each(
+            parsed,
+            parse_failures,
+            |path, scenes, warnings| async move {
+                process_one(&path, &scenes, &warnings, config_ref, em_ref, log_ref).await
+            },
+        ),
         async {
             if tokio::signal::ctrl_c().await.is_err() {
                 // ハンドラを登録できない環境では中断を待てない（永久に待機）
@@ -216,7 +357,9 @@ async fn main() -> anyhow::Result<()> {
     engine_manager.shutdown_all();
 
     // サマリ
+    // target=summary は、画面のログを既定で抑制していてもサマリだけは残すための目印。
     tracing::info!(
+        target: "summary",
         "=== バッチ完了: 成功 {} / 失敗 {} (合計 {}) ===",
         summary.succeeded,
         summary.failures.len(),
@@ -261,7 +404,11 @@ where
 ///
 /// 採用後に canonicalize した実体パスで重複を除去（出現順は維持）。0 件ならエラー。
 fn expand_script_args(args: &[PathBuf]) -> anyhow::Result<Vec<PathBuf>> {
-    fn push_unique(p: &Path, out: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) -> anyhow::Result<()> {
+    fn push_unique(
+        p: &Path,
+        out: &mut Vec<PathBuf>,
+        seen: &mut HashSet<PathBuf>,
+    ) -> anyhow::Result<()> {
         let canon = std::fs::canonicalize(p)
             .with_context(|| format!("パスを解決できません: {}", p.display()))?;
         if seen.insert(canon.clone()) {
@@ -330,11 +477,15 @@ fn parse_all(scripts: &[PathBuf], strict: bool) -> (Vec<ParsedScript>, Vec<Scrip
             Ok(scenes) => {
                 let warnings = parser.warnings().to_vec();
                 if strict && !warnings.is_empty() {
-                    let detail = warnings.iter()
+                    let detail = warnings
+                        .iter()
                         .map(|w| format!("{}行目: {}", w.line_no, w.message))
                         .collect::<Vec<_>>()
                         .join(" / ");
-                    tracing::error!("strictモードのためパース警告を失敗として扱います {}: {detail}", path.display());
+                    tracing::error!(
+                        "strictモードのためパース警告を失敗として扱います {}: {detail}",
+                        path.display()
+                    );
                     failures.push((path.clone(), format!("strict: パース警告あり ({detail})")));
                 } else {
                     parsed.push((path.clone(), scenes, warnings));
@@ -391,20 +542,25 @@ where
             }
         }
     }
-    BatchSummary { succeeded, failures: prior_failures }
+    BatchSummary {
+        succeeded,
+        failures: prior_failures,
+    }
 }
 
 /// 必要エンジンを並行に起動する。1つの失敗で全体を止めず（fail-fast しない）、
 /// 各エンジンの結果を個別に受けて警告し継続する
 /// （起動に失敗したエンジンを使う台本は後段の合成で失敗扱いになる）。
 async fn activate_each(engine_manager: &Arc<EngineManager>, required: &HashSet<String>) {
-    let tasks = required.iter().filter_map(|name| match engine_manager.get(name) {
-        Some(engine) => Some(async move { (name.as_str(), engine.activate().await) }),
-        None => {
-            tracing::warn!("[{name}] 未登録のエンジンが要求されました。スキップします。");
-            None
-        }
-    });
+    let tasks = required
+        .iter()
+        .filter_map(|name| match engine_manager.get(name) {
+            Some(engine) => Some(async move { (name.as_str(), engine.activate().await) }),
+            None => {
+                tracing::warn!("[{name}] 未登録のエンジンが要求されました。スキップします。");
+                None
+            }
+        });
     for (name, result) in futures::future::join_all(tasks).await {
         match result {
             Ok(()) => tracing::info!("[{name}] エンジン起動完了。"),
@@ -440,7 +596,7 @@ async fn process_one(
 
     log_file.set(Some(open_run_log(&project_dir)?));
     let _scope = LogScope(log_file);
-    async {
+    let result = async {
         tracing::info!("--- Project: {project_name} ---");
         tracing::info!("Output Directory: {}", project_dir.display());
         for w in warnings {
@@ -451,7 +607,24 @@ async fn process_one(
         tracing::info!("--- 完了: {project_name} ---");
         anyhow::Ok(())
     }
-    .await
+    .await;
+    // run.log がまだ束縛されているこの場で失敗理由を残す(`_scope` が外れた後では間に合わない)。
+    record_outcome(&project_name, &result);
+    result
+}
+
+/// 台本処理の結果を run.log のスコープ内で記録する。
+///
+/// 失敗は呼び出し元(`run_each`)でも記録されるが、そちらは `LogScope` を抜けた後なので
+/// 台本の run.log には入らない。ここで残さないと、run.log が処理途中で途切れたまま
+/// 何で落ちたかが台本側に残らない。
+///
+/// target を `runlog` にしているのは、画面と全体ログでこれを落とすため。
+/// そちらには `run_each` の記録と最終サマリが既に出ており、通すと同じ失敗が三重に載る。
+fn record_outcome(project_name: &str, result: &anyhow::Result<()>) {
+    if let Err(e) = result {
+        tracing::error!(target: "runlog", "--- 失敗: {project_name} — {e:#} ---");
+    }
 }
 
 #[cfg(test)]
@@ -535,15 +708,22 @@ mod tests {
     #[test]
     fn parses_multiple_script_paths() {
         let cli = Cli::try_parse_from(["script2voice", "a.txt", "b.txt"]).unwrap();
-        assert_eq!(cli.generate.scripts, vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]);
+        assert_eq!(
+            cli.generate.scripts,
+            vec![PathBuf::from("a.txt"), PathBuf::from("b.txt")]
+        );
         assert_eq!(cli.generate.config, None);
         assert!(cli.command.is_none());
     }
 
     #[test]
     fn parses_custom_config_path() {
-        let cli = Cli::try_parse_from(["script2voice", "script.txt", "--config", "custom.toml"]).unwrap();
-        assert_eq!(cli.generate.config, Some(std::path::PathBuf::from("custom.toml")));
+        let cli =
+            Cli::try_parse_from(["script2voice", "script.txt", "--config", "custom.toml"]).unwrap();
+        assert_eq!(
+            cli.generate.config,
+            Some(std::path::PathBuf::from("custom.toml"))
+        );
     }
 
     #[test]
@@ -559,15 +739,34 @@ mod tests {
     fn resolve_config_path_defaults_to_executable_directory() {
         let resolved = resolve_config_path(
             None,
-            Some(std::path::Path::new("/opt/script2voice/bin/script2voice.exe")),
+            Some(std::path::Path::new(
+                "/opt/script2voice/bin/script2voice.exe",
+            )),
         );
-        assert_eq!(resolved, std::path::PathBuf::from("/opt/script2voice/bin/config.toml"));
+        assert_eq!(
+            resolved,
+            std::path::PathBuf::from("/opt/script2voice/bin/config.toml")
+        );
     }
 
     #[test]
     fn resolve_config_path_falls_back_to_relative_when_exe_path_unknown() {
         let resolved = resolve_config_path(None, None);
         assert_eq!(resolved, std::path::PathBuf::from("config.toml"));
+    }
+
+    /// 既定では画面のログを抑制する(段数 0)。
+    #[test]
+    fn verbose_defaults_to_zero() {
+        let cli = Cli::try_parse_from(["script2voice", "台本.txt"]).unwrap();
+        assert_eq!(cli.generate.verbose, 0);
+    }
+
+    /// -v は重ねた回数を数える(-vv で debug まで戻す)。
+    #[test]
+    fn verbose_counts_occurrences() {
+        let cli = Cli::try_parse_from(["script2voice", "台本.txt", "-vv"]).unwrap();
+        assert_eq!(cli.generate.verbose, 2);
     }
 
     #[test]
@@ -683,9 +882,17 @@ mod tests {
         let path = write_script_with_unknown_cast_warning(dir.path());
 
         let (parsed, failures) = parse_all(&[path.clone()], false);
-        assert_eq!(failures.len(), 0, "strictでなければ警告があっても失敗にしない");
+        assert_eq!(
+            failures.len(),
+            0,
+            "strictでなければ警告があっても失敗にしない"
+        );
         assert_eq!(parsed.len(), 1);
-        assert_eq!(parsed[0].2.len(), 1, "パース警告がParsedScriptへ伝播しているべき");
+        assert_eq!(
+            parsed[0].2.len(),
+            1,
+            "パース警告がParsedScriptへ伝播しているべき"
+        );
         assert!(parsed[0].2[0].message.contains("誰か"));
     }
 
@@ -695,10 +902,18 @@ mod tests {
         let path = write_script_with_unknown_cast_warning(dir.path());
 
         let (parsed, failures) = parse_all(&[path.clone()], true);
-        assert_eq!(parsed.len(), 0, "strictモードでは警告のある台本を成功扱いにしない");
+        assert_eq!(
+            parsed.len(),
+            0,
+            "strictモードでは警告のある台本を成功扱いにしない"
+        );
         assert_eq!(failures.len(), 1);
         assert_eq!(failures[0].0, path);
-        assert!(failures[0].1.contains("誰か"), "失敗理由に警告の詳細を含めるべき: {}", failures[0].1);
+        assert!(
+            failures[0].1.contains("誰か"),
+            "失敗理由に警告の詳細を含めるべき: {}",
+            failures[0].1
+        );
     }
 
     #[test]
@@ -726,8 +941,14 @@ mod tests {
     #[test]
     fn parses_compose_subcommand_with_overrides() {
         let cli = Cli::try_parse_from([
-            "script2voice", "compose", "myproject",
-            "--scene-map", "custom_map.json", "--burn-subtitle", "-o", "final.mp4",
+            "script2voice",
+            "compose",
+            "myproject",
+            "--scene-map",
+            "custom_map.json",
+            "--burn-subtitle",
+            "-o",
+            "final.mp4",
         ])
         .unwrap();
         match cli.command {
@@ -757,10 +978,245 @@ mod tests {
         let s2 = p2
             .parse_str("@scene S\n@cast\nB:話者:ノーマル,aivis,pan=0\n@script\nB:い\n")
             .unwrap();
-        let parsed = vec![(PathBuf::from("1.txt"), s1, Vec::new()), (PathBuf::from("2.txt"), s2, Vec::new())];
+        let parsed = vec![
+            (PathBuf::from("1.txt"), s1, Vec::new()),
+            (PathBuf::from("2.txt"), s2, Vec::new()),
+        ];
         let req = required_engines(&parsed);
         assert!(req.contains("voicevox"));
         assert!(req.contains("aivis"));
         assert_eq!(req.len(), 2);
+    }
+
+    /// キャプチャ用のログ出力先を用意する。
+    /// `SharedLogFile` を一時ファイルに束縛し、(パス, ハンドル, TempDir) を返す。
+    fn capture_log() -> (PathBuf, SharedLogFile, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("captured.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .unwrap();
+        let shared = SharedLogFile::default();
+        shared.set(Some(file));
+        (path, shared, dir)
+    }
+
+    /// `filter` を適用した subscriber の下で `emit` を実行し、書き出された内容を返す。
+    fn logged_with(filter: EnvFilter, emit: impl FnOnce()) -> String {
+        let (path, shared, _dir) = capture_log();
+        let layer = fmt::layer()
+            .with_ansi(false)
+            .with_writer(shared.clone())
+            .with_filter(filter);
+        let subscriber = tracing_subscriber::registry().with(layer);
+        tracing::subscriber::with_default(subscriber, emit);
+        shared.set(None);
+        std::fs::read_to_string(&path).unwrap()
+    }
+
+    /// 既定(-v なし)では進捗の info を画面に出さない。warn とサマリは残す。
+    #[test]
+    fn default_console_filter_keeps_summary_and_warn_but_drops_progress_info() {
+        let logged = logged_with(console_filter_from(None, 0), || {
+            tracing::info!("進捗ログ");
+            tracing::warn!("警告ログ");
+            tracing::info!(target: "summary", "サマリログ");
+        });
+
+        assert!(
+            !logged.contains("進捗ログ"),
+            "既定で進捗の info を出してはいけない: {logged}"
+        );
+        assert!(logged.contains("警告ログ"), "warn は残すべき: {logged}");
+        assert!(
+            logged.contains("サマリログ"),
+            "サマリは既定でも残すべき: {logged}"
+        );
+    }
+
+    /// -v を1回指定すると進捗の info まで画面に戻る。
+    #[test]
+    fn verbose_once_restores_progress_info() {
+        let logged = logged_with(console_filter_from(None, 1), || {
+            tracing::info!("進捗ログ");
+            tracing::debug!("詳細ログ");
+        });
+
+        assert!(
+            logged.contains("進捗ログ"),
+            "-v で info を出すべき: {logged}"
+        );
+        assert!(
+            !logged.contains("詳細ログ"),
+            "-v だけでは debug を出さない: {logged}"
+        );
+    }
+
+    /// -vv で debug まで画面に出る。
+    #[test]
+    fn verbose_twice_restores_debug() {
+        let logged = logged_with(console_filter_from(None, 2), || tracing::debug!("詳細ログ"));
+
+        assert!(
+            logged.contains("詳細ログ"),
+            "-vv で debug を出すべき: {logged}"
+        );
+    }
+
+    /// RUST_LOG が明示されていれば verbose より優先する(従来どおりの制御を残す)。
+    #[test]
+    fn rust_log_takes_precedence_over_verbose() {
+        let logged = logged_with(console_filter_from(Some("error".to_string()), 2), || {
+            tracing::warn!("警告ログ");
+            tracing::error!("エラーログ");
+        });
+
+        assert!(
+            !logged.contains("警告ログ"),
+            "RUST_LOG=error なら warn は落とす: {logged}"
+        );
+        assert!(logged.contains("エラーログ"));
+    }
+
+    /// RUST_LOG の解釈は1か所だけで行う（各層で解釈すると警告が重複する）。
+    #[test]
+    fn resolve_rust_log_keeps_valid_directives() {
+        assert_eq!(
+            resolve_rust_log(Some("warn".to_string())),
+            Ok(Some("warn".to_string()))
+        );
+    }
+
+    /// 未設定なら既定を使う。
+    #[test]
+    fn resolve_rust_log_is_none_when_unset() {
+        assert_eq!(resolve_rust_log(None), Ok(None));
+    }
+
+    /// 解釈できない指定は、呼び出し元が1回だけ警告できるよう元の文字列を返す。
+    #[test]
+    fn resolve_rust_log_reports_invalid_directives() {
+        assert_eq!(
+            resolve_rust_log(Some("target=不明なレベル".to_string())),
+            Err("target=不明なレベル".to_string())
+        );
+    }
+
+    /// run.log 専用ログは、RUST_LOG で明示されても画面・全体ログでは抑制する。
+    /// runlog は内部用の target であり、利用者向けのつまみではない。
+    #[test]
+    fn run_log_only_target_stays_suppressed_even_when_rust_log_names_it() {
+        let logged = logged_with(
+            console_filter_from(Some("runlog=trace".to_string()), 0),
+            || {
+                record_outcome("テスト台本", &Err(anyhow::anyhow!("画面には出さない理由")));
+            },
+        );
+
+        assert!(
+            !logged.contains("画面には出さない理由"),
+            "RUST_LOG でも抑制する: {logged}"
+        );
+    }
+
+    /// 全体ログの appender を作れないとき、panic せずエラーを返す。
+    /// `tracing_appender::rolling::daily` は内部で expect しており、ディスクフルや
+    /// 排他ロックでバッチ全体を巻き込んで落ちる。
+    #[test]
+    fn build_global_appender_reports_error_instead_of_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let not_a_dir = dir.path().join("これはフォルダではない");
+        std::fs::write(&not_a_dir, b"").unwrap();
+
+        assert!(build_global_appender(&not_a_dir).is_err());
+    }
+
+    /// 全体ログは %LOCALAPPDATA% 配下の固定パスに置く。
+    #[test]
+    fn global_log_dir_is_under_local_app_data() {
+        let dir = global_log_dir(Some(PathBuf::from("C:/Users/tester/AppData/Local"))).unwrap();
+
+        assert_eq!(
+            dir,
+            PathBuf::from("C:/Users/tester/AppData/Local/Script2Voice/logs")
+        );
+    }
+
+    /// %LOCALAPPDATA% が取れない環境では全体ログを諦める(本処理は止めない)。
+    #[test]
+    fn global_log_dir_is_none_without_local_app_data() {
+        assert!(global_log_dir(None).is_none());
+    }
+
+    /// 失敗理由は run.log 専用で、画面には出さない。
+    /// 画面には `run_each` 側の「処理failed」と最終サマリが既に出ており、三重になる。
+    #[test]
+    fn failure_reason_is_not_repeated_on_console() {
+        let logged = logged_with(console_filter_from(None, 0), || {
+            record_outcome(
+                "テスト台本",
+                &Err(anyhow::anyhow!("二重に出てはいけない理由")),
+            );
+        });
+
+        assert!(
+            !logged.contains("二重に出てはいけない理由"),
+            "画面には出さない: {logged}"
+        );
+    }
+
+    /// 失敗理由は全体ログにも二重に出さない(`run_each` 側の記録がそちらに残る)。
+    #[test]
+    fn failure_reason_is_not_repeated_in_global_log() {
+        let logged = logged_with(global_filter(None), || {
+            record_outcome(
+                "テスト台本",
+                &Err(anyhow::anyhow!("二重に出てはいけない理由")),
+            );
+        });
+
+        assert!(
+            !logged.contains("二重に出てはいけない理由"),
+            "全体ログには出さない: {logged}"
+        );
+    }
+
+    /// 全体ログは通常の info を落とさない(除外するのは run.log 専用ログだけ)。
+    #[test]
+    fn global_filter_keeps_ordinary_info() {
+        let logged = logged_with(global_filter(None), || tracing::info!("通常の進捗"));
+
+        assert!(
+            logged.contains("通常の進捗"),
+            "全体ログは info を残すべき: {logged}"
+        );
+    }
+
+    /// 台本が失敗したとき、その台本の run.log に失敗理由を残す。
+    /// これがないと run.log は処理途中で途切れ、何で落ちたかが台本側に残らない。
+    #[test]
+    fn records_failure_reason_while_run_log_is_still_bound() {
+        let logged = logged_with(file_filter(None), || {
+            let result = Err(anyhow::anyhow!("エンジン起動に失敗しました"));
+            record_outcome("テスト台本", &result);
+        });
+
+        assert!(
+            logged.contains("エンジン起動に失敗しました"),
+            "失敗理由を残すべき: {logged}"
+        );
+    }
+
+    /// 成功した台本にはエラーを残さない。
+    #[test]
+    fn records_nothing_on_success() {
+        let logged = logged_with(file_filter(None), || record_outcome("テスト台本", &Ok(())));
+
+        assert!(
+            !logged.contains("ERROR"),
+            "成功時にエラーを残してはいけない: {logged}"
+        );
     }
 }
