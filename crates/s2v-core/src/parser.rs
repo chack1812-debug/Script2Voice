@@ -219,7 +219,8 @@ impl ScriptParser {
 
     fn parse_asset_line(&mut self, line: &str) {
         if let Some((k, v)) = line.split_once('=') {
-            self.asset_config.insert(k.trim().to_string(), v.trim().to_string());
+            self.asset_config
+                .insert(k.trim().to_string(), v.trim().to_string());
         }
     }
 
@@ -253,16 +254,25 @@ impl ScriptParser {
         let volume = raw.remove("volume").unwrap_or(1.0);
         let height = raw.remove("height");
 
-        let mut params: HashMap<String, Value> = raw
-            .into_iter()
-            .map(|(k, v)| (k, Value::from(v)))
-            .collect();
+        let mut params: HashMap<String, Value> =
+            raw.into_iter().map(|(k, v)| (k, Value::from(v))).collect();
         params.insert("style".to_string(), Value::String(style));
 
         let cast_key = name.clone();
         self.casts.insert(
             cast_key.clone(),
-            Cast { name, speaker_name, engine_type, pan, distance, volume, params, height, height_offset: 0.0, appearance: None },
+            Cast {
+                name,
+                speaker_name,
+                engine_type,
+                pan,
+                distance,
+                volume,
+                params,
+                height,
+                height_offset: 0.0,
+                appearance: None,
+            },
         );
         self.pending_cast_name = Some(cast_key);
     }
@@ -285,9 +295,16 @@ impl ScriptParser {
             let cmd = parts[0];
             let arg = parts.get(1).map(|s| s.trim()).unwrap_or("");
             return match cmd {
-                "pause" => arg.parse::<f64>().ok().map(|ms| ScriptItem::Command(ScriptCommand::Pause(ms))),
+                "pause" => arg
+                    .parse::<f64>()
+                    .ok()
+                    .map(|ms| ScriptItem::Command(ScriptCommand::Pause(ms))),
                 "paragraph" => {
-                    let name = if arg.is_empty() { None } else { Some(arg.to_string()) };
+                    let name = if arg.is_empty() {
+                        None
+                    } else {
+                        Some(arg.to_string())
+                    };
                     let name = match name {
                         Some(n) if n.contains(']') => {
                             self.warnings.push(ParseWarning {
@@ -309,7 +326,9 @@ impl ScriptParser {
                     };
                     Some(ScriptItem::Command(ScriptCommand::Paragraph(name)))
                 }
-                "bgm_start" => Some(ScriptItem::Command(ScriptCommand::BgmStart(arg.to_string()))),
+                "bgm_start" => Some(ScriptItem::Command(ScriptCommand::BgmStart(
+                    arg.to_string(),
+                ))),
                 "bgm_stop" => Some(ScriptItem::Command(ScriptCommand::BgmStop)),
                 "se" => Some(ScriptItem::Command(ScriptCommand::Se(arg.to_string()))),
                 _ => None,
@@ -494,11 +513,16 @@ paragraph 1000
     #[test]
     fn parses_speech_items() {
         let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
-        let speeches: Vec<_> = scenes[0].items.iter().filter(|i| {
-            matches!(i, ScriptItem::Speech { .. })
-        }).collect();
+        let speeches: Vec<_> = scenes[0]
+            .items
+            .iter()
+            .filter(|i| matches!(i, ScriptItem::Speech { .. }))
+            .collect();
         assert_eq!(speeches.len(), 3);
-        if let ScriptItem::Speech { cast_name, text, .. } = &speeches[0] {
+        if let ScriptItem::Speech {
+            cast_name, text, ..
+        } = &speeches[0]
+        {
             assert_eq!(cast_name, "ずんだもん");
             assert_eq!(text, "こんにちは！");
         } else {
@@ -509,9 +533,10 @@ paragraph 1000
     #[test]
     fn parses_pause_command() {
         let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
-        let pause_item = scenes[0].items.iter().find(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::Pause(_)))
-        });
+        let pause_item = scenes[0]
+            .items
+            .iter()
+            .find(|i| matches!(i, ScriptItem::Command(ScriptCommand::Pause(_))));
         assert!(pause_item.is_some());
         if let ScriptItem::Command(ScriptCommand::Pause(ms)) = pause_item.unwrap() {
             assert!((ms - 500.0).abs() < 1e-6);
@@ -521,9 +546,10 @@ paragraph 1000
     #[test]
     fn parses_paragraph_command() {
         let scenes = ScriptParser::new().parse_str(SIMPLE_SCRIPT).unwrap();
-        let found = scenes[0].items.iter().any(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::Paragraph(None)))
-        });
+        let found = scenes[0]
+            .items
+            .iter()
+            .any(|i| matches!(i, ScriptItem::Command(ScriptCommand::Paragraph(None))));
         assert!(found);
     }
 
@@ -589,7 +615,10 @@ A:こんにちは
             _ => None,
         });
         assert_eq!(name, Some(Some("a/b".to_string())));
-        assert!(parser.warnings.iter().any(|w| w.message.contains("ファイル名")));
+        assert!(parser
+            .warnings
+            .iter()
+            .any(|w| w.message.contains("ファイル名")));
     }
 
     #[test]
@@ -629,7 +658,11 @@ A:セリフ
 A:続き
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        let count = scenes[0].items.iter().filter(|i| matches!(i, ScriptItem::Speech { .. })).count();
+        let count = scenes[0]
+            .items
+            .iter()
+            .filter(|i| matches!(i, ScriptItem::Speech { .. }))
+            .count();
         assert_eq!(count, 2);
     }
 
@@ -648,9 +681,10 @@ A:セリフA
 B:セリフB
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        let parallel = scenes[0].items.iter().find(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::Parallel(_)))
-        });
+        let parallel = scenes[0]
+            .items
+            .iter()
+            .find(|i| matches!(i, ScriptItem::Command(ScriptCommand::Parallel(_))));
         assert!(parallel.is_some());
         if let ScriptItem::Command(ScriptCommand::Parallel(n)) = parallel.unwrap() {
             assert_eq!(*n, 2);
@@ -669,7 +703,10 @@ A:A:スタイル,voicevox
 A:'東京|とうきょう'に行く
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
+        if let ScriptItem::Speech {
+            text, display_text, ..
+        } = &scenes[0].items[0]
+        {
             assert_eq!(text, "とうきょうに行く");
             assert_eq!(display_text, "東京に行く");
         } else {
@@ -689,7 +726,10 @@ A:A:スタイル,voicevox
 A:'13:00|じゅうさんじ'に始めます
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
+        if let ScriptItem::Speech {
+            text, display_text, ..
+        } = &scenes[0].items[0]
+        {
             assert_eq!(text, "じゅうさんじに始めます");
             assert_eq!(display_text, "13:00に始めます");
         } else {
@@ -709,7 +749,10 @@ A:A:スタイル,voicevox
 A:'東京:とうきょう'に行く
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        if let ScriptItem::Speech { text, display_text, .. } = &scenes[0].items[0] {
+        if let ScriptItem::Speech {
+            text, display_text, ..
+        } = &scenes[0].items[0]
+        {
             assert_eq!(text, "'東京:とうきょう'に行く");
             assert_eq!(display_text, "'東京:とうきょう'に行く");
         } else {
@@ -737,7 +780,8 @@ A:'東京｜とうきょう'に行く
         }
         assert!(
             parser.warnings.iter().any(|w| w.message.contains("｜")),
-            "全角パイプの警告が出るべき: {:?}", parser.warnings
+            "全角パイプの警告が出るべき: {:?}",
+            parser.warnings
         );
     }
 
@@ -753,12 +797,14 @@ A:'東京｜とうきょう'に行く
 #bgm_stop
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        let bgm_start = scenes[0].items.iter().any(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::BgmStart(_)))
-        });
-        let bgm_stop = scenes[0].items.iter().any(|i| {
-            matches!(i, ScriptItem::Command(ScriptCommand::BgmStop))
-        });
+        let bgm_start = scenes[0]
+            .items
+            .iter()
+            .any(|i| matches!(i, ScriptItem::Command(ScriptCommand::BgmStart(_))));
+        let bgm_stop = scenes[0]
+            .items
+            .iter()
+            .any(|i| matches!(i, ScriptItem::Command(ScriptCommand::BgmStop)));
         assert!(bgm_start, "bgm_start not found");
         assert!(bgm_stop, "bgm_stop not found");
     }
@@ -795,7 +841,9 @@ A(pan=15,distance=2):セリフ
     #[test]
     fn scene_header_parses_room_dims_and_listener() {
         let p = ScriptParser::new();
-        let sc = p.parse_scene_header("ホール room_w=25 room_d=45 room_h=18 listener_dx=0 listener_dy=-15");
+        let sc = p.parse_scene_header(
+            "ホール room_w=25 room_d=45 room_h=18 listener_dx=0 listener_dy=-15",
+        );
         assert_eq!(sc.name, "ホール");
         assert_eq!(sc.room_w, Some(25.0));
         assert_eq!(sc.room_d, Some(45.0));
@@ -834,20 +882,42 @@ A(pan=15,distance=2):セリフ
         let scenes = parser.parse_str(second_script).unwrap();
 
         // 前の台本のキャストが漏れて有効な話者として扱われてはいけない
-        let speeches: Vec<_> = scenes[0].items.iter()
+        let speeches: Vec<_> = scenes[0]
+            .items
+            .iter()
             .filter(|i| matches!(i, ScriptItem::Speech { .. }))
             .collect();
-        assert_eq!(speeches.len(), 0, "前の台本のキャストが引き継がれてはいけない");
+        assert_eq!(
+            speeches.len(),
+            0,
+            "前の台本のキャストが引き継がれてはいけない"
+        );
         assert!(
-            parser.warnings().iter().any(|w| w.message.contains("ずんだもん")),
-            "未定義キャストとして警告が出るべき: {:?}", parser.warnings()
+            parser
+                .warnings()
+                .iter()
+                .any(|w| w.message.contains("ずんだもん")),
+            "未定義キャストとして警告が出るべき: {:?}",
+            parser.warnings()
         );
 
         // pause_configも既定値(500/300/1500)に戻っているべき(前の台本は200/500/1000)
         let pc = &scenes[0].pause_config;
-        assert!((pc.sentence_ms - 500.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.sentence_ms);
-        assert!((pc.cast_ms - 300.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.cast_ms);
-        assert!((pc.paragraph_ms - 1500.0).abs() < 1e-6, "既定値に戻っているべき: {}", pc.paragraph_ms);
+        assert!(
+            (pc.sentence_ms - 500.0).abs() < 1e-6,
+            "既定値に戻っているべき: {}",
+            pc.sentence_ms
+        );
+        assert!(
+            (pc.cast_ms - 300.0).abs() < 1e-6,
+            "既定値に戻っているべき: {}",
+            pc.cast_ms
+        );
+        assert!(
+            (pc.paragraph_ms - 1500.0).abs() < 1e-6,
+            "既定値に戻っているべき: {}",
+            pc.paragraph_ms
+        );
     }
 
     #[test]
@@ -856,7 +926,11 @@ A(pan=15,distance=2):セリフ
         let src = "@scene テスト room_size=0.1\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\nA:こんにちは\n誰か:こんばんは\n";
         let scenes = p.parse_str(src).unwrap();
         // 未定義キャスト行は従来どおり無視される
-        let n = scenes[0].items.iter().filter(|i| matches!(i, ScriptItem::Speech { .. })).count();
+        let n = scenes[0]
+            .items
+            .iter()
+            .filter(|i| matches!(i, ScriptItem::Speech { .. }))
+            .count();
         assert_eq!(n, 1);
         // 警告が行番号付きで記録される
         let w = p.warnings();
@@ -1037,7 +1111,8 @@ A：こんにちは
         assert!(scenes[0].items.is_empty(), "全角：の行は台詞として扱わない");
         assert!(
             parser.warnings.iter().any(|w| w.message.contains("全角")),
-            "全角：の警告が出るべき: {:?}", parser.warnings
+            "全角：の警告が出るべき: {:?}",
+            parser.warnings
         );
     }
 
@@ -1053,7 +1128,10 @@ A:A:スタイル,voicevox
 A:開始は'13:00|じゅうさんじ'です
 "#;
         let scenes = ScriptParser::new().parse_str(script).unwrap();
-        if let ScriptItem::Speech { cast_name, text, .. } = &scenes[0].items[0] {
+        if let ScriptItem::Speech {
+            cast_name, text, ..
+        } = &scenes[0].items[0]
+        {
             assert_eq!(cast_name, "A");
             assert_eq!(text, "開始はじゅうさんじです");
         } else {

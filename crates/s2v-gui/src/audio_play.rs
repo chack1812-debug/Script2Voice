@@ -39,7 +39,12 @@ impl Player {
         let (stream, handle) = rodio::OutputStream::try_default().ok()?;
         let bound_device = current_default_device_name();
         tracing::info!("音声出力デバイス(起動時にバインド): {bound_device}");
-        Some(Self { _stream: stream, handle, sink: None, bound_device })
+        Some(Self {
+            _stream: stream,
+            handle,
+            sink: None,
+            bound_device,
+        })
     }
 
     pub fn play(&mut self, path: &Path) -> anyhow::Result<()> {
@@ -58,7 +63,11 @@ impl Player {
                 self.bound_device, now
             );
         }
-        tracing::info!("再生デバイス='{}' preroll={}ms ch={ch} sr={sr}", self.bound_device, PREROLL_MS);
+        tracing::info!(
+            "再生デバイス='{}' preroll={}ms ch={ch} sr={sr}",
+            self.bound_device,
+            PREROLL_MS
+        );
 
         let sink = rodio::Sink::try_new(&self.handle)?;
         // (B) 冒頭の欠落を吸収する無音プリロールを先に流し、続けて本体を再生する。
@@ -83,7 +92,14 @@ mod tests {
     fn preroll_silence_has_expected_zero_samples() {
         // 2ch・48kHz・1000ms → 96000 サンプル（フレーム丸めで誤差を許容）。全て無音であること。
         let collected: Vec<i16> = preroll_silence(2, 48000, 1000).collect();
-        assert!((collected.len() as i64 - 96000).abs() <= 8, "実際: {}", collected.len());
-        assert!(collected.iter().all(|&x| x == 0), "プリロールは全て無音であること");
+        assert!(
+            (collected.len() as i64 - 96000).abs() <= 8,
+            "実際: {}",
+            collected.len()
+        );
+        assert!(
+            collected.iter().all(|&x| x == 0),
+            "プリロールは全て無音であること"
+        );
     }
 }

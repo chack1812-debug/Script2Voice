@@ -3,8 +3,8 @@
 mod app;
 mod audio_play;
 mod fonts;
-mod jobs;
 mod history;
+mod jobs;
 mod logbuf;
 mod presets;
 mod room_view;

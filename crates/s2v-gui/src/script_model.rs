@@ -152,7 +152,8 @@ mod tests {
         assert!(!w.poll(), "初回登録時は変更扱いしない");
         // mtime を未来に更新して変更を模擬
         let f = std::fs::File::options().write(true).open(&path).unwrap();
-        f.set_modified(SystemTime::now() + Duration::from_secs(2)).unwrap();
+        f.set_modified(SystemTime::now() + Duration::from_secs(2))
+            .unwrap();
         drop(f);
         assert!(w.poll());
         assert!(!w.poll(), "同じ mtime では再通知しない");

@@ -8,7 +8,7 @@ use reqwest::Client;
 use s2v_core::Cast;
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use crate::engine::Engine;
 use crate::process::{
@@ -72,7 +72,11 @@ impl HttpEngine {
     }
 
     async fn refresh_cache(&self) -> anyhow::Result<()> {
-        let res = self.client.get(format!("{}/speakers", self.url)).send().await?;
+        let res = self
+            .client
+            .get(format!("{}/speakers", self.url))
+            .send()
+            .await?;
         if !res.status().is_success() {
             anyhow::bail!("{}: /speakers returned {}", self.name, res.status());
         }
@@ -93,14 +97,22 @@ impl HttpEngine {
                 .collect();
             cache.insert(speaker_name, styles);
         }
-        info!("[{}] スピーカーキャッシュを更新しました ({} 話者)", self.name, cache.len());
+        info!(
+            "[{}] スピーカーキャッシュを更新しました ({} 話者)",
+            self.name,
+            cache.len()
+        );
         Ok(())
     }
 
     async fn resolve_style_id(&self, cast: &Cast) -> Option<u32> {
         let cache = self.cache.read().await;
         let styles = cache.get(&cast.speaker_name)?;
-        let target = cast.params.get("style").and_then(|v| v.as_str()).unwrap_or("ノーマル");
+        let target = cast
+            .params
+            .get("style")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ノーマル");
         if let Some(&id) = styles.get(target) {
             return Some(id);
         }
@@ -142,7 +154,10 @@ impl Engine for HttpEngine {
         // キャッシュはブロッキングで読める場合のみ検証（非同期コンテキスト外）
         if let Ok(cache) = self.cache.try_read() {
             if !cache.contains_key(&cast.speaker_name) {
-                error!("[{}] 話者 '{}' が見つかりません", self.name, cast.speaker_name);
+                error!(
+                    "[{}] 話者 '{}' が見つかりません",
+                    self.name, cast.speaker_name
+                );
                 return false;
             }
         }
@@ -150,10 +165,13 @@ impl Engine for HttpEngine {
     }
 
     async fn synthesize(&self, text: &str, cast: &Cast, output: &Path) -> anyhow::Result<()> {
-        let style_id = self
-            .resolve_style_id(cast)
-            .await
-            .ok_or_else(|| anyhow::anyhow!("{}: 話者 '{}' のスタイル解決失敗", self.name, cast.speaker_name))?;
+        let style_id = self.resolve_style_id(cast).await.ok_or_else(|| {
+            anyhow::anyhow!(
+                "{}: 話者 '{}' のスタイル解決失敗",
+                self.name,
+                cast.speaker_name
+            )
+        })?;
 
         // audio_query
         let q_res = self
@@ -201,8 +219,8 @@ impl Engine for HttpEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use serde_json::Value;
+    use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -244,12 +262,16 @@ mod tests {
     #[tokio::test]
     async fn activate_succeeds_when_server_up() {
         let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/version"))
+        Mock::given(method("GET"))
+            .and(path("/version"))
             .respond_with(ResponseTemplate::new(200).set_body_string("0.14.0"))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/speakers"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
@@ -264,12 +286,16 @@ mod tests {
     #[tokio::test]
     async fn activate_populates_speaker_cache() {
         let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/version"))
+        Mock::given(method("GET"))
+            .and(path("/version"))
             .respond_with(ResponseTemplate::new(200).set_body_string("0.14.0"))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/speakers"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
@@ -284,22 +310,35 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let out_path = tmp.path().to_path_buf();
 
-        Mock::given(method("GET")).and(path("/version"))
+        Mock::given(method("GET"))
+            .and(path("/version"))
             .respond_with(ResponseTemplate::new(200).set_body_string("0.14.0"))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/speakers"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/audio_query"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"speedScale": 1.0})))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/synthesis"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/audio_query"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"speedScale": 1.0})),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/synthesis"))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(b"RIFF....".to_vec()))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
-        engine.synthesize("こんにちは", &dummy_cast(), &out_path).await.unwrap();
+        engine
+            .synthesize("こんにちは", &dummy_cast(), &out_path)
+            .await
+            .unwrap();
 
         assert!(out_path.exists());
         assert!(std::fs::metadata(&out_path).unwrap().len() > 0);
@@ -309,19 +348,27 @@ mod tests {
     async fn synthesize_fails_when_audio_query_returns_error() {
         let server = MockServer::start().await;
 
-        Mock::given(method("GET")).and(path("/version"))
+        Mock::given(method("GET"))
+            .and(path("/version"))
             .respond_with(ResponseTemplate::new(200).set_body_string("0.14.0"))
-            .mount(&server).await;
-        Mock::given(method("GET")).and(path("/speakers"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/audio_query"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/audio_query"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
-        let result = engine.synthesize("テスト", &dummy_cast(), Path::new("/tmp/out.wav")).await;
+        let result = engine
+            .synthesize("テスト", &dummy_cast(), Path::new("/tmp/out.wav"))
+            .await;
         assert!(result.is_err());
     }
 }

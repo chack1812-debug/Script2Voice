@@ -10,11 +10,14 @@ use s2v_core::{BgmConfig, Cast, Config, Scene, ScriptCommand, ScriptItem, Timeli
 use s2v_engines::{EngineManager, HttpEngine, XttsEngine};
 use s2v_export::Exporter;
 use tokio::sync::Semaphore;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 /// `--config` 省略時に使用する設定ファイルパスを決定する。
 /// 明示指定があればそれを優先し、なければ実行ファイルと同じディレクトリの `config.toml` を返す。
-pub fn resolve_config_path(explicit: Option<PathBuf>, exe_path: Option<&std::path::Path>) -> PathBuf {
+pub fn resolve_config_path(
+    explicit: Option<PathBuf>,
+    exe_path: Option<&std::path::Path>,
+) -> PathBuf {
     if let Some(path) = explicit {
         return path;
     }
@@ -43,24 +46,42 @@ pub fn build_engine_manager(config: &Config) -> EngineManager {
     let mut em = EngineManager::new();
     em.register(
         "voicevox",
-        Arc::new(HttpEngine::with_exe_path(
-            "voicevox", &config.voicevox.url, Arc::clone(&client), config.voicevox.exe_path.clone(),
-        ).with_args(config.voicevox.args.clone())
-         .with_startup_timeout(timeout(config.voicevox.startup_timeout_s))),
+        Arc::new(
+            HttpEngine::with_exe_path(
+                "voicevox",
+                &config.voicevox.url,
+                Arc::clone(&client),
+                config.voicevox.exe_path.clone(),
+            )
+            .with_args(config.voicevox.args.clone())
+            .with_startup_timeout(timeout(config.voicevox.startup_timeout_s)),
+        ),
     );
     em.register(
         "aivis",
-        Arc::new(HttpEngine::with_exe_path(
-            "aivis", &config.aivis.url, Arc::clone(&client), config.aivis.exe_path.clone(),
-        ).with_args(config.aivis.args.clone())
-         .with_startup_timeout(timeout(config.aivis.startup_timeout_s))),
+        Arc::new(
+            HttpEngine::with_exe_path(
+                "aivis",
+                &config.aivis.url,
+                Arc::clone(&client),
+                config.aivis.exe_path.clone(),
+            )
+            .with_args(config.aivis.args.clone())
+            .with_startup_timeout(timeout(config.aivis.startup_timeout_s)),
+        ),
     );
     em.register(
         "xtts",
-        Arc::new(XttsEngine::with_exe_path(
-            "xtts", &config.xtts.url, Arc::clone(&client), config.xtts.exe_path.clone(),
-        ).with_args(config.xtts.args.clone())
-         .with_startup_timeout(timeout(config.xtts.startup_timeout_s))),
+        Arc::new(
+            XttsEngine::with_exe_path(
+                "xtts",
+                &config.xtts.url,
+                Arc::clone(&client),
+                config.xtts.exe_path.clone(),
+            )
+            .with_args(config.xtts.args.clone())
+            .with_startup_timeout(timeout(config.xtts.startup_timeout_s)),
+        ),
     );
     em
 }
@@ -83,7 +104,10 @@ fn emit(events: &Option<Sender<ProduceEvent>>, ev: ProduceEvent) {
 }
 
 fn is_cancelled(cancel: &Option<Arc<AtomicBool>>) -> bool {
-    cancel.as_ref().map(|c| c.load(Ordering::SeqCst)).unwrap_or(false)
+    cancel
+        .as_ref()
+        .map(|c| c.load(Ordering::SeqCst))
+        .unwrap_or(false)
 }
 
 pub struct Producer {
@@ -156,7 +180,9 @@ impl Producer {
         std::fs::create_dir_all(&audio_dir)?;
         std::fs::create_dir_all(project_root.join("timeline"))?;
 
-        let cpu_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        let cpu_cores = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
         let audio_concurrency = if config.concurrency.audio_process == 0 {
             cpu_cores
         } else {
@@ -201,7 +227,14 @@ impl Producer {
 
         for (si, scene) in scenes.iter().enumerate() {
             for (ii, item) in scene.items.iter().enumerate() {
-                let ScriptItem::Speech { cast_name, text, display_text, offset_params, scene_config } = item else {
+                let ScriptItem::Speech {
+                    cast_name,
+                    text,
+                    display_text,
+                    offset_params,
+                    scene_config,
+                } = item
+                else {
                     continue;
                 };
                 let Some(cast) = scene.casts.get(cast_name) else {
@@ -213,25 +246,33 @@ impl Producer {
                 counter += 1;
                 let raw_path = self.audio_dir.join(filename.replace(".wav", "_raw.wav"));
                 let final_path = self.audio_dir.join(&filename);
-                tasks.push((si, ii, SynthTask {
-                    cast: effective,
-                    text: text.clone(),
-                    display_text: display_text.clone(),
-                    raw_path,
-                    final_path,
-                    scene_config: scene_config.clone(),
-                    duration_ms: 0.0,
-                }));
+                tasks.push((
+                    si,
+                    ii,
+                    SynthTask {
+                        cast: effective,
+                        text: text.clone(),
+                        display_text: display_text.clone(),
+                        raw_path,
+                        final_path,
+                        scene_config: scene_config.clone(),
+                        duration_ms: 0.0,
+                    },
+                ));
             }
         }
-        info!("Phase1完了: {} 件の speech アイテムを登録しました。", tasks.len());
+        info!(
+            "Phase1完了: {} 件の speech アイテムを登録しました。",
+            tasks.len()
+        );
 
         let total = tasks.len();
         let done = Arc::new(AtomicUsize::new(0));
         emit(&events, ProduceEvent::Phase("合成".into()));
 
         // ── 出力ロック対策: 生成一式の共通連番サフィックスを決定 ───────────
-        let default_files: Vec<PathBuf> = tasks.iter()
+        let default_files: Vec<PathBuf> = tasks
+            .iter()
             .map(|(_, _, t)| t.final_path.clone())
             .chain([
                 self.project_root.join("timeline").join("subtitles.srt"),
@@ -242,7 +283,8 @@ impl Producer {
             .collect();
         // ロックファイルにより、他プロセスが同じ台本を同時処理していても同じsuffixを
         // 選ばないようにする(TOCTOU対策)。生成完了までこのガードを保持し続ける。
-        let (suffix, _generation_lock) = s2v_export::resolve_generation_suffix(&default_files, &self.project_root, 100)?;
+        let (suffix, _generation_lock) =
+            s2v_export::resolve_generation_suffix(&default_files, &self.project_root, 100)?;
         if !suffix.is_empty() {
             warn!("出力ファイルのいずれかが使用中のため、今回の生成一式を連番 {suffix} で保存します。");
         }
@@ -252,9 +294,14 @@ impl Producer {
 
         // ── Phase 2: 並列合成 + 音響処理 ──────────────────────────────────
         // IRキャッシュ事前ウォームアップ
-        let reverb_params: Vec<(f64, usize)> = tasks.iter()
+        let reverb_params: Vec<(f64, usize)> = tasks
+            .iter()
             .map(|(_, _, t)| {
-                let rs = t.cast.params.get("room_size").and_then(|v| v.as_f64())
+                let rs = t
+                    .cast
+                    .params
+                    .get("room_size")
+                    .and_then(|v| v.as_f64())
                     .or(t.scene_config.room_size)
                     .unwrap_or(self.audio_processor.config_room_size());
                 self.audio_processor.reverb_params_for(&t.scene_config, rs)
@@ -265,9 +312,18 @@ impl Producer {
         // Semaphore 設定
         let sems: HashMap<String, Arc<Semaphore>> = {
             let mut m = HashMap::new();
-            m.insert("voicevox".to_string(), Arc::new(Semaphore::new(self.concurrency.voicevox)));
-            m.insert("aivis".to_string(), Arc::new(Semaphore::new(self.concurrency.aivis)));
-            m.insert("xtts".to_string(), Arc::new(Semaphore::new(self.concurrency.xtts)));
+            m.insert(
+                "voicevox".to_string(),
+                Arc::new(Semaphore::new(self.concurrency.voicevox)),
+            );
+            m.insert(
+                "aivis".to_string(),
+                Arc::new(Semaphore::new(self.concurrency.aivis)),
+            );
+            m.insert(
+                "xtts".to_string(),
+                Arc::new(Semaphore::new(self.concurrency.xtts)),
+            );
             m
         };
         let proc_sem = Arc::new(Semaphore::new(self.concurrency.audio_process));
@@ -294,7 +350,8 @@ impl Producer {
                     return Ok(task); // 合成せず即返す
                 }
 
-                let engine_sem = sems.get(&task.cast.engine_type)
+                let engine_sem = sems
+                    .get(&task.cast.engine_type)
                     .cloned()
                     .unwrap_or_else(|| Arc::new(Semaphore::new(2)));
 
@@ -313,16 +370,19 @@ impl Producer {
                 let cast = task.cast.clone();
                 let sc = task.scene_config.clone();
                 let ap2 = Arc::clone(&ap);
-                let result = tokio::task::spawn_blocking(move || {
-                    ap2.process(&raw, &fin, &cast, &sc)
-                }).await;
+                let result =
+                    tokio::task::spawn_blocking(move || ap2.process(&raw, &fin, &cast, &sc)).await;
 
                 let _ = std::fs::remove_file(&task.raw_path);
 
                 match result {
                     Ok(Ok(n)) => {
                         task.duration_ms = n as f64 / ap.config_sample_rate() as f64 * 1000.0;
-                        info!("完了: {} ({:.0}ms)", task.final_path.display(), task.duration_ms);
+                        info!(
+                            "完了: {} ({:.0}ms)",
+                            task.final_path.display(),
+                            task.duration_ms
+                        );
                         let d = done.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                         emit(&ev_tx, ProduceEvent::ItemFinished { done: d, total });
                         Ok(task)
@@ -350,22 +410,38 @@ impl Producer {
         let mut failures: Vec<TaskFailure> = Vec::new();
         for (si, ii, text, cast_name, handle) in handles {
             match handle.await {
-                Ok(Ok(task)) => { task_map.insert((si, ii), task); }
-                Ok(Err(reason)) => failures.push(TaskFailure { text, cast_name, reason }),
+                Ok(Ok(task)) => {
+                    task_map.insert((si, ii), task);
+                }
+                Ok(Err(reason)) => failures.push(TaskFailure {
+                    text,
+                    cast_name,
+                    reason,
+                }),
                 Err(e) => {
                     error!("タスクパニック: {e}");
-                    failures.push(TaskFailure { text, cast_name, reason: format!("タスクパニック: {e}") });
+                    failures.push(TaskFailure {
+                        text,
+                        cast_name,
+                        reason: format!("タスクパニック: {e}"),
+                    });
                 }
             }
         }
         if is_cancelled(&cancel) {
             anyhow::bail!("ユーザーによりキャンセルされました");
         }
-        info!("Phase2完了: 全音声の合成・処理が終わりました。（失敗 {} 件）", failures.len());
+        info!(
+            "Phase2完了: 全音声の合成・処理が終わりました。（失敗 {} 件）",
+            failures.len()
+        );
 
         // ── Phase 3: タイムライン構築 ──────────────────────────────────────
         emit(&events, ProduceEvent::Phase("タイムライン".into()));
-        let pause_config = scenes.first().map(|s| s.pause_config.clone()).unwrap_or_default();
+        let pause_config = scenes
+            .first()
+            .map(|s| s.pause_config.clone())
+            .unwrap_or_default();
         let mut timeline = TimelineProcessor::new(&pause_config);
         let mut last_cast: Option<String> = None;
 
@@ -380,21 +456,30 @@ impl Producer {
                         let anchor = timeline.current_ms;
                         let mut occupied = Vec::new();
                         for j in 1..=*n {
-                            if ii + j >= items.len() { break; }
+                            if ii + j >= items.len() {
+                                break;
+                            }
                             let task = task_map.get(&(si, ii + j));
                             if let Some(t) = task {
-                                let delay = t.cast.params.get("delay")
-                                    .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                                let delay = t
+                                    .cast
+                                    .params
+                                    .get("delay")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0);
                                 timeline.register_audio(
-                                    t.final_path.clone(), t.duration_ms,
+                                    t.final_path.clone(),
+                                    t.duration_ms,
                                     anchor + delay,
-                                    t.text.clone(), t.display_text.clone(),
+                                    t.text.clone(),
+                                    t.display_text.clone(),
                                     t.cast.name.clone(),
                                 );
                                 occupied.push(delay + t.duration_ms);
                             }
                         }
-                        if let Some(&max) = occupied.iter().reduce(|a, b| if a > b { a } else { b }) {
+                        if let Some(&max) = occupied.iter().reduce(|a, b| if a > b { a } else { b })
+                        {
                             timeline.advance_after_parallel(anchor, max, None);
                         }
                         last_cast = None;
@@ -403,35 +488,43 @@ impl Producer {
                     }
                     ScriptItem::Speech { cast_name, .. } => {
                         if let Some(t) = task_map.get(&(si, ii)) {
-                            let delay = t.cast.params.get("delay")
-                                .and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let delay = t
+                                .cast
+                                .params
+                                .get("delay")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
                             let start = timeline.current_ms + delay;
                             timeline.register_audio(
-                                t.final_path.clone(), t.duration_ms,
+                                t.final_path.clone(),
+                                t.duration_ms,
                                 start,
-                                t.text.clone(), t.display_text.clone(),
+                                t.text.clone(),
+                                t.display_text.clone(),
                                 t.cast.name.clone(),
                             );
-                            let pause = speech_pause(last_cast.as_deref(), cast_name, timeline.cast_pause_ms);
+                            let pause = speech_pause(
+                                last_cast.as_deref(),
+                                cast_name,
+                                timeline.cast_pause_ms,
+                            );
                             last_cast = Some(cast_name.clone());
                             timeline.advance_after_speech(t.duration_ms, pause);
                         } else {
                             last_cast = None;
                         }
                     }
-                    ScriptItem::Command(cmd) => {
-                        match cmd {
-                            ScriptCommand::Pause(ms) => timeline.advance_pause(*ms),
-                            ScriptCommand::Paragraph(name) => {
-                                timeline.register_paragraph(name.clone());
-                                timeline.advance_paragraph();
-                            }
-                            ScriptCommand::BgmStart(path) => timeline.register_bgm(PathBuf::from(path)),
-                            ScriptCommand::BgmStop => timeline.register_bgm_stop(),
-                            ScriptCommand::Se(path) => timeline.register_se(PathBuf::from(path)),
-                            ScriptCommand::Parallel(_) => unreachable!(),
+                    ScriptItem::Command(cmd) => match cmd {
+                        ScriptCommand::Pause(ms) => timeline.advance_pause(*ms),
+                        ScriptCommand::Paragraph(name) => {
+                            timeline.register_paragraph(name.clone());
+                            timeline.advance_paragraph();
                         }
-                    }
+                        ScriptCommand::BgmStart(path) => timeline.register_bgm(PathBuf::from(path)),
+                        ScriptCommand::BgmStop => timeline.register_bgm_stop(),
+                        ScriptCommand::Se(path) => timeline.register_se(PathBuf::from(path)),
+                        ScriptCommand::Parallel(_) => unreachable!(),
+                    },
                 }
                 ii += 1;
             }
@@ -441,8 +534,13 @@ impl Producer {
         // エクスポート
         emit(&events, ProduceEvent::Phase("書き出し".into()));
         let timeline_events = timeline.into_events();
-        let exporter = Exporter::new(&timeline_events, &self.project_root, self.sample_rate, self.bgm_config.clone())
-            .with_fcpxml_fps(self.fcpxml_fps);
+        let exporter = Exporter::new(
+            &timeline_events,
+            &self.project_root,
+            self.sample_rate,
+            self.bgm_config.clone(),
+        )
+        .with_fcpxml_fps(self.fcpxml_fps);
         exporter.generate_srt(&suffix)?;
         exporter.generate_timeline_json(&suffix)?;
         exporter.generate_fcpxml(&suffix)?;
@@ -452,7 +550,10 @@ impl Producer {
         if !failures.is_empty() {
             let success = total - failures.len();
             for f in &failures {
-                error!("台詞欠落: cast={} text={:?} reason={}", f.cast_name, f.text, f.reason);
+                error!(
+                    "台詞欠落: cast={} text={:?} reason={}",
+                    f.cast_name, f.text, f.reason
+                );
             }
             anyhow::bail!(
                 "{total}件中{}件の音声生成に失敗しました（成功{success}件）。詳細はログを参照してください。",
@@ -488,7 +589,10 @@ mod http_client_timeout_tests {
     #[tokio::test]
     async fn http_client_enforces_request_timeout_against_hanging_server() {
         let addr = spawn_hanging_server();
-        let http_config = s2v_core::HttpConfig { connect_timeout_s: 1, request_timeout_s: 1 };
+        let http_config = s2v_core::HttpConfig {
+            connect_timeout_s: 1,
+            request_timeout_s: 1,
+        };
         let client = build_http_client(&http_config);
 
         let url = format!("http://{addr}/version");
@@ -499,7 +603,10 @@ mod http_client_timeout_tests {
         let inner = outer.expect(
             "外側の5秒ガードより先にHTTPクライアント自身がタイムアウトすべき(request_timeout_sが効いていない)",
         );
-        assert!(inner.is_err(), "応答のないサーバーに対してrequest_timeoutでErrになるべき");
+        assert!(
+            inner.is_err(),
+            "応答のないサーバーに対してrequest_timeoutでErrになるべき"
+        );
     }
 }
 
@@ -527,13 +634,17 @@ mod produce_events_tests {
 
         let cancel = std::sync::Arc::new(AtomicBool::new(true)); // 最初からキャンセル済み
         let (tx, rx) = std::sync::mpsc::channel();
-        let result = producer.produce_with_events(&scenes, Some(tx), Some(cancel)).await;
+        let result = producer
+            .produce_with_events(&scenes, Some(tx), Some(cancel))
+            .await;
 
         let err = result.expect_err("キャンセル時は Err");
         assert!(err.to_string().contains("キャンセル"), "実際: {err}");
         // 合成はスキップされるので ItemFinished は1件も来ない
         let events: Vec<ProduceEvent> = rx.try_iter().collect();
-        assert!(!events.iter().any(|e| matches!(e, ProduceEvent::ItemFinished { .. })));
+        assert!(!events
+            .iter()
+            .any(|e| matches!(e, ProduceEvent::ItemFinished { .. })));
     }
 
     #[tokio::test]
@@ -551,8 +662,12 @@ mod produce_events_tests {
 
         let result = producer.produce(&scenes).await;
 
-        let err = result.expect_err("合成に失敗した台詞がある場合、produce は成功扱いにしてはならない");
-        assert!(err.to_string().contains('1'), "失敗件数が含まれるべき: {err}");
+        let err =
+            result.expect_err("合成に失敗した台詞がある場合、produce は成功扱いにしてはならない");
+        assert!(
+            err.to_string().contains('1'),
+            "失敗件数が含まれるべき: {err}"
+        );
 
         // 失敗した台詞のWAVは存在しない（duration=0の欠落イベントが残ってはいけない）
         let audio_dir = tmp.path().join("audio");
@@ -568,8 +683,15 @@ mod produce_events_tests {
 
     #[async_trait::async_trait]
     impl s2v_engines::Engine for AlwaysSucceedsEngine {
-        async fn activate(&self) -> anyhow::Result<()> { Ok(()) }
-        async fn synthesize(&self, _text: &str, _cast: &Cast, output: &std::path::Path) -> anyhow::Result<()> {
+        async fn activate(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        async fn synthesize(
+            &self,
+            _text: &str,
+            _cast: &Cast,
+            output: &std::path::Path,
+        ) -> anyhow::Result<()> {
             let spec = hound::WavSpec {
                 channels: 1,
                 sample_rate: 24000,
@@ -605,7 +727,10 @@ mod produce_events_tests {
 
         let result = producer.produce(&scenes).await;
         let err = result.expect_err("一部失敗があるので produce は Err を返すべき");
-        assert!(err.to_string().contains('1'), "失敗1件が含まれるべき: {err}");
+        assert!(
+            err.to_string().contains('1'),
+            "失敗1件が含まれるべき: {err}"
+        );
 
         // 成功した1件分のWAVのみ残る
         let audio_dir = tmp.path().join("audio");
@@ -614,13 +739,22 @@ mod produce_events_tests {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().extension().is_some_and(|x| x == "wav"))
             .count();
-        assert_eq!(wav_count, 1, "成功した1件分のWAVのみ残るはず: 実際={wav_count}");
+        assert_eq!(
+            wav_count, 1,
+            "成功した1件分のWAVのみ残るはず: 実際={wav_count}"
+        );
 
         // SRTには成功した台詞のみ含まれ、失敗した台詞は現れない
         let srt_path = tmp.path().join("timeline").join("subtitles.srt");
         let srt = std::fs::read_to_string(&srt_path).unwrap();
-        assert!(srt.contains("成功する台詞"), "成功した台詞はSRTに含まれるべき: {srt}");
-        assert!(!srt.contains("失敗する台詞"), "失敗した台詞はSRTに含まれてはいけない: {srt}");
+        assert!(
+            srt.contains("成功する台詞"),
+            "成功した台詞はSRTに含まれるべき: {srt}"
+        );
+        assert!(
+            !srt.contains("失敗する台詞"),
+            "失敗した台詞はSRTに含まれてはいけない: {srt}"
+        );
         assert!(tmp.path().join("timeline").join("timeline.json").exists());
     }
 }

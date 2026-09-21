@@ -28,7 +28,10 @@ pub fn parse_paragraph_markers(srt_text: &str) -> Vec<ParagraphMarker> {
         let m: f64 = cap[2].parse().unwrap();
         let s: f64 = cap[3].parse().unwrap();
         let ms: f64 = cap[4].parse().unwrap();
-        let name = cap.get(5).map(|g| g.as_str().trim().to_string()).filter(|s| !s.is_empty());
+        let name = cap
+            .get(5)
+            .map(|g| g.as_str().trim().to_string())
+            .filter(|s| !s.is_empty());
         markers.push(ParagraphMarker {
             time_s: h * 3600.0 + m * 60.0 + s + ms / 1000.0,
             name,
@@ -78,7 +81,10 @@ mod tests {
                    2\n00:00:01,500 --> 00:00:01,500\n[PARAGRAPH]\n\n\
                    3\n00:00:03,000 --> 00:00:03,800\nさようなら\n\n\
                    4\n00:01:05,250 --> 00:01:05,250\n[PARAGRAPH]\n\n";
-        let times: Vec<f64> = parse_paragraph_markers(srt).iter().map(|m| m.time_s).collect();
+        let times: Vec<f64> = parse_paragraph_markers(srt)
+            .iter()
+            .map(|m| m.time_s)
+            .collect();
         assert_eq!(times, vec![1.5, 65.25]);
     }
 
@@ -147,7 +153,10 @@ mod tests {
         let srt = "1\r\n00:00:00,000 --> 00:00:01,500\r\nこんにちは\r\n\r\n\
                    2\r\n00:00:01,500 --> 00:00:01,500\r\n[PARAGRAPH]\r\n\r\n\
                    3\r\n00:01:05,250 --> 00:01:05,250\r\n[PARAGRAPH]\r\n\r\n";
-        let times: Vec<f64> = parse_paragraph_markers(srt).iter().map(|m| m.time_s).collect();
+        let times: Vec<f64> = parse_paragraph_markers(srt)
+            .iter()
+            .map(|m| m.time_s)
+            .collect();
         assert_eq!(times, vec![1.5, 65.25]);
     }
 }

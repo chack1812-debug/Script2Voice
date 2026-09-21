@@ -69,7 +69,10 @@ where
         anyhow::anyhow!("{name}: サーバーに接続できず、exe_path も未設定のため起動できません")
     })?;
 
-    info!("[{name}] 起動を確認できません。プロセスを起動します: {path} {}", args.join(" "));
+    info!(
+        "[{name}] 起動を確認できません。プロセスを起動します: {path} {}",
+        args.join(" ")
+    );
     // `path` は絶対パス（実行ファイル）と PATH 上のコマンド名（例: "python"）の両方を許容する。
     // 事前の存在チェックはせず、OS の解決結果を spawn() のエラーでそのまま扱う。
     let child = Command::new(path)
@@ -91,7 +94,10 @@ where
         );
     }
 
-    *process.lock().unwrap() = Some(EngineProcess { child: Some(child), job });
+    *process.lock().unwrap() = Some(EngineProcess {
+        child: Some(child),
+        job,
+    });
 
     let retries = timeout.as_secs().max(1);
     for _ in 0..retries {
@@ -132,7 +138,9 @@ pub(crate) fn engine_resource_key(name: &str, url: &str) -> String {
 }
 
 fn sanitize_for_resource_name(s: &str) -> String {
-    s.chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect()
+    s.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
 }
 
 #[cfg(test)]
@@ -144,7 +152,12 @@ mod tests {
     /// Job 名・ロックキーはテストごとに一意にする（テストは同一プロセス内で並列実行されるため）。
     fn unique_key(tag: &str) -> String {
         static SEQ: AtomicUsize = AtomicUsize::new(0);
-        format!("test_{}_{}_{}", tag, std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst))
+        format!(
+            "test_{}_{}_{}",
+            tag,
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        )
     }
 
     /// cmd.exe の `%~dp0` でバッチファイル自身のディレクトリを解決させることで、
@@ -188,10 +201,18 @@ mod tests {
 
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
-        ensure_running("test", &unique_key("grandchild"), launcher.to_str(), &[], Duration::from_secs(30), &process, move || {
-            let marker = marker_for_check.clone();
-            async move { marker.exists() }
-        })
+        ensure_running(
+            "test",
+            &unique_key("grandchild"),
+            launcher.to_str(),
+            &[],
+            Duration::from_secs(30),
+            &process,
+            move || {
+                let marker = marker_for_check.clone();
+                async move { marker.exists() }
+            },
+        )
         .await
         .unwrap();
 
@@ -206,7 +227,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
-        assert!(lines_before > 0, "孫プロセスが起動してログに書き込み始めていること");
+        assert!(
+            lines_before > 0,
+            "孫プロセスが起動してログに書き込み始めていること"
+        );
 
         terminate_process("test", &process);
 
@@ -225,16 +249,26 @@ mod tests {
         let calls = Arc::new(AtomicUsize::new(0));
         let calls2 = Arc::clone(&calls);
 
-        ensure_running("test", &unique_key("alive"), None, &[], Duration::from_secs(30), &process, move || {
-            calls2.fetch_add(1, Ordering::SeqCst);
-            async { true }
-        })
+        ensure_running(
+            "test",
+            &unique_key("alive"),
+            None,
+            &[],
+            Duration::from_secs(30),
+            &process,
+            move || {
+                calls2.fetch_add(1, Ordering::SeqCst);
+                async { true }
+            },
+        )
         .await
         .unwrap();
 
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let guard = process.lock().unwrap();
-        let entry = guard.as_ref().expect("既存エンジンを使う場合も Job ハンドルを保持すること");
+        let entry = guard
+            .as_ref()
+            .expect("既存エンジンを使う場合も Job ハンドルを保持すること");
         assert!(entry.child.is_none(), "自分では spawn していないこと");
     }
 
@@ -242,7 +276,16 @@ mod tests {
     async fn ensure_running_errors_when_not_alive_and_no_exe_path() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", &unique_key("noexe"), None, &[], Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running(
+            "test",
+            &unique_key("noexe"),
+            None,
+            &[],
+            Duration::from_secs(30),
+            &process,
+            || async { false },
+        )
+        .await;
 
         assert!(result.is_err());
     }
@@ -251,7 +294,16 @@ mod tests {
     async fn ensure_running_errors_when_exe_path_does_not_exist() {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
 
-        let result = ensure_running("test", &unique_key("missing"), Some("C:/no/such/engine.exe"), &[], Duration::from_secs(30), &process, || async { false }).await;
+        let result = ensure_running(
+            "test",
+            &unique_key("missing"),
+            Some("C:/no/such/engine.exe"),
+            &[],
+            Duration::from_secs(30),
+            &process,
+            || async { false },
+        )
+        .await;
 
         assert!(result.is_err());
         assert!(process.lock().unwrap().is_none());
@@ -272,14 +324,25 @@ mod tests {
         let marker_for_check = marker.clone();
         let args = vec!["/c".to_string(), script.to_str().unwrap().to_string()];
 
-        ensure_running("test", &unique_key("pathcmd"), Some("cmd"), &args, Duration::from_secs(30), &process, move || {
-            let marker = marker_for_check.clone();
-            async move { marker.exists() }
-        })
+        ensure_running(
+            "test",
+            &unique_key("pathcmd"),
+            Some("cmd"),
+            &args,
+            Duration::from_secs(30),
+            &process,
+            move || {
+                let marker = marker_for_check.clone();
+                async move { marker.exists() }
+            },
+        )
         .await
         .unwrap();
 
-        assert!(marker.exists(), "PATH解決コマンド('cmd')にargsを渡して起動できること");
+        assert!(
+            marker.exists(),
+            "PATH解決コマンド('cmd')にargsを渡して起動できること"
+        );
         terminate_process("test", &process);
     }
 
@@ -293,15 +356,29 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let marker_for_check = marker.clone();
 
-        ensure_running("test", &unique_key("spawnwait"), script.to_str(), &[], Duration::from_secs(30), &process, move || {
-            let marker = marker_for_check.clone();
-            async move { marker.exists() }
-        })
+        ensure_running(
+            "test",
+            &unique_key("spawnwait"),
+            script.to_str(),
+            &[],
+            Duration::from_secs(30),
+            &process,
+            move || {
+                let marker = marker_for_check.clone();
+                async move { marker.exists() }
+            },
+        )
         .await
         .unwrap();
 
-        assert!(marker.exists(), "起動したプロセスがマーカーファイルを作成していること");
-        assert!(process.lock().unwrap().is_some(), "起動したプロセスが保持されていること");
+        assert!(
+            marker.exists(),
+            "起動したプロセスがマーカーファイルを作成していること"
+        );
+        assert!(
+            process.lock().unwrap().is_some(),
+            "起動したプロセスが保持されていること"
+        );
 
         terminate_process("test", &process);
     }
@@ -315,16 +392,23 @@ mod tests {
             .spawn()
             .unwrap();
 
-        let job =
-            EngineJob::open_or_create(&format!("Local\\Script2Voice_Engine_{}", unique_key("clear")))
-                .unwrap();
+        let job = EngineJob::open_or_create(&format!(
+            "Local\\Script2Voice_Engine_{}",
+            unique_key("clear")
+        ))
+        .unwrap();
         job.assign(&child).unwrap();
 
-        let process: Mutex<Option<EngineProcess>> =
-            Mutex::new(Some(EngineProcess { child: Some(child), job }));
+        let process: Mutex<Option<EngineProcess>> = Mutex::new(Some(EngineProcess {
+            child: Some(child),
+            job,
+        }));
         terminate_process("test", &process);
 
-        assert!(process.lock().unwrap().is_none(), "ハンドルが解放されていること");
+        assert!(
+            process.lock().unwrap().is_none(),
+            "ハンドルが解放されていること"
+        );
     }
 
     #[test]
@@ -339,7 +423,11 @@ mod tests {
     /// 二重 spawn が起きれば行数が2以上になる。
     fn write_counting_script(dir: &std::path::Path) -> std::path::PathBuf {
         let script = dir.join("counting_engine.cmd");
-        std::fs::write(&script, "@echo off\r\necho spawned >> \"%~dp0count.txt\"\r\n").unwrap();
+        std::fs::write(
+            &script,
+            "@echo off\r\necho spawned >> \"%~dp0count.txt\"\r\n",
+        )
+        .unwrap();
         script
     }
 
@@ -356,14 +444,30 @@ mod tests {
         let c1 = count.clone();
         let c2 = count.clone();
 
-        let a = ensure_running("t1", &key, script.to_str(), &[], Duration::from_secs(30), &p1, move || {
-            let c = c1.clone();
-            async move { c.exists() }
-        });
-        let b = ensure_running("t2", &key, script.to_str(), &[], Duration::from_secs(30), &p2, move || {
-            let c = c2.clone();
-            async move { c.exists() }
-        });
+        let a = ensure_running(
+            "t1",
+            &key,
+            script.to_str(),
+            &[],
+            Duration::from_secs(30),
+            &p1,
+            move || {
+                let c = c1.clone();
+                async move { c.exists() }
+            },
+        );
+        let b = ensure_running(
+            "t2",
+            &key,
+            script.to_str(),
+            &[],
+            Duration::from_secs(30),
+            &p2,
+            move || {
+                let c = c2.clone();
+                async move { c.exists() }
+            },
+        );
 
         let (ra, rb) = tokio::join!(a, b);
         ra.unwrap();
@@ -386,18 +490,38 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(None);
         let start = std::time::Instant::now();
 
-        ensure_running("test", &key, None, &[], Duration::from_secs(1), &process, || async { true })
-            .await
-            .unwrap();
+        ensure_running(
+            "test",
+            &key,
+            None,
+            &[],
+            Duration::from_secs(1),
+            &process,
+            || async { true },
+        )
+        .await
+        .unwrap();
 
-        assert!(start.elapsed() >= Duration::from_secs(1), "ロック待ちを経てからフォールスルーすること");
+        assert!(
+            start.elapsed() >= Duration::from_secs(1),
+            "ロック待ちを経てからフォールスルーすること"
+        );
     }
 
     #[test]
     fn engine_resource_key_uses_port_from_url() {
-        assert_eq!(engine_resource_key("voicevox", "http://127.0.0.1:50021"), "voicevox_50021");
-        assert_eq!(engine_resource_key("aivis", "http://127.0.0.1:10101/"), "aivis_10101");
-        assert_eq!(engine_resource_key("xtts", "http://127.0.0.1:8020/api"), "xtts_8020");
+        assert_eq!(
+            engine_resource_key("voicevox", "http://127.0.0.1:50021"),
+            "voicevox_50021"
+        );
+        assert_eq!(
+            engine_resource_key("aivis", "http://127.0.0.1:10101/"),
+            "aivis_10101"
+        );
+        assert_eq!(
+            engine_resource_key("xtts", "http://127.0.0.1:8020/api"),
+            "xtts_8020"
+        );
     }
 
     #[test]

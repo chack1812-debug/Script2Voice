@@ -16,7 +16,10 @@ fn scale_pad_filter(label_in: &str, label_out: &str) -> String {
 
 /// ffmpeg subtitles フィルタ用にパスをエスケープする(Windowsのドライブレターのコロン対策)。
 fn escape_subtitles_path(path: &Path) -> String {
-    let escaped = path.to_string_lossy().replace('\\', "/").replace(':', "\\:");
+    let escaped = path
+        .to_string_lossy()
+        .replace('\\', "/")
+        .replace(':', "\\:");
     format!("'{escaped}'")
 }
 
@@ -42,7 +45,12 @@ pub fn build_command(
         }
     }
 
-    let mut cmd: Vec<String> = vec!["ffmpeg".into(), "-y".into(), "-i".into(), audio_path.to_string_lossy().into_owned()];
+    let mut cmd: Vec<String> = vec![
+        "ffmpeg".into(),
+        "-y".into(),
+        "-i".into(),
+        audio_path.to_string_lossy().into_owned(),
+    ];
     for (asset, &duration) in assets.iter().zip(durations) {
         match asset.kind {
             AssetKind::Video => {
@@ -67,7 +75,11 @@ pub fn build_command(
     for (i, (asset, &duration)) in assets.iter().zip(durations).enumerate() {
         let in_label = format!("{}:v", i + 1);
         let out_label = format!("v{}", i + 1);
-        let source_duration = if asset.kind == AssetKind::Video { asset.source_duration } else { None };
+        let source_duration = if asset.kind == AssetKind::Video {
+            asset.source_duration
+        } else {
+            None
+        };
         let deficit = source_duration.map(|s| duration - s).unwrap_or(0.0);
         if deficit > 0.0 {
             let scaled = format!("v{}pre", i + 1);
@@ -82,11 +94,17 @@ pub fn build_command(
     }
 
     let concat_inputs = video_labels.join("");
-    filter_parts.push(format!("{concat_inputs}concat=n={}:v=1:a=0[vout]", assets.len()));
+    filter_parts.push(format!(
+        "{concat_inputs}concat=n={}:v=1:a=0[vout]",
+        assets.len()
+    ));
 
     let mut final_video_label = "[vout]".to_string();
     if let Some(sub) = burn_subtitle_path {
-        filter_parts.push(format!("[vout]subtitles={}[vsub]", escape_subtitles_path(sub)));
+        filter_parts.push(format!(
+            "[vout]subtitles={}[vsub]",
+            escape_subtitles_path(sub)
+        ));
         final_video_label = "[vsub]".to_string();
     }
 
@@ -98,7 +116,19 @@ pub fn build_command(
     cmd.push("0:a".into());
     cmd.extend(["-c:v", "libx264", "-crf"].iter().map(|s| s.to_string()));
     cmd.push(CRF.to_string());
-    cmd.extend(["-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", "-movflags", "+faststart"].iter().map(|s| s.to_string()));
+    cmd.extend(
+        [
+            "-pix_fmt",
+            "yuv420p",
+            "-c:a",
+            "aac",
+            "-shortest",
+            "-movflags",
+            "+faststart",
+        ]
+        .iter()
+        .map(|s| s.to_string()),
+    );
     cmd.push(output_path.to_string_lossy().into_owned());
     Ok(cmd)
 }
@@ -110,17 +140,29 @@ mod tests {
     use std::path::Path;
 
     fn img(p: &str) -> Asset {
-        Asset { kind: AssetKind::Image, path: p.into(), source_duration: None }
+        Asset {
+            kind: AssetKind::Image,
+            path: p.into(),
+            source_duration: None,
+        }
     }
     fn vid(p: &str, d: f64) -> Asset {
-        Asset { kind: AssetKind::Video, path: p.into(), source_duration: Some(d) }
+        Asset {
+            kind: AssetKind::Video,
+            path: p.into(),
+            source_duration: Some(d),
+        }
     }
     fn filter_of(cmd: &[String]) -> &str {
         let i = cmd.iter().position(|a| a == "-filter_complex").unwrap();
         &cmd[i + 1]
     }
     fn input_paths(cmd: &[String]) -> Vec<&str> {
-        cmd.iter().enumerate().filter(|(_, a)| *a == "-i").map(|(i, _)| cmd[i + 1].as_str()).collect()
+        cmd.iter()
+            .enumerate()
+            .filter(|(_, a)| *a == "-i")
+            .map(|(i, _)| cmd[i + 1].as_str())
+            .collect()
     }
 
     #[test]
@@ -178,7 +220,14 @@ mod tests {
 
     #[test]
     fn uses_libx264_crf18_shortest() {
-        let cmd = build_command(Path::new("a.wav"), &[img("s1.png")], &[5.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png")],
+            &[5.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         let cv = cmd.iter().position(|a| a == "-c:v").unwrap();
         assert_eq!(cmd[cv + 1], "libx264");
         let crf = cmd.iter().position(|a| a == "-crf").unwrap();
@@ -189,7 +238,14 @@ mod tests {
 
     #[test]
     fn forces_yuv420p_and_faststart() {
-        let cmd = build_command(Path::new("a.wav"), &[img("s1.png")], &[5.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png")],
+            &[5.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         let pf = cmd.iter().position(|a| a == "-pix_fmt").unwrap();
         assert_eq!(cmd[pf + 1], "yuv420p");
         let mf = cmd.iter().position(|a| a == "-movflags").unwrap();
@@ -198,21 +254,49 @@ mod tests {
 
     #[test]
     fn errors_on_length_mismatch() {
-        let e = build_command(Path::new("a.wav"), &[img("s1.png"), img("s2.png")], &[1.0], Path::new("out.mp4"), None).unwrap_err();
+        let e = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png"), img("s2.png")],
+            &[1.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap_err();
         assert!(e.to_string().contains("同じ長さ"));
     }
 
     #[test]
     fn errors_on_zero_or_negative_duration() {
-        let e = build_command(Path::new("a.wav"), &[img("s1.png"), img("s2.png")], &[1.0, 0.0], Path::new("out.mp4"), None).unwrap_err();
+        let e = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png"), img("s2.png")],
+            &[1.0, 0.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap_err();
         assert!(e.to_string().contains("duration"));
-        let e = build_command(Path::new("a.wav"), &[img("s1.png")], &[-1.0], Path::new("out.mp4"), None).unwrap_err();
+        let e = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png")],
+            &[-1.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap_err();
         assert!(e.to_string().contains("duration"));
     }
 
     #[test]
     fn feeds_video_clip_without_loop_flag() {
-        let cmd = build_command(Path::new("a.wav"), &[vid("assets/p01.mp4", 10.0)], &[5.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[vid("assets/p01.mp4", 10.0)],
+            &[5.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         assert!(!cmd.iter().any(|a| a == "-loop"));
         let t = cmd.iter().position(|a| a == "-t").unwrap();
         assert_eq!(&cmd[t..t + 4], &["-t", "5.000", "-i", "assets/p01.mp4"]);
@@ -220,13 +304,27 @@ mod tests {
 
     #[test]
     fn trims_video_longer_than_duration_without_tpad() {
-        let cmd = build_command(Path::new("a.wav"), &[vid("assets/p01.mp4", 10.0)], &[5.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[vid("assets/p01.mp4", 10.0)],
+            &[5.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         assert!(!filter_of(&cmd).contains("tpad"));
     }
 
     #[test]
     fn freezes_last_frame_for_video_shorter_than_duration() {
-        let cmd = build_command(Path::new("a.wav"), &[vid("assets/p01.mp4", 3.0)], &[5.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[vid("assets/p01.mp4", 3.0)],
+            &[5.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         let f = filter_of(&cmd);
         assert!(f.contains("tpad=stop_mode=clone:stop_duration=2.000"));
         assert!(f.contains("[v1pre]tpad=stop_mode=clone:stop_duration=2.000[v1]"));
@@ -234,7 +332,14 @@ mod tests {
 
     #[test]
     fn mixes_image_and_video_in_concat() {
-        let cmd = build_command(Path::new("a.wav"), &[img("s1.png"), vid("assets/p02.mp4", 8.0)], &[1.0, 2.0], Path::new("out.mp4"), None).unwrap();
+        let cmd = build_command(
+            Path::new("a.wav"),
+            &[img("s1.png"), vid("assets/p02.mp4", 8.0)],
+            &[1.0, 2.0],
+            Path::new("out.mp4"),
+            None,
+        )
+        .unwrap();
         assert!(filter_of(&cmd).contains("[v1][v2]concat=n=2:v=1:a=0[vout]"));
     }
 
@@ -259,7 +364,8 @@ mod tests {
 
     #[test]
     fn errors_on_empty_assets() {
-        let e = build_command(Path::new("a.wav"), &[], &[], Path::new("out.mp4"), None).unwrap_err();
+        let e =
+            build_command(Path::new("a.wav"), &[], &[], Path::new("out.mp4"), None).unwrap_err();
         assert!(e.to_string().contains("空"));
     }
 }

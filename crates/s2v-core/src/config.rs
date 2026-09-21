@@ -40,8 +40,12 @@ pub struct HttpConfig {
     pub request_timeout_s: u64,
 }
 
-fn default_connect_timeout_s() -> u64 { 10 }
-fn default_request_timeout_s() -> u64 { 180 }
+fn default_connect_timeout_s() -> u64 {
+    10
+}
+fn default_request_timeout_s() -> u64 {
+    180
+}
 
 impl Default for HttpConfig {
     fn default() -> Self {
@@ -95,7 +99,10 @@ pub struct MaterialConfig {
 
 impl MaterialConfig {
     const fn new(reflection_coeff: f64, absorption_cutoff_hz: f64) -> Self {
-        Self { reflection_coeff, absorption_cutoff_hz }
+        Self {
+            reflection_coeff,
+            absorption_cutoff_hz,
+        }
     }
 }
 
@@ -127,18 +134,42 @@ pub struct EarlyConfig {
     pub wet_distance_slope: f64,
 }
 
-fn er_enabled() -> bool { true }
-fn er_ear_height() -> f64 { 1.2 }
-fn er_listener_offset() -> [f64; 2] { [0.0, 0.0] }
-fn er_room_dims_min() -> [f64; 3] { [4.0, 5.0, 3.0] }
-fn er_room_dims_max() -> [f64; 3] { [25.0, 45.0, 18.0] }
-fn er_floor() -> MaterialConfig { MaterialConfig::new(0.5, 3500.0) }
-fn er_ceiling() -> MaterialConfig { MaterialConfig::new(0.6, 6000.0) }
-fn er_front_wall() -> MaterialConfig { MaterialConfig::new(0.85, 10000.0) }
-fn er_back_wall() -> MaterialConfig { MaterialConfig::new(0.40, 4000.0) }
-fn er_side_walls() -> MaterialConfig { MaterialConfig::new(0.70, 8000.0) }
-fn er_early_level() -> f64 { 1.0 }
-fn er_wet_distance_slope() -> f64 { 0.1 }
+fn er_enabled() -> bool {
+    true
+}
+fn er_ear_height() -> f64 {
+    1.2
+}
+fn er_listener_offset() -> [f64; 2] {
+    [0.0, 0.0]
+}
+fn er_room_dims_min() -> [f64; 3] {
+    [4.0, 5.0, 3.0]
+}
+fn er_room_dims_max() -> [f64; 3] {
+    [25.0, 45.0, 18.0]
+}
+fn er_floor() -> MaterialConfig {
+    MaterialConfig::new(0.5, 3500.0)
+}
+fn er_ceiling() -> MaterialConfig {
+    MaterialConfig::new(0.6, 6000.0)
+}
+fn er_front_wall() -> MaterialConfig {
+    MaterialConfig::new(0.85, 10000.0)
+}
+fn er_back_wall() -> MaterialConfig {
+    MaterialConfig::new(0.40, 4000.0)
+}
+fn er_side_walls() -> MaterialConfig {
+    MaterialConfig::new(0.70, 8000.0)
+}
+fn er_early_level() -> f64 {
+    1.0
+}
+fn er_wet_distance_slope() -> f64 {
+    0.1
+}
 
 impl Default for EarlyConfig {
     fn default() -> Self {
@@ -249,7 +280,10 @@ se_fade_out_s = 0.05
             1,
         );
         let cfg = Config::from_toml(&toml_with_exe).unwrap();
-        assert_eq!(cfg.voicevox.exe_path.as_deref(), Some("C:\\VOICEVOX\\run.exe"));
+        assert_eq!(
+            cfg.voicevox.exe_path.as_deref(),
+            Some("C:\\VOICEVOX\\run.exe")
+        );
     }
 
     #[test]
@@ -268,7 +302,10 @@ se_fade_out_s = 0.05
         );
         let cfg = Config::from_toml(&toml_with_args).unwrap();
         assert_eq!(cfg.xtts.exe_path.as_deref(), Some("python"));
-        assert_eq!(cfg.xtts.args, vec!["-m", "xtts_api_server", "--port", "8020"]);
+        assert_eq!(
+            cfg.xtts.args,
+            vec!["-m", "xtts_api_server", "--port", "8020"]
+        );
     }
 
     #[test]
@@ -280,7 +317,8 @@ se_fade_out_s = 0.05
 
     #[test]
     fn http_config_can_be_overridden() {
-        let toml_with_http = format!("{SAMPLE_TOML}\n[http]\nconnect_timeout_s = 3\nrequest_timeout_s = 20\n");
+        let toml_with_http =
+            format!("{SAMPLE_TOML}\n[http]\nconnect_timeout_s = 3\nrequest_timeout_s = 20\n");
         let cfg = Config::from_toml(&toml_with_http).unwrap();
         assert_eq!(cfg.http.connect_timeout_s, 3);
         assert_eq!(cfg.http.request_timeout_s, 20);
@@ -369,7 +407,9 @@ se_fade_out_s = 0.05
 
     #[test]
     fn early_reflections_partial_section_fills_missing_fields() {
-        let toml = format!("{SAMPLE_TOML}\n[audio.early_reflections]\nenabled = false\near_height = 1.7\n");
+        let toml = format!(
+            "{SAMPLE_TOML}\n[audio.early_reflections]\nenabled = false\near_height = 1.7\n"
+        );
         let cfg = Config::from_toml(&toml).unwrap();
         let er = &cfg.audio.early_reflections;
         assert!(!er.enabled);
@@ -380,7 +420,8 @@ se_fade_out_s = 0.05
 
     #[test]
     fn parses_real_config_toml_with_early_reflections() {
-        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml")).unwrap();
+        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml"))
+            .unwrap();
         let cfg = Config::from_toml(&s).unwrap();
         assert!(cfg.audio.early_reflections.enabled);
         assert!((cfg.audio.early_reflections.front_wall.reflection_coeff - 0.85).abs() < 1e-10);
@@ -388,8 +429,12 @@ se_fade_out_s = 0.05
 
     #[test]
     fn real_config_reverb_wet_is_scaler_default() {
-        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml")).unwrap();
+        let s = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../config.toml"))
+            .unwrap();
         let cfg = Config::from_toml(&s).unwrap();
-        assert!((cfg.audio.reverb_wet - 1.0).abs() < 1e-10, "reverb_wet 既定はスケーラ 1.0");
+        assert!(
+            (cfg.audio.reverb_wet - 1.0).abs() < 1e-10,
+            "reverb_wet 既定はスケーラ 1.0"
+        );
     }
 }

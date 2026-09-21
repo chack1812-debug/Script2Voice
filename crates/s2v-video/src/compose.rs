@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 
 use crate::ffmpeg_cmd::build_command;
-use crate::scene_map::{load_scene_map, resolve_asset_paths, resolve_assets, validate_assets_exist, AssetKind};
+use crate::scene_map::{
+    load_scene_map, resolve_asset_paths, resolve_assets, validate_assets_exist, AssetKind,
+};
 use crate::srt_timing::{compute_segments, parse_paragraph_markers};
 
 /// compose サブコマンドのオプション。
@@ -23,13 +25,23 @@ fn find_audio_file(project_dir: &Path) -> anyhow::Result<PathBuf> {
             return Ok(candidate);
         }
     }
-    anyhow::bail!("{} に full_dialogue.wav / full_dialogue.mp3 が見つかりません", project_dir.display())
+    anyhow::bail!(
+        "{} に full_dialogue.wav / full_dialogue.mp3 が見つかりません",
+        project_dir.display()
+    )
 }
 
 /// ffprobe でメディアの総再生時間(秒)を取得する。
 fn probe_duration_seconds(media_path: &Path) -> anyhow::Result<f64> {
     let output = std::process::Command::new("ffprobe")
-        .args(["-v", "quiet", "-show_entries", "format=duration", "-of", "csv=p=0"])
+        .args([
+            "-v",
+            "quiet",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "csv=p=0",
+        ])
         .arg(media_path)
         .output()
         .with_context(|| format!("ffprobe の起動に失敗しました: {}", media_path.display()))?;
@@ -82,7 +94,11 @@ pub fn run(opts: &ComposeOptions) -> anyhow::Result<()> {
     }
 
     let durations: Vec<f64> = segments.iter().map(|(s, e)| e - s).collect();
-    let burn = if opts.burn_subtitle { Some(srt_path.as_path()) } else { None };
+    let burn = if opts.burn_subtitle {
+        Some(srt_path.as_path())
+    } else {
+        None
+    };
     let cmd = build_command(&audio_path, &assets, &durations, &output_path, burn)?;
 
     let status = std::process::Command::new(&cmd[0])
@@ -105,14 +121,20 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("full_dialogue.wav"), b"").unwrap();
         std::fs::write(dir.path().join("full_dialogue.mp3"), b"").unwrap();
-        assert_eq!(find_audio_file(dir.path()).unwrap(), dir.path().join("full_dialogue.wav"));
+        assert_eq!(
+            find_audio_file(dir.path()).unwrap(),
+            dir.path().join("full_dialogue.wav")
+        );
     }
 
     #[test]
     fn find_audio_falls_back_to_mp3() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("full_dialogue.mp3"), b"").unwrap();
-        assert_eq!(find_audio_file(dir.path()).unwrap(), dir.path().join("full_dialogue.mp3"));
+        assert_eq!(
+            find_audio_file(dir.path()).unwrap(),
+            dir.path().join("full_dialogue.mp3")
+        );
     }
 
     #[test]

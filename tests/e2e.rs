@@ -95,7 +95,10 @@ se_fade_out_s = 0.05
 
 #[tokio::test]
 async fn produces_full_output_set_from_sample_script() {
-    let _ = tracing_subscriber::fmt().with_test_writer().with_max_level(tracing::Level::INFO).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_test_writer()
+        .with_max_level(tracing::Level::INFO)
+        .try_init();
 
     let dir = tempfile::tempdir().unwrap();
     let project_dir = dir.path().join("project");
@@ -121,7 +124,10 @@ async fn produces_full_output_set_from_sample_script() {
     let srt = std::fs::read_to_string(&srt_path).unwrap();
     assert!(srt.contains("こんにちは、まいさん。"));
     assert!(srt.contains("-->"));
-    assert!(srt.contains("[PARAGRAPH]"), "SRTに[PARAGRAPH]マーカーが含まれること");
+    assert!(
+        srt.contains("[PARAGRAPH]"),
+        "SRTに[PARAGRAPH]マーカーが含まれること"
+    );
 
     // FCPXML
     let fcpxml_path = project_dir.join("timeline/timeline.fcpxml");
@@ -143,7 +149,11 @@ async fn produces_full_output_set_from_sample_script() {
         .filter_map(|e| e.ok())
         .filter(|e| e.file_name().to_string_lossy().starts_with("voice_"))
         .collect();
-    assert_eq!(voice_files.len(), 3, "3件の speech アイテムが処理されること");
+    assert_eq!(
+        voice_files.len(),
+        3,
+        "3件の speech アイテムが処理されること"
+    );
 }
 
 /// 合成に時間のかかるスタブ。中断のタイミングを作るために使う。
@@ -185,8 +195,15 @@ async fn dropping_produce_future_releases_generation_lock() {
 
     let mut fut = Box::pin(producer.produce(&scenes));
     let progressed = tokio::time::timeout(std::time::Duration::from_secs(2), &mut fut).await;
-    assert!(progressed.is_err(), "合成中で未完了のはず（スタブが30秒待つ）");
-    assert!(lock_path.exists(), "生成中は出力ロックを保持しているはず: {}", lock_path.display());
+    assert!(
+        progressed.is_err(),
+        "合成中で未完了のはず（スタブが30秒待つ）"
+    );
+    assert!(
+        lock_path.exists(),
+        "生成中は出力ロックを保持しているはず: {}",
+        lock_path.display()
+    );
 
     drop(fut); // Ctrl+C 相当の打ち切り
     assert!(
@@ -209,7 +226,8 @@ impl Engine for CountingSlowEngine {
 
     async fn synthesize(&self, _text: &str, _cast: &Cast, _output: &Path) -> anyhow::Result<()> {
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-        self.finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.finished
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(())
     }
 }
@@ -233,7 +251,9 @@ async fn dropping_produce_future_stops_in_flight_synthesis_tasks() {
     for name in ["voicevox", "aivis", "xtts"] {
         engine_manager.register(
             name,
-            Arc::new(CountingSlowEngine { finished: Arc::clone(&finished) }),
+            Arc::new(CountingSlowEngine {
+                finished: Arc::clone(&finished),
+            }),
         );
     }
     let engine_manager = Arc::new(engine_manager);
@@ -244,7 +264,11 @@ async fn dropping_produce_future_stops_in_flight_synthesis_tasks() {
     // 合成タスクが走り出したところで打ち切る（スタブは 300ms 待つのでまだ未完了）。
     let progressed = tokio::time::timeout(std::time::Duration::from_millis(150), &mut fut).await;
     assert!(progressed.is_err(), "合成中で未完了のはず");
-    assert_eq!(finished.load(Ordering::SeqCst), 0, "前提: まだ1件も合成が完了していない");
+    assert_eq!(
+        finished.load(Ordering::SeqCst),
+        0,
+        "前提: まだ1件も合成が完了していない"
+    );
 
     drop(fut); // Ctrl+C / GUI キャンセル相当の打ち切り
 

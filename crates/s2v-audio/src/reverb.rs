@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use ordered_float::OrderedFloat;
-use rand::{SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, SeedableRng};
 use rand_distr::{Distribution, StandardNormal};
 use realfft::RealFftPlanner;
 
@@ -47,7 +47,8 @@ impl IrCache {
         avg_dist: f64,
         wet_distance_slope: f64,
     ) {
-        let actual_wet = (reverb_wet * wet_base * (1.0 + wet_distance_slope * avg_dist)).min(0.9) as f32;
+        let actual_wet =
+            (reverb_wet * wet_base * (1.0 + wet_distance_slope * avg_dist)).min(0.9) as f32;
         if actual_wet <= 0.0 || stereo.is_empty() {
             return;
         }
@@ -60,8 +61,16 @@ impl IrCache {
             let wet = fft_convolve(&dry, &ir[ch]);
             let dry_peak = dry.iter().cloned().map(f32::abs).fold(0.0_f32, f32::max);
             let wet_slice = &wet[..dry.len()];
-            let wet_peak = wet_slice.iter().cloned().map(f32::abs).fold(1e-6_f32, f32::max);
-            let wet_norm_factor = if dry_peak > 0.0 { (dry_peak * 0.4) / wet_peak } else { 0.0 };
+            let wet_peak = wet_slice
+                .iter()
+                .cloned()
+                .map(f32::abs)
+                .fold(1e-6_f32, f32::max);
+            let wet_norm_factor = if dry_peak > 0.0 {
+                (dry_peak * 0.4) / wet_peak
+            } else {
+                0.0
+            };
             for (i, s) in stereo.iter_mut().enumerate() {
                 let w = wet_slice[i] * wet_norm_factor;
                 s[ch] = (1.0 - actual_wet) * s[ch] + actual_wet * w;
@@ -94,7 +103,9 @@ fn fft_convolve(signal: &[f32], kernel: &[f32]) -> Vec<f32> {
     r2c.process(&mut sig_buf, &mut sig_spec).unwrap();
     r2c.process(&mut ker_buf, &mut ker_spec).unwrap();
 
-    let mut product: Vec<_> = sig_spec.iter().zip(ker_spec.iter())
+    let mut product: Vec<_> = sig_spec
+        .iter()
+        .zip(ker_spec.iter())
         .map(|(a, b)| a * b)
         .collect();
 
@@ -133,12 +144,15 @@ pub(crate) fn sosfilt_single_section(sos: &[f64; 6], input: &[f64]) -> Vec<f64> 
     let [b0, b1, b2, _a0, a1, a2] = *sos;
     let mut z1 = 0.0_f64;
     let mut z2 = 0.0_f64;
-    input.iter().map(|&x| {
-        let y = b0 * x + z1;
-        z1 = b1 * x - a1 * y + z2;
-        z2 = b2 * x - a2 * y;
-        y
-    }).collect()
+    input
+        .iter()
+        .map(|&x| {
+            let y = b0 * x + z1;
+            z1 = b1 * x - a1 * y + z2;
+            z2 = b2 * x - a2 * y;
+            y
+        })
+        .collect()
 }
 
 /// シード固定の乱数でリバーブ IR を生成する
@@ -153,14 +167,22 @@ fn build_ir(rt60: f64, pre_delay: usize, sample_rate: u32) -> [Vec<f32>; 2] {
     let sos = butterworth_lowpass_sos(1800.0, fs);
 
     let decay: Vec<f64> = (0..n)
-        .map(|i| { let t = i as f64 / fs; (-6.91 * t / rv_time).exp() })
+        .map(|i| {
+            let t = i as f64 / fs;
+            (-6.91 * t / rv_time).exp()
+        })
         .collect();
 
     std::array::from_fn(|_| {
         let noise: Vec<f64> = StandardNormal.sample_iter(&mut rng).take(n).collect();
         let filtered = sosfilt_single_section(&sos, &noise);
         let mut ir: Vec<f32> = vec![0.0; pre_delay];
-        ir.extend(filtered.iter().zip(decay.iter()).map(|(s, d)| (s * d) as f32));
+        ir.extend(
+            filtered
+                .iter()
+                .zip(decay.iter())
+                .map(|(s, d)| (s * d) as f32),
+        );
         ir
     })
 }
@@ -199,7 +221,9 @@ mod tests {
     fn apply_with_zero_wet_leaves_signal_unchanged() {
         let cache = IrCache::new(48000);
         cache.compute_if_needed(1.0, 240);
-        let original: Vec<[f32; 2]> = (0..100).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
+        let original: Vec<[f32; 2]> = (0..100)
+            .map(|i| [i as f32 * 0.01, i as f32 * 0.01])
+            .collect();
         let mut signal = original.clone();
         cache.apply(&mut signal, 1.0, 240, 0.0, 0.8, 1.0, 0.1);
         for (a, b) in original.iter().zip(signal.iter()) {
@@ -289,10 +313,12 @@ mod tests {
     fn apply_uses_distance_slope_for_wet_amount() {
         // slope を大きくすると遠距離での wet 比が増える → 出力の変化量が増える
         let make_signal = || -> Vec<[f32; 2]> {
-            (0..2400).map(|i| {
-                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
-                [v, v]
-            }).collect()
+            (0..2400)
+                .map(|i| {
+                    let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                    [v, v]
+                })
+                .collect()
         };
         let cache = IrCache::new(48000);
         cache.compute_if_needed(1.0, 240);
@@ -304,19 +330,27 @@ mod tests {
         cache.apply(&mut s_large, 1.0, 240, 0.3, 0.8, 5.0, 0.5);
 
         let dev = |sig: &Vec<[f32; 2]>| -> f64 {
-            sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
+            sig.iter()
+                .zip(dry.iter())
+                .map(|(a, b)| ((a[0] - b[0]) as f64).powi(2))
+                .sum()
         };
-        assert!(dev(&s_large) > dev(&s_small), "slope大の方がwet寄与が大きいこと");
+        assert!(
+            dev(&s_large) > dev(&s_small),
+            "slope大の方がwet寄与が大きいこと"
+        );
     }
 
     #[test]
     fn apply_increases_wet_with_distance() {
         // 距離が増えると wet 比が増える(D/Rが下がる)。slope固定で avg_dist を変えて検証(spec §6)。
         let make_signal = || -> Vec<[f32; 2]> {
-            (0..2400).map(|i| {
-                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
-                [v, v]
-            }).collect()
+            (0..2400)
+                .map(|i| {
+                    let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                    [v, v]
+                })
+                .collect()
         };
         let cache = IrCache::new(48000);
         cache.compute_if_needed(1.0, 240);
@@ -328,9 +362,15 @@ mod tests {
         cache.apply(&mut s_far, 1.0, 240, 0.3, 0.8, 5.0, 0.1);
 
         let dev = |sig: &Vec<[f32; 2]>| -> f64 {
-            sig.iter().zip(dry.iter()).map(|(a, b)| ((a[0] - b[0]) as f64).powi(2)).sum()
+            sig.iter()
+                .zip(dry.iter())
+                .map(|(a, b)| ((a[0] - b[0]) as f64).powi(2))
+                .sum()
         };
-        assert!(dev(&s_far) > dev(&s_near), "遠い音源ほど wet 寄与が大きいこと");
+        assert!(
+            dev(&s_far) > dev(&s_near),
+            "遠い音源ほど wet 寄与が大きいこと"
+        );
     }
 
     #[test]
@@ -338,20 +378,30 @@ mod tests {
         let cache = IrCache::new(48000);
         cache.compute_if_needed(1.5, 480);
         let mut signal: Vec<[f32; 2]> = (0..4800)
-            .map(|i| { let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5; [v, v] })
+            .map(|i| {
+                let v = (2.0 * std::f32::consts::PI * 440.0 * i as f32 / 48000.0).sin() * 0.5;
+                [v, v]
+            })
             .collect();
         let before = signal[2000][0];
         cache.apply(&mut signal, 1.5, 480, 1.0, 0.8, 1.0, 0.1);
-        assert!(signal.iter().any(|s| (s[0] - before).abs() > 1e-4), "apply は信号を変化させること");
+        assert!(
+            signal.iter().any(|s| (s[0] - before).abs() > 1e-4),
+            "apply は信号を変化させること"
+        );
     }
 
     #[test]
     fn apply_wet_base_zero_leaves_signal_unchanged() {
         let cache = IrCache::new(48000);
         cache.compute_if_needed(1.0, 240);
-        let original: Vec<[f32; 2]> = (0..200).map(|i| [i as f32 * 0.01, i as f32 * 0.01]).collect();
+        let original: Vec<[f32; 2]> = (0..200)
+            .map(|i| [i as f32 * 0.01, i as f32 * 0.01])
+            .collect();
         let mut signal = original.clone();
         cache.apply(&mut signal, 1.0, 240, 1.0, 0.0, 1.0, 0.1);
-        for (a, b) in original.iter().zip(signal.iter()) { assert!((a[0] - b[0]).abs() < 1e-6); }
+        for (a, b) in original.iter().zip(signal.iter()) {
+            assert!((a[0] - b[0]).abs() < 1e-6);
+        }
     }
 }

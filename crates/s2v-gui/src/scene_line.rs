@@ -161,7 +161,10 @@ mod tests {
         assert_eq!(c.distance, 1.0);
         assert_eq!(c.height, Some(1.2));
         let sc = p.to_scene_config("x");
-        assert_eq!(sc.room_size, None, "寸法直接指定なので room_size は使わない");
+        assert_eq!(
+            sc.room_size, None,
+            "寸法直接指定なので room_size は使わない"
+        );
         assert_eq!(sc.room_w, Some(4.0));
     }
 }

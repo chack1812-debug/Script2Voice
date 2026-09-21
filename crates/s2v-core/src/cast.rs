@@ -37,7 +37,11 @@ impl Cast {
                 "height" => cast.height_offset += v,
                 other => {
                     if let Some(neutral) = engine_param_neutral_default(other) {
-                        let base = self.params.get(other).and_then(|v| v.as_f64()).unwrap_or(neutral);
+                        let base = self
+                            .params
+                            .get(other)
+                            .and_then(|v| v.as_f64())
+                            .unwrap_or(neutral);
                         cast.params.insert(other.to_string(), Value::from(base + v));
                     } else {
                         cast.params.insert(other.to_string(), Value::from(v));
@@ -53,7 +57,9 @@ impl Cast {
 /// 該当しないキーは None を返す (=上書き対象)。
 fn engine_param_neutral_default(key: &str) -> Option<f64> {
     match key {
-        "speedScale" | "intonationScale" | "volumeScale" | "tempoDynamicsScale" | "speed" => Some(1.0),
+        "speedScale" | "intonationScale" | "volumeScale" | "tempoDynamicsScale" | "speed" => {
+            Some(1.0)
+        }
         "pitchScale" | "temperature" | "pitch" => Some(0.0),
         _ => None,
     }
@@ -93,7 +99,10 @@ mod tests {
     fn appearance_field_stores_free_text() {
         let mut cast = base_cast();
         cast.appearance = Some("小柄で緑髪の元気なキャラクター。".to_string());
-        assert_eq!(cast.appearance.as_deref(), Some("小柄で緑髪の元気なキャラクター。"));
+        assert_eq!(
+            cast.appearance.as_deref(),
+            Some("小柄で緑髪の元気なキャラクター。")
+        );
     }
 
     #[test]
@@ -152,7 +161,10 @@ mod tests {
         offsets.insert("speedScale".to_string(), 0.5_f64);
         let effective = cast.with_offsets(&offsets);
         let speed = effective.params["speedScale"].as_f64().unwrap();
-        assert!((speed - 1.5).abs() < 1e-10, "expected 1.0 (base) + 0.5 (offset) = 1.5, got {speed}");
+        assert!(
+            (speed - 1.5).abs() < 1e-10,
+            "expected 1.0 (base) + 0.5 (offset) = 1.5, got {speed}"
+        );
     }
 
     #[test]
@@ -163,7 +175,10 @@ mod tests {
         offsets.insert("pitchScale".to_string(), 0.3_f64);
         let effective = cast.with_offsets(&offsets);
         let pitch = effective.params["pitchScale"].as_f64().unwrap();
-        assert!((pitch - 0.3).abs() < 1e-10, "expected neutral 0.0 + 0.3 = 0.3, got {pitch}");
+        assert!(
+            (pitch - 0.3).abs() < 1e-10,
+            "expected neutral 0.0 + 0.3 = 0.3, got {pitch}"
+        );
     }
 
     #[test]

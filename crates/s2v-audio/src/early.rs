@@ -97,10 +97,17 @@ pub fn build_early_taps(
 
         // 信号: 空気吸収(平均経路) → 素材ローパス
         let avg_path = (path_l + path_r) / 2.0;
-        let absorbed = apply_air_absorption(mono, avg_path, sample_rate, audio.air_absorption_coeff);
+        let absorbed =
+            apply_air_absorption(mono, avg_path, sample_rate, audio.air_absorption_coeff);
         let sig = material_lowpass(&absorbed, mat, fs);
 
-        taps.push(EarlyTap { sig, rel_l, rel_r, gain_l, gain_r });
+        taps.push(EarlyTap {
+            sig,
+            rel_l,
+            rel_r,
+            gain_l,
+            gain_r,
+        });
     }
     taps
 }
@@ -113,7 +120,10 @@ fn material_lowpass(samples: &[f32], mat: &MaterialConfig, fs: f64) -> Vec<f32> 
     }
     let sos = butterworth_lowpass_sos(mat.absorption_cutoff_hz, fs);
     let input: Vec<f64> = samples.iter().map(|&s| s as f64).collect();
-    sosfilt_single_section(&sos, &input).iter().map(|&s| s as f32).collect()
+    sosfilt_single_section(&sos, &input)
+        .iter()
+        .map(|&s| s as f32)
+        .collect()
 }
 
 #[cfg(test)]
@@ -152,7 +162,18 @@ mod tests {
         let mut er = EarlyConfig::default();
         er.enabled = false;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
+        let taps = build_early_taps(
+            &mono,
+            2.0,
+            0.0,
+            1.0,
+            &audio_cfg(),
+            &er,
+            &geo_for(0.1, &er),
+            er.ear_height,
+            48000,
+            0,
+        );
         assert!(taps.is_empty());
     }
 
@@ -164,7 +185,18 @@ mod tests {
         er.back_wall.reflection_coeff = 0.0;
         er.side_walls.reflection_coeff = 0.0;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
+        let taps = build_early_taps(
+            &mono,
+            2.0,
+            0.0,
+            1.0,
+            &audio_cfg(),
+            &er,
+            &geo_for(0.1, &er),
+            er.ear_height,
+            48000,
+            0,
+        );
         assert_eq!(taps.len(), 1, "床のみ → 1タップ");
     }
 
@@ -173,9 +205,22 @@ mod tests {
         let er = EarlyConfig::default();
         let mono = vec![1.0_f32; 2000];
         // pan=+30度(右)。少なくとも1タップで gain_l != gain_r または rel_l != rel_r になること。
-        let taps = build_early_taps(&mono, 2.0, 30.0_f64.to_radians(), 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
+        let taps = build_early_taps(
+            &mono,
+            2.0,
+            30.0_f64.to_radians(),
+            1.0,
+            &audio_cfg(),
+            &er,
+            &geo_for(0.1, &er),
+            er.ear_height,
+            48000,
+            0,
+        );
         assert!(!taps.is_empty());
-        let asym = taps.iter().any(|t| (t.gain_l - t.gain_r).abs() > 1e-6 || t.rel_l != t.rel_r);
+        let asym = taps
+            .iter()
+            .any(|t| (t.gain_l - t.gain_r).abs() > 1e-6 || t.rel_l != t.rel_r);
         assert!(asym, "パンした音源は左右非対称なタップを生むこと");
     }
 
@@ -187,11 +232,25 @@ mod tests {
         er.back_wall.reflection_coeff = 0.0;
         er.side_walls.reflection_coeff = 0.0;
         let mono = vec![1.0_f32; 1000];
-        let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
+        let taps = build_early_taps(
+            &mono,
+            2.0,
+            0.0,
+            1.0,
+            &audio_cfg(),
+            &er,
+            &geo_for(0.1, &er),
+            er.ear_height,
+            48000,
+            0,
+        );
         let eh = er.ear_height;
         let expected = ((2.0_f64.powi(2) + (2.0 * eh).powi(2)).sqrt() / 340.0 * 48000.0) as i64;
         let rel = taps[0].rel_l as i64;
-        assert!((rel - expected).abs() <= 5, "床タップ遅延 rel={rel}, expected≈{expected}");
+        assert!(
+            (rel - expected).abs() <= 5,
+            "床タップ遅延 rel={rel}, expected≈{expected}"
+        );
     }
 
     #[test]
@@ -208,7 +267,12 @@ mod tests {
         let high = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo, 2.5, 48000, 0);
         assert_eq!(low.len(), 1);
         assert_eq!(high.len(), 1);
-        assert!(high[0].rel_l > low[0].rel_l, "話者が高いほど床反射が遅い: low={}, high={}", low[0].rel_l, high[0].rel_l);
+        assert!(
+            high[0].rel_l > low[0].rel_l,
+            "話者が高いほど床反射が遅い: low={}, high={}",
+            low[0].rel_l,
+            high[0].rel_l
+        );
     }
 
     #[test]
@@ -222,22 +286,48 @@ mod tests {
             er.back_wall.reflection_coeff = 0.0;
             er.side_walls.reflection_coeff = 0.0;
             er.front_wall.reflection_coeff = coeff;
-            let taps = build_early_taps(&mono, 2.0, 0.0, 1.0, &audio_cfg(), &er, &geo_for(0.1, &er), er.ear_height, 48000, 0);
+            let taps = build_early_taps(
+                &mono,
+                2.0,
+                0.0,
+                1.0,
+                &audio_cfg(),
+                &er,
+                &geo_for(0.1, &er),
+                er.ear_height,
+                48000,
+                0,
+            );
             assert_eq!(taps.len(), 1, "前壁のみ → 1タップ");
             taps[0].gain_l
         };
-        assert!(front_gain_for(0.85) > front_gain_for(0.5), "前壁反射率↑ → タップゲイン↑");
+        assert!(
+            front_gain_for(0.85) > front_gain_for(0.5),
+            "前壁反射率↑ → タップゲイン↑"
+        );
     }
 
     #[test]
     fn material_lowpass_attenuates_high_frequencies() {
         let fs = 48000.0;
         let n = 4096;
-        let hi: Vec<f32> = (0..n).map(|i| (2.0 * std::f32::consts::PI * 16000.0 * i as f32 / 48000.0).sin()).collect();
-        let mat = MaterialConfig { reflection_coeff: 1.0, absorption_cutoff_hz: 3500.0 };
+        let hi: Vec<f32> = (0..n)
+            .map(|i| (2.0 * std::f32::consts::PI * 16000.0 * i as f32 / 48000.0).sin())
+            .collect();
+        let mat = MaterialConfig {
+            reflection_coeff: 1.0,
+            absorption_cutoff_hz: 3500.0,
+        };
         let out = material_lowpass(&hi, &mat, fs);
         let peak_in = hi.iter().cloned().map(f32::abs).fold(0.0_f32, f32::max);
-        let peak_out = out[1000..].iter().cloned().map(f32::abs).fold(0.0_f32, f32::max);
-        assert!(peak_out < peak_in * 0.5, "16kHzが半分以下に減衰すること: in={peak_in}, out={peak_out}");
+        let peak_out = out[1000..]
+            .iter()
+            .cloned()
+            .map(f32::abs)
+            .fold(0.0_f32, f32::max);
+        assert!(
+            peak_out < peak_in * 0.5,
+            "16kHzが半分以下に減衰すること: in={peak_in}, out={peak_out}"
+        );
     }
 }

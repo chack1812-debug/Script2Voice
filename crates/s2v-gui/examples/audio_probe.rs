@@ -33,7 +33,10 @@ fn main() -> anyhow::Result<()> {
     match host.output_devices() {
         Ok(devs) => {
             for (i, d) in devs.enumerate() {
-                println!("  [{i}] {}", d.name().unwrap_or_else(|_| "<名前取得失敗>".into()));
+                println!(
+                    "  [{i}] {}",
+                    d.name().unwrap_or_else(|_| "<名前取得失敗>".into())
+                );
             }
         }
         Err(e) => println!("  列挙失敗: {e}"),
@@ -51,7 +54,11 @@ fn main() -> anyhow::Result<()> {
         let dec = rodio::Decoder::new(BufReader::new(std::fs::File::open(path)?))?;
         let (ch, sr) = (dec.channels(), dec.sample_rate());
         let samples: Vec<i16> = dec.collect();
-        let peak = samples.iter().map(|s| s.unsigned_abs() as u32).max().unwrap_or(0);
+        let peak = samples
+            .iter()
+            .map(|s| s.unsigned_abs() as u32)
+            .max()
+            .unwrap_or(0);
         println!(
             "WAV: {path}\n  channels={ch}  sample_rate={sr}  samples={}  peak={peak}/32767 ({:.1} dBFS)",
             samples.len(),
@@ -61,7 +68,9 @@ fn main() -> anyhow::Result<()> {
             println!("!! ピークが 0 = この WAV は無音データです(再生経路ではなく生成側の問題)");
         }
         // 再生用にデコードし直して append(上の collect で消費済みのため)
-        sink.append(rodio::Decoder::new(BufReader::new(std::fs::File::open(path)?))?);
+        sink.append(rodio::Decoder::new(BufReader::new(std::fs::File::open(
+            path,
+        )?))?);
         println!(">> この WAV を再生します。音は聞こえますか？");
     } else {
         let tone = rodio::source::SineWave::new(440.0)

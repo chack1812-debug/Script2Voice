@@ -10,7 +10,9 @@ pub fn install_japanese_fonts(ctx: &egui::Context) {
         return;
     };
     let mut fonts = egui::FontDefinitions::default();
-    fonts.font_data.insert("jp".into(), egui::FontData::from_owned(bytes));
+    fonts
+        .font_data
+        .insert("jp".into(), egui::FontData::from_owned(bytes));
     for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
         fonts.families.entry(family).or_default().push("jp".into());
     }

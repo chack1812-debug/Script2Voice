@@ -19,7 +19,12 @@ pub fn calc_geometry(microphone_spacing: f64, distance: f64, pan_rad: f64) -> Ge
     let dist_r = ((sx - d_h).powi(2) + sy.powi(2)).sqrt();
     let angle_l = (sx + d_h).atan2(sy);
     let angle_r = (sx - d_h).atan2(sy);
-    GeoParams { dist_l, dist_r, angle_l, angle_r }
+    GeoParams {
+        dist_l,
+        dist_r,
+        angle_l,
+        angle_r,
+    }
 }
 
 /// room_size(0..1) を部屋寸法 [W,D,H] に線形補間する。
@@ -41,7 +46,14 @@ pub fn directivity_pattern(angle: f64, k: f64, mic_angle_offset: f64) -> f64 {
 
 /// 反射面の種別。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Surface { Floor, Ceiling, LeftWall, RightWall, BackWall, FrontWall }
+pub enum Surface {
+    Floor,
+    Ceiling,
+    LeftWall,
+    RightWall,
+    BackWall,
+    FrontWall,
+}
 
 /// 音源 3D 位置 src=[x,y,z] を面 surface で鏡像化したイメージ位置を返す。
 /// 箱は x∈[0,W], y∈[0,D], z∈[0,H]。

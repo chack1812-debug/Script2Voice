@@ -22,7 +22,9 @@ pub struct EngineManager {
 
 impl EngineManager {
     pub fn new() -> Self {
-        Self { engines: std::collections::HashMap::new() }
+        Self {
+            engines: std::collections::HashMap::new(),
+        }
     }
 
     pub fn register(&mut self, name: impl Into<String>, engine: Arc<dyn Engine>) {
@@ -90,11 +92,17 @@ mod tests {
         }
 
         fn failing() -> Self {
-            Self { should_fail: true, ..Self::new() }
+            Self {
+                should_fail: true,
+                ..Self::new()
+            }
         }
 
         fn with_delay(ms: u64) -> Self {
-            Self { delay_ms: ms, ..Self::new() }
+            Self {
+                delay_ms: ms,
+                ..Self::new()
+            }
         }
     }
 
@@ -111,7 +119,12 @@ mod tests {
             Ok(())
         }
 
-        async fn synthesize(&self, _text: &str, _cast: &Cast, _output: &Path) -> anyhow::Result<()> {
+        async fn synthesize(
+            &self,
+            _text: &str,
+            _cast: &Cast,
+            _output: &Path,
+        ) -> anyhow::Result<()> {
             self.synthesize_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }
@@ -204,7 +217,9 @@ mod tests {
         mgr.register("voicevox", stub);
 
         let cast = dummy_cast("voicevox");
-        mgr.synthesize("テスト", &cast, Path::new("out.wav")).await.unwrap();
+        mgr.synthesize("テスト", &cast, Path::new("out.wav"))
+            .await
+            .unwrap();
         assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
@@ -228,8 +243,12 @@ mod tests {
         struct NoopEngine;
         #[async_trait]
         impl Engine for NoopEngine {
-            async fn activate(&self) -> anyhow::Result<()> { Ok(()) }
-            async fn synthesize(&self, _: &str, _: &Cast, _: &Path) -> anyhow::Result<()> { Ok(()) }
+            async fn activate(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            async fn synthesize(&self, _: &str, _: &Cast, _: &Path) -> anyhow::Result<()> {
+                Ok(())
+            }
         }
         // デフォルト実装が呼べてパニックしないことを確認する
         NoopEngine.terminate();

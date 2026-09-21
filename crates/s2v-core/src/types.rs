@@ -129,13 +129,20 @@ mod tests {
 
     #[test]
     fn scene_config_custom_values() {
-        let sc = SceneConfig { room_size: Some(0.8), reverb_wet: Some(0.3), ..SceneConfig::new("広場") };
+        let sc = SceneConfig {
+            room_size: Some(0.8),
+            reverb_wet: Some(0.3),
+            ..SceneConfig::new("広場")
+        };
         assert_eq!(sc.room_size, Some(0.8));
     }
 
     #[test]
     fn scene_config_can_hold_description() {
-        let sc = SceneConfig { description: Some("放課後の静かな教室。".to_string()), ..SceneConfig::new("教室") };
+        let sc = SceneConfig {
+            description: Some("放課後の静かな教室。".to_string()),
+            ..SceneConfig::new("教室")
+        };
         assert_eq!(sc.description.as_deref(), Some("放課後の静かな教室。"));
     }
 
@@ -148,7 +155,10 @@ mod tests {
             offset_params: HashMap::new(),
             scene_config: SceneConfig::new("室内"),
         };
-        if let ScriptItem::Speech { cast_name, text, .. } = &item {
+        if let ScriptItem::Speech {
+            cast_name, text, ..
+        } = &item
+        {
             assert_eq!(cast_name, "キャラA");
             assert_eq!(text, "こんにちは");
         } else {

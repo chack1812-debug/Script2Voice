@@ -13,13 +13,8 @@ pub fn resample_mono(samples: &[f32], from_rate: u32, to_rate: u32) -> anyhow::R
     let ratio = to_rate as f64 / from_rate as f64;
     let chunk_size = 1024_usize;
 
-    let mut resampler = FftFixedIn::<f32>::new(
-        from_rate as usize,
-        to_rate as usize,
-        chunk_size,
-        2,
-        1,
-    )?;
+    let mut resampler =
+        FftFixedIn::<f32>::new(from_rate as usize, to_rate as usize, chunk_size, 2, 1)?;
 
     let mut input_frames = samples.to_vec();
     // 最後のチャンクに必要なパディングを追加

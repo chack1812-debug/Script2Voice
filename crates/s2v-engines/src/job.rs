@@ -105,7 +105,12 @@ mod tests {
     fn unique_job_name(tag: &str) -> String {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEQ: AtomicUsize = AtomicUsize::new(0);
-        format!("Local\\s2v_test_{}_{}_{}", tag, std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst))
+        format!(
+            "Local\\s2v_test_{}_{}_{}",
+            tag,
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        )
     }
 
     /// 今回のバグ(先に終了したプロセスが共有エンジンを殺す)に対応する回帰テスト。
@@ -137,7 +142,10 @@ mod tests {
     #[test]
     fn dropping_job_terminates_assigned_process_via_kill_on_close() {
         let mut child = spawn_long_running();
-        assert!(child.try_wait().unwrap().is_none(), "プロセスが起動していること");
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "プロセスが起動していること"
+        );
 
         {
             let job = EngineJob::open_or_create(&unique_job_name("drop")).unwrap();

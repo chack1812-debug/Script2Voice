@@ -14,13 +14,30 @@ use crate::script_model::PreviewLine;
 
 /// バックグラウンドジョブ → UI への通知。
 pub enum JobMsg {
-    PreviewReady { line_no: usize, wav: PathBuf, raw: PathBuf },
-    PreviewFailed { line_no: usize, error: String },
+    PreviewReady {
+        line_no: usize,
+        wav: PathBuf,
+        raw: PathBuf,
+    },
+    PreviewFailed {
+        line_no: usize,
+        error: String,
+    },
     RunPhase(String),
-    RunProgress { done: usize, total: usize },
-    RunFinished { result: Result<PathBuf, String> },
-    LabReady { wav: PathBuf, params: LabParams },
-    LabFailed { error: String },
+    RunProgress {
+        done: usize,
+        total: usize,
+    },
+    RunFinished {
+        result: Result<PathBuf, String>,
+    },
+    LabReady {
+        wav: PathBuf,
+        params: LabParams,
+    },
+    LabFailed {
+        error: String,
+    },
 }
 
 /// 実行中の一括実行タスク一式。中断時に生成本体を future ごと落とすために保持する。
@@ -142,8 +159,14 @@ impl Jobs {
             Arc::clone(&self.busy_preview),
         );
         let seq = self.preview_seq.fetch_add(1, Ordering::SeqCst);
-        let raw = self.tmp.path().join(format!("preview_{:04}_{seq}_raw.wav", line.no));
-        let out = self.tmp.path().join(format!("preview_{:04}_{seq}.wav", line.no));
+        let raw = self
+            .tmp
+            .path()
+            .join(format!("preview_{:04}_{seq}_raw.wav", line.no));
+        let out = self
+            .tmp
+            .path()
+            .join(format!("preview_{:04}_{seq}.wav", line.no));
         self.rt.spawn(async move {
             tracing::info!("試聴: 行{} の合成を開始します", line.no);
             let res: anyhow::Result<()> = async {
@@ -153,8 +176,11 @@ impl Jobs {
                 engines.synthesize(&line.text, &line.cast, &raw).await?;
                 tracing::info!("試聴: 行{} 合成完了、音響処理中", line.no);
                 let (p, r, o, c, s) = (
-                    Arc::clone(&processor), raw.clone(), out.clone(),
-                    line.cast.clone(), line.scene_config.clone(),
+                    Arc::clone(&processor),
+                    raw.clone(),
+                    out.clone(),
+                    line.cast.clone(),
+                    line.scene_config.clone(),
                 );
                 tokio::task::spawn_blocking(move || p.process(&r, &o, &c, &s)).await??;
                 Ok(())
@@ -164,11 +190,18 @@ impl Jobs {
             let _ = match res {
                 Ok(()) => {
                     tracing::info!("試聴: 行{} 準備完了", line.no);
-                    tx.send(JobMsg::PreviewReady { line_no: line.no, wav: out, raw })
+                    tx.send(JobMsg::PreviewReady {
+                        line_no: line.no,
+                        wav: out,
+                        raw,
+                    })
                 }
                 Err(e) => {
                     tracing::error!("試聴失敗: 行{} {e:#}", line.no);
-                    tx.send(JobMsg::PreviewFailed { line_no: line.no, error: format!("{e:#}") })
+                    tx.send(JobMsg::PreviewFailed {
+                        line_no: line.no,
+                        error: format!("{e:#}"),
+                    })
                 }
             };
         });
@@ -230,7 +263,9 @@ impl Jobs {
                 });
 
                 let producer = Producer::new(Arc::clone(&engines), &config, &project_dir)?;
-                producer.produce_with_events(&scenes, Some(ev_tx), Some(cancel)).await?;
+                producer
+                    .produce_with_events(&scenes, Some(ev_tx), Some(cancel))
+                    .await?;
                 Ok(project_dir)
             }
             .await;
@@ -248,7 +283,10 @@ impl Jobs {
             busy.store(false, Ordering::SeqCst);
             let _ = tx.send(JobMsg::RunFinished { result });
         });
-        *self.run_task.lock().unwrap() = Some(RunTask { work: abort, watcher });
+        *self.run_task.lock().unwrap() = Some(RunTask {
+            work: abort,
+            watcher,
+        });
     }
 
     /// 音響ラボ: 入力 WAV(任意 WAV or 行プレビューの raw)に音響処理を適用。
@@ -273,8 +311,12 @@ impl Jobs {
             busy.store(false, Ordering::SeqCst);
             let _ = match res {
                 Ok(Ok(out)) => tx.send(JobMsg::LabReady { wav: out, params }),
-                Ok(Err(e)) => tx.send(JobMsg::LabFailed { error: format!("{e:#}") }),
-                Err(e) => tx.send(JobMsg::LabFailed { error: format!("内部エラー: {e}") }),
+                Ok(Err(e)) => tx.send(JobMsg::LabFailed {
+                    error: format!("{e:#}"),
+                }),
+                Err(e) => tx.send(JobMsg::LabFailed {
+                    error: format!("内部エラー: {e}"),
+                }),
             };
         });
     }
@@ -473,7 +515,10 @@ se_fade_out_s = 0.05
             lock.display()
         );
         assert!(
-            wait_until(|| !jobs.busy_run.load(Ordering::SeqCst), Duration::from_secs(5)),
+            wait_until(
+                || !jobs.busy_run.load(Ordering::SeqCst),
+                Duration::from_secs(5)
+            ),
             "キャンセル後は再実行できるよう busy_run が下りるべき"
         );
     }

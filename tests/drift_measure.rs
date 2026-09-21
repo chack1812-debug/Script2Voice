@@ -39,7 +39,9 @@ struct StubEngine {
 
 impl StubEngine {
     fn new() -> Self {
-        Self { calls: AtomicUsize::new(0) }
+        Self {
+            calls: AtomicUsize::new(0),
+        }
     }
 }
 
@@ -134,7 +136,11 @@ fn build_long_script(lines: usize) -> String {
     s.push_str("@script\n");
     for i in 0..lines {
         // 話者交代を混ぜる (3行ごとに交代)
-        let cast = if (i / 3) % 2 == 0 { "めたん" } else { "まい" };
+        let cast = if (i / 3) % 2 == 0 {
+            "めたん"
+        } else {
+            "まい"
+        };
         // テキスト長を変えて可変長を促す
         let reps = 1 + (i % 4);
         let body = "あいうえお".repeat(reps);
@@ -193,9 +199,14 @@ fn parse_srt_time(s: &str) -> f64 {
 fn read_wav_frames(path: &Path) -> (u32, Vec<[f32; 2]>) {
     let mut reader = hound::WavReader::open(path).unwrap();
     let spec = reader.spec();
-    let raw: Vec<f32> = reader.samples::<i16>().map(|s| s.unwrap() as f32 / 32768.0).collect();
+    let raw: Vec<f32> = reader
+        .samples::<i16>()
+        .map(|s| s.unwrap() as f32 / 32768.0)
+        .collect();
     let frames: Vec<[f32; 2]> = if spec.channels == 2 {
-        raw.chunks(2).map(|c| [c[0], c.get(1).copied().unwrap_or(0.0)]).collect()
+        raw.chunks(2)
+            .map(|c| [c[0], c.get(1).copied().unwrap_or(0.0)])
+            .collect()
     } else {
         raw.iter().map(|&s| [s, s]).collect()
     };
@@ -228,7 +239,10 @@ fn detect_onset(
     // 探索区間内のピークパワーを基準に、絶対しきい値を決める
     let region_end = (expected_sample + search_half).min(power.len());
     let region_start = start;
-    let peak = power[region_start..region_end].iter().cloned().fold(0.0_f32, f32::max);
+    let peak = power[region_start..region_end]
+        .iter()
+        .cloned()
+        .fold(0.0_f32, f32::max);
     if peak <= 0.0 {
         return None;
     }
@@ -287,11 +301,16 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
     let srt = std::fs::read_to_string(&srt_path).unwrap();
     let entries = parse_srt(&srt);
     // [PARAGRAPH] 以外の発話字幕のみを対象にする
-    let speech_entries: Vec<&(usize, f64, f64, String)> =
-        entries.iter().filter(|e| !e.3.contains("[PARAGRAPH]")).collect();
+    let speech_entries: Vec<&(usize, f64, f64, String)> = entries
+        .iter()
+        .filter(|e| !e.3.contains("[PARAGRAPH]"))
+        .collect();
 
     let (sr, frames) = read_wav_frames(&mix_path);
-    assert_eq!(sr, 48000, "ミックスは config sample_rate(48000) で出力されるはず");
+    assert_eq!(
+        sr, 48000,
+        "ミックスは config sample_rate(48000) で出力されるはず"
+    );
     let power = mono_power(&frames);
 
     let total_wav_s = frames.len() as f64 / sr as f64;
@@ -328,7 +347,11 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
         }
     }
 
-    println!("detected onsets            : {} / {}", measured.len(), speech_entries.len());
+    println!(
+        "detected onsets            : {} / {}",
+        measured.len(),
+        speech_entries.len()
+    );
     println!("undetected (skipped)       : {undetected}");
     assert!(
         measured.len() as f64 >= speech_entries.len() as f64 * 0.8,
@@ -342,7 +365,10 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
 
     // 統計
     let max_abs_drift = measured.iter().map(|m| m.3.abs()).fold(0.0_f64, f64::max);
-    let max_abs_rel = measured.iter().map(|m| (m.3 - baseline_ms).abs()).fold(0.0_f64, f64::max);
+    let max_abs_rel = measured
+        .iter()
+        .map(|m| (m.3 - baseline_ms).abs())
+        .fold(0.0_f64, f64::max);
 
     // 50ms を超える最初の行 (相対ドリフト基準)
     let first_rel_over_50 = measured.iter().find(|m| (m.3 - baseline_ms).abs() > 50.0);
@@ -350,8 +376,11 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
 
     // 単調増加チェック: 前半 vs 後半の平均相対ドリフト
     let half = measured.len() / 2;
-    let avg_first_half: f64 =
-        measured[..half].iter().map(|m| m.3 - baseline_ms).sum::<f64>() / half.max(1) as f64;
+    let avg_first_half: f64 = measured[..half]
+        .iter()
+        .map(|m| m.3 - baseline_ms)
+        .sum::<f64>()
+        / half.max(1) as f64;
     let avg_second_half: f64 = measured[half..]
         .iter()
         .map(|m| m.3 - baseline_ms)
@@ -379,7 +408,10 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
     println!("avg rel drift 2nd half (ms): {avg_second_half:.2}");
     println!("regression slope (ms/line) : {slope_ms_per_line:.4}");
     match first_raw_over_50 {
-        Some(m) => println!("first |raw drift|>50ms     : srt#{} at {:.2}s (drift {:.1}ms)", m.0, m.1, m.3),
+        Some(m) => println!(
+            "first |raw drift|>50ms     : srt#{} at {:.2}s (drift {:.1}ms)",
+            m.0, m.1, m.3
+        ),
         None => println!("first |raw drift|>50ms     : NONE"),
     }
     match first_rel_over_50 {
@@ -393,7 +425,9 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
     }
 
     // サンプル抽出して出力 (先頭/中間/末尾の数行)
-    println!("\n---- sampled rows (idx | srt_start_s | onset_s | raw_drift_ms | rel_drift_ms) ----");
+    println!(
+        "\n---- sampled rows (idx | srt_start_s | onset_s | raw_drift_ms | rel_drift_ms) ----"
+    );
     let sample_indices: Vec<usize> = {
         let m = measured.len();
         let mut v = vec![0usize, 1, 2];
@@ -418,7 +452,8 @@ async fn measure_internal_drift_srt_vs_full_dialogue() {
 
     // 判定: 相対ドリフトが時間とともに有意に増大していないこと。
     // しきい値: 末尾でも相対ドリフトが 50ms 未満、回帰傾きが ~0。
-    let grows = avg_second_half.abs() > avg_first_half.abs() + 30.0 && slope_ms_per_line.abs() > 0.05;
+    let grows =
+        avg_second_half.abs() > avg_first_half.abs() + 30.0 && slope_ms_per_line.abs() > 0.05;
     println!(
         "\nVERDICT: {}",
         if max_abs_rel < 50.0 && !grows {

@@ -27,10 +27,16 @@ pub fn builtin_presets() -> Vec<Preset> {
     fn p(name: &str, w: f64, d: f64, h: f64, dy: f64, z: f64, wet: f64) -> Preset {
         Preset {
             name: name.into(),
-            room_w: Some(w), room_d: Some(d), room_h: Some(h),
-            listener_dx: Some(0.0), listener_dy: Some(dy), listener_z: Some(z),
+            room_w: Some(w),
+            room_d: Some(d),
+            room_h: Some(h),
+            listener_dx: Some(0.0),
+            listener_dy: Some(dy),
+            listener_z: Some(z),
             reverb_wet: Some(wet),
-            pan: None, distance: None, height: None,
+            pan: None,
+            distance: None,
+            height: None,
         }
     }
     vec![
@@ -53,7 +59,12 @@ pub fn load_presets(path: &Path) -> (Vec<Preset>, Option<String>) {
             presets.extend(file.preset);
             (presets, None)
         }
-        Err(e) => (presets, Some(format!("presets.toml の読み込みに失敗（組込みのみ使用）: {e}"))),
+        Err(e) => (
+            presets,
+            Some(format!(
+                "presets.toml の読み込みに失敗（組込みのみ使用）: {e}"
+            )),
+        ),
     }
 }
 
@@ -67,7 +78,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("presets.toml");
         let mut f = std::fs::File::create(&path).unwrap();
-        write!(f, "[[preset]]\nname = \"テスト部屋\"\nroom_w = 7.0\nroom_d = 8.0\nroom_h = 3.5\n").unwrap();
+        write!(
+            f,
+            "[[preset]]\nname = \"テスト部屋\"\nroom_w = 7.0\nroom_d = 8.0\nroom_h = 3.5\n"
+        )
+        .unwrap();
         drop(f);
         let (presets, warn) = load_presets(&path);
         assert!(warn.is_none());

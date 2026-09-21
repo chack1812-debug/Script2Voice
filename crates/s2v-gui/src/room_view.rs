@@ -7,7 +7,10 @@ pub const WALL_MARGIN: f64 = 0.05;
 
 /// 聴取者の部屋座標（x∈[0,W], y∈[0,D]。中央 + オフセット）。
 pub fn listener_pos(p: &LabParams) -> (f64, f64) {
-    (p.room_w / 2.0 + p.listener_dx, p.room_d / 2.0 + p.listener_dy)
+    (
+        p.room_w / 2.0 + p.listener_dx,
+        p.room_d / 2.0 + p.listener_dy,
+    )
 }
 
 /// 話者の部屋座標（聴取者基準の pan/distance から。pan 0°=正面(+y)、+が右(+x)）。
@@ -136,22 +139,27 @@ pub fn room_view_ui(ui: &mut egui::Ui, p: &mut LabParams, front_wall_coeff: f64)
     ));
 
     // ドラッグ可能な2点（👤聴取者 / 🔊話者）
-    let drag_point = |ui: &mut egui::Ui, pos: egui::Pos2, id: &str, icon: &str| -> Option<egui::Pos2> {
-        let hit = egui::Rect::from_center_size(pos, egui::vec2(26.0, 26.0));
-        let resp = ui.interact(hit, egui::Id::new(id), egui::Sense::drag());
-        ui.painter_at(area).text(
-            pos,
-            egui::Align2::CENTER_CENTER,
-            icon,
-            egui::FontId::proportional(if resp.hovered() || resp.dragged() { 22.0 } else { 18.0 }),
-            egui::Color32::BLACK,
-        );
-        if resp.dragged() {
-            resp.interact_pointer_pos()
-        } else {
-            None
-        }
-    };
+    let drag_point =
+        |ui: &mut egui::Ui, pos: egui::Pos2, id: &str, icon: &str| -> Option<egui::Pos2> {
+            let hit = egui::Rect::from_center_size(pos, egui::vec2(26.0, 26.0));
+            let resp = ui.interact(hit, egui::Id::new(id), egui::Sense::drag());
+            ui.painter_at(area).text(
+                pos,
+                egui::Align2::CENTER_CENTER,
+                icon,
+                egui::FontId::proportional(if resp.hovered() || resp.dragged() {
+                    22.0
+                } else {
+                    18.0
+                }),
+                egui::Color32::BLACK,
+            );
+            if resp.dragged() {
+                resp.interact_pointer_pos()
+            } else {
+                None
+            }
+        };
 
     if let Some(np) = drag_point(ui, spos, "room_speaker", "🔊") {
         let (x, y) = vm.to_room(np);
@@ -196,7 +204,11 @@ mod tests {
         let mut prm = p(); // listener (5,10)
         drag_speaker_to(&mut prm, 5.0, 7.0); // 真後ろ 3m
         assert!((prm.distance - 3.0).abs() < 1e-9);
-        assert!((prm.pan.abs() - 180.0).abs() < 1e-6, "後方は ±180°: {}", prm.pan);
+        assert!(
+            (prm.pan.abs() - 180.0).abs() < 1e-6,
+            "後方は ±180°: {}",
+            prm.pan
+        );
         drag_speaker_to(&mut prm, 2.0, 10.0); // 真左 3m
         assert!((prm.pan + 90.0).abs() < 1e-6, "左は -90°: {}", prm.pan);
     }
@@ -219,7 +231,10 @@ mod tests {
         drag_listener_to(&mut prm, 5.0, 18.0); // 前壁近くへ → 話者がはみ出すはず
         assert!((prm.listener_dy - 8.0).abs() < 1e-9);
         let (sx, sy) = speaker_pos(&prm);
-        assert!(sy <= prm.room_d - WALL_MARGIN + 1e-9, "話者は再クランプ: {sy}");
+        assert!(
+            sy <= prm.room_d - WALL_MARGIN + 1e-9,
+            "話者は再クランプ: {sy}"
+        );
         assert!(prm.distance < 5.0, "距離が縮む");
         let _ = sx;
     }
@@ -228,7 +243,7 @@ mod tests {
     fn normalize_reclamps_after_room_shrink() {
         let mut prm = p();
         prm.listener_dx = 4.0; // (9,10)
-        prm.room_w = 6.0;      // 幅縮小 → x=9 は外
+        prm.room_w = 6.0; // 幅縮小 → x=9 は外
         normalize(&mut prm);
         let (lx, _) = listener_pos(&prm);
         assert!(lx <= 6.0 - WALL_MARGIN + 1e-9);

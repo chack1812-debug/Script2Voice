@@ -117,7 +117,10 @@ impl Engine for XttsEngine {
     fn is_cast_valid(&self, cast: &Cast) -> bool {
         if let Ok(cache) = self.speaker_cache.try_read() {
             if !cache.is_empty() && !cache.contains(&cast.speaker_name) {
-                warn!("[{}] 話者 '{}' がキャッシュに見つかりません", self.name, cast.speaker_name);
+                warn!(
+                    "[{}] 話者 '{}' がキャッシュに見つかりません",
+                    self.name, cast.speaker_name
+                );
             }
         }
         true
@@ -130,7 +133,12 @@ impl Engine for XttsEngine {
         let _guard = self.synth_lock.lock().await;
 
         // get_tts_settings → patch → set_tts_settings
-        if let Ok(q_res) = self.client.post(format!("{}/get_tts_settings", self.url)).send().await {
+        if let Ok(q_res) = self
+            .client
+            .post(format!("{}/get_tts_settings", self.url))
+            .send()
+            .await
+        {
             if q_res.status().is_success() {
                 if let Ok(mut query) = q_res.json::<Value>().await {
                     if let Value::Object(ref mut map) = query {
@@ -150,7 +158,11 @@ impl Engine for XttsEngine {
             }
         }
 
-        let lang = cast.params.get("language").and_then(|v| v.as_str()).unwrap_or("ja");
+        let lang = cast
+            .params
+            .get("language")
+            .and_then(|v| v.as_str())
+            .unwrap_or("ja");
         let payload = json!({
             "text": text,
             "speaker_name": cast.speaker_name,
@@ -208,9 +220,11 @@ mod tests {
     #[tokio::test]
     async fn activate_populates_speaker_cache() {
         let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/speakers"))
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
@@ -231,22 +245,33 @@ mod tests {
         let tmp = tempfile::NamedTempFile::new().unwrap();
         let out_path = tmp.path().to_path_buf();
 
-        Mock::given(method("GET")).and(path("/speakers"))
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/get_tts_settings"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/get_tts_settings"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/set_tts_settings"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/set_tts_settings"))
             .respond_with(ResponseTemplate::new(200))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/tts_to_audio/"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tts_to_audio/"))
             .respond_with(ResponseTemplate::new(200).set_body_bytes(b"RIFF....".to_vec()))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
-        engine.synthesize("Hello", &dummy_cast(), &out_path).await.unwrap();
+        engine
+            .synthesize("Hello", &dummy_cast(), &out_path)
+            .await
+            .unwrap();
 
         assert!(out_path.exists());
         assert!(std::fs::metadata(&out_path).unwrap().len() > 0);
@@ -255,22 +280,32 @@ mod tests {
     #[tokio::test]
     async fn synthesize_fails_on_tts_error() {
         let server = MockServer::start().await;
-        Mock::given(method("GET")).and(path("/speakers"))
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/get_tts_settings"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/get_tts_settings"))
             .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/set_tts_settings"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/set_tts_settings"))
             .respond_with(ResponseTemplate::new(200))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/tts_to_audio/"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tts_to_audio/"))
             .respond_with(ResponseTemplate::new(500))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let engine = make_engine(&server.uri());
         engine.activate().await.unwrap();
-        let result = engine.synthesize("テスト", &dummy_cast(), Path::new("/tmp/out.wav")).await;
+        let result = engine
+            .synthesize("テスト", &dummy_cast(), Path::new("/tmp/out.wav"))
+            .await;
         assert!(result.is_err());
     }
 
@@ -326,7 +361,13 @@ mod tests {
     }
     impl wiremock::Respond for TtsToAudioResponder {
         fn respond(&self, _req: &wiremock::Request) -> ResponseTemplate {
-            let speed = self.state.lock().unwrap().get("speed").and_then(|v| v.as_f64()).unwrap();
+            let speed = self
+                .state
+                .lock()
+                .unwrap()
+                .get("speed")
+                .and_then(|v| v.as_f64())
+                .unwrap();
             ResponseTemplate::new(200).set_body_bytes(speed.to_string().into_bytes())
         }
     }
@@ -336,18 +377,32 @@ mod tests {
         let server = MockServer::start().await;
         let state = Arc::new(std::sync::Mutex::new(json!({"speed": 0.0})));
 
-        Mock::given(method("GET")).and(path("/speakers"))
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
             .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/get_tts_settings"))
-            .respond_with(GetSettingsResponder { state: state.clone() })
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/set_tts_settings"))
-            .respond_with(SetSettingsResponder { state: state.clone() })
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/tts_to_audio/"))
-            .respond_with(TtsToAudioResponder { state: state.clone() })
-            .mount(&server).await;
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/get_tts_settings"))
+            .respond_with(GetSettingsResponder {
+                state: state.clone(),
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/set_tts_settings"))
+            .respond_with(SetSettingsResponder {
+                state: state.clone(),
+            })
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tts_to_audio/"))
+            .respond_with(TtsToAudioResponder {
+                state: state.clone(),
+            })
+            .mount(&server)
+            .await;
 
         let engine = Arc::new(make_engine(&server.uri()));
         let tmp = tempfile::tempdir().unwrap();
@@ -357,12 +412,16 @@ mod tests {
         let engine_a = Arc::clone(&engine);
         let out_a2 = out_a.clone();
         let task_a = tokio::spawn(async move {
-            engine_a.synthesize("台詞A", &cast_with_speed(1.0), &out_a2).await
+            engine_a
+                .synthesize("台詞A", &cast_with_speed(1.0), &out_a2)
+                .await
         });
         let engine_b = Arc::clone(&engine);
         let out_b2 = out_b.clone();
         let task_b = tokio::spawn(async move {
-            engine_b.synthesize("台詞B", &cast_with_speed(2.0), &out_b2).await
+            engine_b
+                .synthesize("台詞B", &cast_with_speed(2.0), &out_b2)
+                .await
         });
 
         task_a.await.unwrap().unwrap();
@@ -370,7 +429,13 @@ mod tests {
 
         let content_a = std::fs::read_to_string(&out_a).unwrap();
         let content_b = std::fs::read_to_string(&out_b).unwrap();
-        assert_eq!(content_a, "1", "台詞Aの合成は台詞A自身のspeed設定を使うべき(Bに上書きされてはいけない)");
-        assert_eq!(content_b, "2", "台詞Bの合成は台詞B自身のspeed設定を使うべき");
+        assert_eq!(
+            content_a, "1",
+            "台詞Aの合成は台詞A自身のspeed設定を使うべき(Bに上書きされてはいけない)"
+        );
+        assert_eq!(
+            content_b, "2",
+            "台詞Bの合成は台詞B自身のspeed設定を使うべき"
+        );
     }
 }

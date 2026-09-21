@@ -74,7 +74,12 @@ impl TimelineProcessor {
         self.current_ms += duration_ms + p;
     }
 
-    pub fn advance_after_parallel(&mut self, anchor_ms: f64, max_occupied_ms: f64, pause_ms: Option<f64>) {
+    pub fn advance_after_parallel(
+        &mut self,
+        anchor_ms: f64,
+        max_occupied_ms: f64,
+        pause_ms: Option<f64>,
+    ) {
         let p = pause_ms.unwrap_or(self.sentence_pause_ms);
         self.current_ms = anchor_ms + max_occupied_ms + p;
     }
@@ -259,7 +264,10 @@ mod tests {
         tp.current_ms = 1500.0;
         tp.register_paragraph(Some("オープニング".to_string()));
         let events = tp.get_events();
-        assert_eq!(events[0].display_text.as_deref(), Some("[PARAGRAPH オープニング]"));
+        assert_eq!(
+            events[0].display_text.as_deref(),
+            Some("[PARAGRAPH オープニング]")
+        );
         assert_eq!(events[0].name.as_deref(), Some("オープニング"));
     }
 
@@ -294,8 +302,22 @@ mod tests {
     #[test]
     fn sequential_audio_registration_order_preserved() {
         let mut tp = TimelineProcessor::new(&default_pause());
-        tp.register_audio(PathBuf::from("a.wav"), 500.0, 0.0, "A".to_string(), "A".to_string(), "役A".to_string());
-        tp.register_audio(PathBuf::from("b.wav"), 800.0, 700.0, "B".to_string(), "B".to_string(), "役B".to_string());
+        tp.register_audio(
+            PathBuf::from("a.wav"),
+            500.0,
+            0.0,
+            "A".to_string(),
+            "A".to_string(),
+            "役A".to_string(),
+        );
+        tp.register_audio(
+            PathBuf::from("b.wav"),
+            800.0,
+            700.0,
+            "B".to_string(),
+            "B".to_string(),
+            "役B".to_string(),
+        );
         let events = tp.get_events();
         assert_eq!(events.len(), 2);
         assert!((events[1].start_ms - 700.0).abs() < 1e-10);

@@ -10,7 +10,10 @@ pub struct Transport {
 
 impl Transport {
     pub fn new() -> Self {
-        Self { now_playing: None, last_wav: None }
+        Self {
+            now_playing: None,
+            last_wav: None,
+        }
     }
 
     /// 再生を開始し、表示名と再再生用パスを記録する。失敗時はエラーメッセージを返す。
@@ -22,7 +25,11 @@ impl Transport {
             tracing::error!("再生失敗: {} ({e})", path.display());
             e.to_string()
         })?;
-        let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?").to_string();
+        let name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
         tracing::info!("再生開始: {name}");
         self.now_playing = Some(name);
         self.last_wav = Some(path.to_path_buf());
@@ -51,7 +58,10 @@ impl Transport {
                     let _ = self.play(player, &p);
                 }
             }
-            if ui.add_enabled(player.is_some(), egui::Button::new("⏹")).clicked() {
+            if ui
+                .add_enabled(player.is_some(), egui::Button::new("⏹"))
+                .clicked()
+            {
                 self.stop(player);
             }
             ui.label(match &self.now_playing {
@@ -59,12 +69,18 @@ impl Transport {
                 None => "—".to_string(),
             });
             ui.separator();
-            if ui.add_enabled(a.is_some(), egui::Button::new("▶ A")).clicked() {
+            if ui
+                .add_enabled(a.is_some(), egui::Button::new("▶ A"))
+                .clicked()
+            {
                 if let Some(p) = a.clone() {
                     let _ = self.play(player, &p);
                 }
             }
-            if ui.add_enabled(b.is_some(), egui::Button::new("▶ B")).clicked() {
+            if ui
+                .add_enabled(b.is_some(), egui::Button::new("▶ B"))
+                .clicked()
+            {
                 if let Some(p) = b.clone() {
                     let _ = self.play(player, &p);
                 }

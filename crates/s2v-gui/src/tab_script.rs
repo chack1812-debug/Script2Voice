@@ -55,8 +55,12 @@ impl ScriptTab {
 
     /// 起動時に前回の台本を自動で開く（無ければ何もしない）。
     pub fn restore_last(&mut self) {
-        let Some(f) = Self::last_path_file() else { return };
-        let Ok(s) = std::fs::read_to_string(&f) else { return };
+        let Some(f) = Self::last_path_file() else {
+            return;
+        };
+        let Ok(s) = std::fs::read_to_string(&f) else {
+            return;
+        };
         let p = PathBuf::from(s.trim());
         if p.exists() {
             self.open(p);
@@ -84,7 +88,9 @@ impl ScriptTab {
         if !self.auto_reload {
             return;
         }
-        let Some(w) = self.watcher.as_mut() else { return };
+        let Some(w) = self.watcher.as_mut() else {
+            return;
+        };
         if !w.poll() {
             return;
         }
@@ -189,7 +195,10 @@ impl ScriptTab {
                                 let sel = self.selected == Some(line.no);
                                 let head: String = line.display_text.chars().take(22).collect();
                                 if ui
-                                    .selectable_label(sel, format!("{:>3} {} {}", line.no, line.cast_name, head))
+                                    .selectable_label(
+                                        sel,
+                                        format!("{:>3} {} {}", line.no, line.cast_name, head),
+                                    )
                                     .clicked()
                                 {
                                     self.selected = Some(line.no);
@@ -210,7 +219,10 @@ impl ScriptTab {
                         ui.label("← 行を選択してください");
                         return;
                     };
-                    ui.strong(format!("行 {} ／ {}（{}）", line.no, line.cast_name, line.scene_name));
+                    ui.strong(format!(
+                        "行 {} ／ {}（{}）",
+                        line.no, line.cast_name, line.scene_name
+                    ));
                     egui::ScrollArea::vertical()
                         .id_salt("line_detail")
                         .max_height(panes_h * 0.45)
@@ -234,7 +246,9 @@ impl ScriptTab {
                         "cast: pan {:+.1}° ／ 距離 {:.2}m ／ 高さ {} ／ 音量 {:.2}",
                         line.cast.pan,
                         line.cast.distance,
-                        line.cast.height.map_or("聴取者と同じ".to_string(), |h| format!("{h}m")),
+                        line.cast
+                            .height
+                            .map_or("聴取者と同じ".to_string(), |h| format!("{h}m")),
                         line.cast.volume,
                     ));
                     ui.add_space(6.0);
@@ -260,13 +274,19 @@ impl ScriptTab {
         // ── 下部: 一括実行ストリップ（全幅）──
         let running = jobs.busy_run.load(std::sync::atomic::Ordering::SeqCst);
         ui.horizontal(|ui| {
-            if ui.add_enabled(!running, egui::Button::new("▶ 一括実行")).clicked() {
+            if ui
+                .add_enabled(!running, egui::Button::new("▶ 一括実行"))
+                .clicked()
+            {
                 self.run_error = None;
                 self.run_progress = None;
                 self.last_project_dir = None;
                 jobs.run_all(model.path.clone());
             }
-            if ui.add_enabled(running, egui::Button::new("⏹ キャンセル")).clicked() {
+            if ui
+                .add_enabled(running, egui::Button::new("⏹ キャンセル"))
+                .clicked()
+            {
                 jobs.cancel_run();
             }
             if running {
@@ -300,7 +320,9 @@ mod tests {
     fn sample_script() -> String {
         let mut s = String::from("@scene 一\n@cast\nA:話者:ノーマル,voicevox,pan=0\n@script\n");
         for i in 1..=40 {
-            s.push_str(&format!("A:これは{i}行目の台詞です。長さの目安として少し長めに書いておきます。\n"));
+            s.push_str(&format!(
+                "A:これは{i}行目の台詞です。長さの目安として少し長めに書いておきます。\n"
+            ));
         }
         s
     }
@@ -315,7 +337,11 @@ mod tests {
     /// `max_rect` はコンテンツがはみ出すと一緒に広がってしまうため判定に使えない。
     /// CentralPanel は `set_clip_rect` で描画をパネル内に切り詰めるので、
     /// 「見えているか」の基準はクリップ矩形になる。
-    fn layout_once(size: egui::Vec2, selected: Option<usize>, running: bool) -> (egui::Rect, egui::Rect) {
+    fn layout_once(
+        size: egui::Vec2,
+        selected: Option<usize>,
+        running: bool,
+    ) -> (egui::Rect, egui::Rect) {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("台本.txt");
         std::fs::write(&path, sample_script()).unwrap();
@@ -358,8 +384,7 @@ mod tests {
     #[test]
     fn bulk_run_strip_fits_inside_central_panel() {
         for size in [egui::vec2(1100.0, 760.0), egui::vec2(1600.0, 1000.0)] {
-            for (selected, running) in
-                [(None, false), (Some(1usize), false), (Some(1usize), true)]
+            for (selected, running) in [(None, false), (Some(1usize), false), (Some(1usize), true)]
             {
                 let (clip_rect, min_rect) = layout_once(size, selected, running);
                 assert!(

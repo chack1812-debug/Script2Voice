@@ -11,7 +11,10 @@ pub struct LogBuffer {
 
 impl LogBuffer {
     pub fn new(cap: usize) -> Self {
-        Self { inner: Arc::new(Mutex::new(VecDeque::new())), cap }
+        Self {
+            inner: Arc::new(Mutex::new(VecDeque::new())),
+            cap,
+        }
     }
 
     pub fn push(&self, line: String) {
@@ -58,7 +61,10 @@ struct BufMakeWriter(LogBuffer);
 impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for BufMakeWriter {
     type Writer = BufWriter;
     fn make_writer(&'a self) -> Self::Writer {
-        BufWriter { buf: self.0.clone(), pending: Vec::new() }
+        BufWriter {
+            buf: self.0.clone(),
+            pending: Vec::new(),
+        }
     }
 }
 
@@ -80,7 +86,10 @@ pub fn init_tracing(buf: LogBuffer) {
             .with_writer(std::io::stderr)
             .with_filter(tracing_subscriber::EnvFilter::new("info"))
     });
-    tracing_subscriber::registry().with(layer).with(stderr_layer).init();
+    tracing_subscriber::registry()
+        .with(layer)
+        .with(stderr_layer)
+        .init();
 }
 
 #[cfg(test)]

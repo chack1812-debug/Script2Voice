@@ -42,7 +42,13 @@ impl App {
                     Err(e) => (None, Some(format!("初期化失敗: {e}"))),
                 }
             }
-            Err(e) => (None, Some(format!("config.toml を読めません ({}): {e}", config_path.display()))),
+            Err(e) => (
+                None,
+                Some(format!(
+                    "config.toml を読めません ({}): {e}",
+                    config_path.display()
+                )),
+            ),
         };
         let mut script = ScriptTab::default();
         script.restore_last(); // 前回の台本パスを復元
@@ -64,7 +70,9 @@ impl App {
     /// `pending_lab_line` の行のプレビューを、試聴が空いていれば起動する。
     /// 実行中なら何もしない（完了時に pump_messages から再試行される）。
     fn try_dispatch_pending_preview(&mut self) {
-        let Some(line_no) = self.pending_lab_line else { return };
+        let Some(line_no) = self.pending_lab_line else {
+            return;
+        };
         let Some(jobs) = &self.jobs else { return };
         if jobs.busy_preview.load(std::sync::atomic::Ordering::SeqCst) {
             return;
@@ -139,7 +147,11 @@ impl eframe::App for App {
         if self.probe_preview {
             if let (Some(jobs), Some(line)) = (
                 &self.jobs,
-                self.script.model.as_ref().and_then(|m| m.lines.first()).cloned(),
+                self.script
+                    .model
+                    .as_ref()
+                    .and_then(|m| m.lines.first())
+                    .cloned(),
             ) {
                 tracing::info!("PROBE: 行{} を自動試聴します", line.no);
                 self.script.preview_pending = Some(line.no);
@@ -159,18 +171,22 @@ impl eframe::App for App {
             .default_height(120.0)
             .show(ctx, |ui| {
                 ui.collapsing("実行ログ", |ui| {
-                    egui::ScrollArea::vertical().stick_to_bottom(true).show(ui, |ui| {
-                        for line in self.log.lines() {
-                            ui.monospace(line);
-                        }
-                    });
+                    egui::ScrollArea::vertical()
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            for line in self.log.lines() {
+                                ui.monospace(line);
+                            }
+                        });
                 });
             });
         egui::TopBottomPanel::bottom("transport").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if let Some(no) = self.script.preview_pending {
                     ui.spinner();
-                    ui.label(format!("行{no} を合成中…（エンジン初回起動時は30秒以上かかります）"));
+                    ui.label(format!(
+                        "行{no} を合成中…（エンジン初回起動時は30秒以上かかります）"
+                    ));
                 }
                 if let Some(e) = &self.script.preview_error {
                     ui.colored_label(egui::Color32::RED, format!("⚠ 試聴失敗: {e}"));

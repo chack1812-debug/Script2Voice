@@ -23,7 +23,10 @@ fn main() -> anyhow::Result<()> {
 
         // 引数: [台本パス] [エンジン名フィルタ]（省略時: 音響テスト.txt / 最初の行）
         let args: Vec<String> = std::env::args().collect();
-        let script = args.get(1).map(String::as_str).unwrap_or("scripts/音響テスト.txt");
+        let script = args
+            .get(1)
+            .map(String::as_str)
+            .unwrap_or("scripts/音響テスト.txt");
         let engine_filter = args.get(2).cloned();
 
         let mut parser = s2v_core::ScriptParser::new();
@@ -32,7 +35,12 @@ fn main() -> anyhow::Result<()> {
             .iter()
             .flat_map(|scene| {
                 scene.items.iter().filter_map(move |i| match i {
-                    s2v_core::ScriptItem::Speech { cast_name, text, scene_config, .. } => scene
+                    s2v_core::ScriptItem::Speech {
+                        cast_name,
+                        text,
+                        scene_config,
+                        ..
+                    } => scene
                         .casts
                         .get(cast_name)
                         .map(|c| (c.clone(), text.clone(), scene_config.clone())),
@@ -40,7 +48,9 @@ fn main() -> anyhow::Result<()> {
                 })
             })
             .find(|(c, _, _)| {
-                engine_filter.as_deref().map_or(true, |f| c.engine_type == f)
+                engine_filter
+                    .as_deref()
+                    .map_or(true, |f| c.engine_type == f)
             })
             .expect("条件に合う speech 行が見つかりません");
         let cast_name = cast.name.clone();
@@ -81,7 +91,10 @@ fn main() -> anyhow::Result<()> {
         );
 
         engines.shutdown_all();
-        println!("[{:>6.2}s] エンジン停止・プローブ正常終了", t0.elapsed().as_secs_f64());
+        println!(
+            "[{:>6.2}s] エンジン停止・プローブ正常終了",
+            t0.elapsed().as_secs_f64()
+        );
         anyhow::Ok(())
     })?;
     Ok(())

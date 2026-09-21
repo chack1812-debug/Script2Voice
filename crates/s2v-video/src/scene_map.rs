@@ -45,11 +45,17 @@ pub fn load_scene_map(path: &Path) -> anyhow::Result<SceneMap> {
 /// 新形式(type+path)と旧形式(imageキーのみ、常にimage扱い)の両方を受ける。
 fn normalize_entry(entry: &ParagraphEntry) -> anyhow::Result<(String, String)> {
     if let Some(path) = &entry.path {
-        Ok((entry.type_.clone().unwrap_or_else(|| "image".to_string()), path.clone()))
+        Ok((
+            entry.type_.clone().unwrap_or_else(|| "image".to_string()),
+            path.clone(),
+        ))
     } else if let Some(image) = &entry.image {
         Ok(("image".to_string(), image.clone()))
     } else {
-        anyhow::bail!("scene_map.json: 段落番号 {} に path も image もありません", entry.index)
+        anyhow::bail!(
+            "scene_map.json: 段落番号 {} に path も image もありません",
+            entry.index
+        )
     }
 }
 
@@ -91,7 +97,11 @@ pub fn resolve_assets(scene_map: &SceneMap, segment_count: usize) -> anyhow::Res
     for index in 1..=segment_count as i64 {
         let asset = if let Some((type_str, path)) = by_index.get(&index) {
             Asset {
-                kind: if type_str == "video" { AssetKind::Video } else { AssetKind::Image },
+                kind: if type_str == "video" {
+                    AssetKind::Video
+                } else {
+                    AssetKind::Image
+                },
                 path: path.clone(),
                 source_duration: None,
             }
@@ -131,7 +141,10 @@ pub fn validate_assets_exist(assets: &[Asset]) -> anyhow::Result<()> {
         .map(|a| a.path.as_str())
         .collect();
     if !missing.is_empty() {
-        anyhow::bail!("scene_map.json が参照するアセットが見つかりません: {}", missing.join(", "));
+        anyhow::bail!(
+            "scene_map.json が参照するアセットが見つかりません: {}",
+            missing.join(", ")
+        );
     }
     Ok(())
 }
@@ -142,10 +155,18 @@ mod tests {
     use std::path::Path;
 
     fn img(p: &str) -> Asset {
-        Asset { kind: AssetKind::Image, path: p.into(), source_duration: None }
+        Asset {
+            kind: AssetKind::Image,
+            path: p.into(),
+            source_duration: None,
+        }
     }
     fn vid(p: &str) -> Asset {
-        Asset { kind: AssetKind::Video, path: p.into(), source_duration: None }
+        Asset {
+            kind: AssetKind::Video,
+            path: p.into(),
+            source_duration: None,
+        }
     }
     fn sm_from(json: &str) -> SceneMap {
         serde_json::from_str(json).unwrap()
@@ -162,7 +183,9 @@ mod tests {
 
     #[test]
     fn resolve_legacy_image_form() {
-        let sm = sm_from(r#"{"paragraphs":[{"index":1,"image":"images/scene01.png"},{"index":2,"image":"images/scene02.png"}],"default_image":"images/default.png"}"#);
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"image":"images/scene01.png"},{"index":2,"image":"images/scene02.png"}],"default_image":"images/default.png"}"#,
+        );
         assert_eq!(
             resolve_assets(&sm, 2).unwrap(),
             vec![img("images/scene01.png"), img("images/scene02.png")]
@@ -171,7 +194,9 @@ mod tests {
 
     #[test]
     fn resolve_type_path_form_with_video() {
-        let sm = sm_from(r#"{"paragraphs":[{"index":1,"type":"video","path":"assets/p01.mp4"},{"index":2,"path":"assets/p02.png"}],"default_image":"assets/default.png"}"#);
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"type":"video","path":"assets/p01.mp4"},{"index":2,"path":"assets/p02.png"}],"default_image":"assets/default.png"}"#,
+        );
         assert_eq!(
             resolve_assets(&sm, 2).unwrap(),
             vec![vid("assets/p01.mp4"), img("assets/p02.png")]
@@ -180,10 +205,16 @@ mod tests {
 
     #[test]
     fn resolve_falls_back_to_default_for_missing_index() {
-        let sm = sm_from(r#"{"paragraphs":[{"index":1,"image":"images/scene01.png"}],"default_image":"images/default.png"}"#);
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"image":"images/scene01.png"}],"default_image":"images/default.png"}"#,
+        );
         assert_eq!(
             resolve_assets(&sm, 3).unwrap(),
-            vec![img("images/scene01.png"), img("images/default.png"), img("images/default.png")]
+            vec![
+                img("images/scene01.png"),
+                img("images/default.png"),
+                img("images/default.png")
+            ]
         );
     }
 
@@ -196,7 +227,9 @@ mod tests {
 
     #[test]
     fn resolve_errors_on_duplicate_index() {
-        let sm = sm_from(r#"{"paragraphs":[{"index":1,"image":"a.png"},{"index":1,"image":"b.png"}],"default_image":"d.png"}"#);
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"image":"a.png"},{"index":1,"image":"b.png"}],"default_image":"d.png"}"#,
+        );
         let e = resolve_assets(&sm, 1).unwrap_err();
         assert!(e.to_string().contains("重複"));
     }
@@ -210,7 +243,9 @@ mod tests {
 
     #[test]
     fn resolve_errors_on_invalid_type() {
-        let sm = sm_from(r#"{"paragraphs":[{"index":1,"type":"audio","path":"a.mp3"}],"default_image":"d.png"}"#);
+        let sm = sm_from(
+            r#"{"paragraphs":[{"index":1,"type":"audio","path":"a.mp3"}],"default_image":"d.png"}"#,
+        );
         let e = resolve_assets(&sm, 1).unwrap_err();
         assert!(e.to_string().contains("type"));
     }
@@ -255,18 +290,24 @@ mod tests {
     #[test]
     fn resolve_paths_makes_relative_to_base_dir() {
         let base = Path::new("/project/subdir");
-        let resolved = resolve_asset_paths(
-            vec![img("images/scene01.png"), vid("assets/p01.mp4")],
-            base,
+        let resolved =
+            resolve_asset_paths(vec![img("images/scene01.png"), vid("assets/p01.mp4")], base);
+        assert_eq!(
+            resolved[0].path,
+            base.join("images/scene01.png").to_string_lossy()
         );
-        assert_eq!(resolved[0].path, base.join("images/scene01.png").to_string_lossy());
-        assert_eq!(resolved[1].path, base.join("assets/p01.mp4").to_string_lossy());
+        assert_eq!(
+            resolved[1].path,
+            base.join("assets/p01.mp4").to_string_lossy()
+        );
     }
 
     #[test]
     fn resolve_paths_leaves_absolute_untouched() {
         let base = Path::new("/project/subdir");
-        let absolute = Path::new("/elsewhere/default.png").to_string_lossy().into_owned();
+        let absolute = Path::new("/elsewhere/default.png")
+            .to_string_lossy()
+            .into_owned();
         let resolved = resolve_asset_paths(vec![img(&absolute)], base);
         assert_eq!(resolved[0].path, absolute);
     }
@@ -274,7 +315,11 @@ mod tests {
     #[test]
     fn resolve_paths_preserves_other_fields() {
         let base = Path::new("/project");
-        let asset = Asset { kind: AssetKind::Video, path: "p01.mp4".into(), source_duration: Some(5.0) };
+        let asset = Asset {
+            kind: AssetKind::Video,
+            path: "p01.mp4".into(),
+            source_duration: Some(5.0),
+        };
         let resolved = resolve_asset_paths(vec![asset], base);
         assert_eq!(resolved[0].kind, AssetKind::Video);
         assert_eq!(resolved[0].source_duration, Some(5.0));

@@ -77,7 +77,9 @@ impl<'a> Exporter<'a> {
         std::fs::create_dir_all(&dir)?;
         let path = with_suffix(&dir.join("subtitles.srt"), suffix);
 
-        let mut subtitle_events: Vec<_> = self.events.iter()
+        let mut subtitle_events: Vec<_> = self
+            .events
+            .iter()
             .filter(|e| e.event_type == EventType::Audio || e.event_type == EventType::Paragraph)
             .collect();
         subtitle_events.sort_by(|a, b| a.start_ms.partial_cmp(&b.start_ms).unwrap());
@@ -122,7 +124,10 @@ impl<'a> Exporter<'a> {
                 event_type: e.event_type.clone(),
                 start_ms: e.start_ms,
                 duration_ms: e.duration_ms,
-                path: e.path.as_ref().map(|p| rel_path_string(p, &self.output_dir)),
+                path: e
+                    .path
+                    .as_ref()
+                    .map(|p| rel_path_string(p, &self.output_dir)),
                 name: e.name.clone(),
                 text: e.text.clone(),
                 display_text: e.display_text.clone(),
@@ -147,17 +152,25 @@ impl<'a> Exporter<'a> {
         let path = with_suffix(&dir.join("timeline.fcpxml"), suffix);
 
         // タイムラインの総長さ = max(audio_end, bgm_end, se_end) (Python版 exporter.py:33-47 相当)
-        let audio_end = self.events.iter()
+        let audio_end = self
+            .events
+            .iter()
             .map(|e| (e.start_ms + e.duration_ms) / 1000.0)
             .fold(0.0_f64, f64::max);
-        let bgm_end = self.compute_bgm_segments().iter()
+        let bgm_end = self
+            .compute_bgm_segments()
+            .iter()
             .map(|seg| seg.mix_start_s + seg.mix_duration_s)
             .fold(0.0_f64, f64::max);
-        let se_end = self.events.iter()
+        let se_end = self
+            .events
+            .iter()
             .filter(|e| e.event_type == EventType::Se)
             .filter_map(|e| {
                 let p = e.path.as_ref()?;
-                if !p.exists() { return None; }
+                if !p.exists() {
+                    return None;
+                }
                 Some(e.start_ms / 1000.0 + wav_duration_s(p))
             })
             .fold(0.0_f64, f64::max);
@@ -204,12 +217,16 @@ impl<'a> Exporter<'a> {
         let se_fade_s = self.bgm_config.se_fade_out_s;
 
         // dialogue クリップを収集
-        let audio_events: Vec<_> = self.events.iter()
+        let audio_events: Vec<_> = self
+            .events
+            .iter()
             .filter(|e| e.event_type == EventType::Audio)
             .filter(|e| e.path.as_ref().map(|p| p.exists()).unwrap_or(false))
             .collect();
         let bgm_segs = self.compute_bgm_segments();
-        let se_events: Vec<_> = self.events.iter()
+        let se_events: Vec<_> = self
+            .events
+            .iter()
             .filter(|e| e.event_type == EventType::Se)
             .filter(|e| e.path.as_ref().map(|p| p.exists()).unwrap_or(false))
             .collect();
@@ -220,7 +237,12 @@ impl<'a> Exporter<'a> {
             return Ok(());
         }
 
-        info!("voice={} bgm={} se={} をミックス中...", audio_events.len(), bgm_segs.len(), se_events.len());
+        info!(
+            "voice={} bgm={} se={} をミックス中...",
+            audio_events.len(),
+            bgm_segs.len(),
+            se_events.len()
+        );
 
         // 1. dialogue クリップを読み込み、総サンプル数を算出
         let mut total_samples: usize = 0;
@@ -271,7 +293,9 @@ impl<'a> Exporter<'a> {
             if !seg.path.exists() {
                 continue;
             }
-            let Ok(bgm) = read_stereo_float(&seg.path, sr) else { continue };
+            let Ok(bgm) = read_stereo_float(&seg.path, sr) else {
+                continue;
+            };
             if bgm.is_empty() {
                 continue;
             }
@@ -304,8 +328,13 @@ impl<'a> Exporter<'a> {
                 }
                 info!(
                     "BGMをミックス: {} ({:.1}s, fi={:.2}s, fo={:.2}s)",
-                    seg.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-                    seg.mix_duration_s, seg.fade_in_s, seg.fade_out_s,
+                    seg.path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                    seg.mix_duration_s,
+                    seg.fade_in_s,
+                    seg.fade_out_s,
                 );
             }
         }
@@ -313,7 +342,9 @@ impl<'a> Exporter<'a> {
         // 4. SE をミックス (末尾フェードアウト付き)
         for event in &se_events {
             let path = event.path.as_ref().unwrap();
-            let Ok(mut se) = read_stereo_float(path, sr) else { continue };
+            let Ok(mut se) = read_stereo_float(path, sr) else {
+                continue;
+            };
             let fo_n = ((se_fade_s * sr as f64) as usize).min(se.len());
             if fo_n > 0 {
                 let fo_start = se.len() - fo_n;
@@ -330,14 +361,27 @@ impl<'a> Exporter<'a> {
                     buf[start_s + i][0] += s[0];
                     buf[start_s + i][1] += s[1];
                 }
-                info!("SEをミックス: {}", path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default());
+                info!(
+                    "SEをミックス: {}",
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_default()
+                );
             }
         }
 
         // 5. クリッピング防止
-        let peak = buf.iter().flat_map(|s| s.iter()).cloned().map(f32::abs).fold(0.0_f32, f32::max);
+        let peak = buf
+            .iter()
+            .flat_map(|s| s.iter())
+            .cloned()
+            .map(f32::abs)
+            .fold(0.0_f32, f32::max);
         if peak > 1.0 {
-            buf.iter_mut().for_each(|s| { s[0] /= peak; s[1] /= peak; });
+            buf.iter_mut().for_each(|s| {
+                s[0] /= peak;
+                s[1] /= peak;
+            });
         }
 
         // 6. WAV 書き出し
@@ -359,7 +403,9 @@ impl<'a> Exporter<'a> {
     }
 
     fn build_resource_tags(&self) -> String {
-        self.events.iter().enumerate()
+        self.events
+            .iter()
+            .enumerate()
             .filter_map(|(i, e)| {
                 let p = e.path.as_ref()?;
                 let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
@@ -427,7 +473,9 @@ impl<'a> Exporter<'a> {
         let xfade = self.bgm_config.crossfade_s;
         let half = xfade / 2.0;
 
-        let total_s = self.events.iter()
+        let total_s = self
+            .events
+            .iter()
             .map(|e| (e.start_ms + e.duration_ms) / 1000.0)
             .fold(0.0_f64, f64::max);
 
@@ -445,13 +493,27 @@ impl<'a> Exporter<'a> {
             match event.event_type {
                 EventType::BgmStart => {
                     if let Some((idx, start, path)) = pending.take() {
-                        raw.push(Raw { index: idx, path, event_start: start, event_end: event.start_ms / 1000.0 });
+                        raw.push(Raw {
+                            index: idx,
+                            path,
+                            event_start: start,
+                            event_end: event.start_ms / 1000.0,
+                        });
                     }
-                    pending = Some((i, event.start_ms / 1000.0, event.path.clone().unwrap_or_default()));
+                    pending = Some((
+                        i,
+                        event.start_ms / 1000.0,
+                        event.path.clone().unwrap_or_default(),
+                    ));
                 }
                 EventType::BgmStop => {
                     if let Some((idx, start, path)) = pending.take() {
-                        raw.push(Raw { index: idx, path, event_start: start, event_end: event.start_ms / 1000.0 });
+                        raw.push(Raw {
+                            index: idx,
+                            path,
+                            event_start: start,
+                            event_end: event.start_ms / 1000.0,
+                        });
                     }
                 }
                 _ => {}
@@ -463,7 +525,12 @@ impl<'a> Exporter<'a> {
                 let file_dur = wav_duration_s(&path);
                 event_end = start + if file_dur > 0.0 { file_dur } else { 30.0 };
             }
-            raw.push(Raw { index: idx, path, event_start: start, event_end });
+            raw.push(Raw {
+                index: idx,
+                path,
+                event_start: start,
+                event_end,
+            });
         }
 
         if raw.is_empty() {
@@ -471,24 +538,27 @@ impl<'a> Exporter<'a> {
         }
 
         let n = raw.len();
-        raw.into_iter().enumerate().map(|(k, seg)| {
-            let seg_dur = (seg.event_end - seg.event_start).max(0.0);
-            let clamp = seg_dur / 3.0;
-            let fi_half = if k > 0 { half.min(clamp) } else { 0.0 };
-            let fo_half = if k < n - 1 { half.min(clamp) } else { 0.0 };
-            let mix_start = (seg.event_start - fi_half).max(0.0);
-            let mix_end = seg.event_end + fo_half;
-            BgmSegment {
-                index: seg.index,
-                path: seg.path,
-                event_start_s: seg.event_start,
-                event_duration_s: seg_dur,
-                mix_start_s: mix_start,
-                mix_duration_s: (mix_end - mix_start).max(0.0),
-                fade_in_s: fi_half * 2.0,
-                fade_out_s: fo_half * 2.0,
-            }
-        }).collect()
+        raw.into_iter()
+            .enumerate()
+            .map(|(k, seg)| {
+                let seg_dur = (seg.event_end - seg.event_start).max(0.0);
+                let clamp = seg_dur / 3.0;
+                let fi_half = if k > 0 { half.min(clamp) } else { 0.0 };
+                let fo_half = if k < n - 1 { half.min(clamp) } else { 0.0 };
+                let mix_start = (seg.event_start - fi_half).max(0.0);
+                let mix_end = seg.event_end + fo_half;
+                BgmSegment {
+                    index: seg.index,
+                    path: seg.path,
+                    event_start_s: seg.event_start,
+                    event_duration_s: seg_dur,
+                    mix_start_s: mix_start,
+                    mix_duration_s: (mix_end - mix_start).max(0.0),
+                    fade_in_s: fi_half * 2.0,
+                    fade_out_s: fo_half * 2.0,
+                }
+            })
+            .collect()
     }
 }
 
@@ -522,7 +592,10 @@ pub fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     if suffix.is_empty() {
         return path.to_path_buf();
     }
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let name = match path.extension() {
         Some(ext) => format!("{stem}{suffix}.{}", ext.to_string_lossy()),
         None => format!("{stem}{suffix}"),
@@ -609,19 +682,30 @@ pub fn resolve_generation_suffix(
 ) -> anyhow::Result<(String, GenerationLock)> {
     fn try_claim(lock_dir: &Path, suffix: &str) -> anyhow::Result<Option<GenerationLock>> {
         let lock_path = lock_path_for(lock_dir, suffix);
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&lock_path) {
-            Ok(file) => Ok(Some(GenerationLock { lock_path, file: Some(file) })),
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => Ok(Some(GenerationLock {
+                lock_path,
+                file: Some(file),
+            })),
             // 既にロックがある。生存プロセスが保持しているなら諦めるが、
             // 強制終了で残った残骸なら奪い返す。
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                Ok(reclaim_if_unowned(&lock_path)
-                    .map(|file| GenerationLock { lock_path, file: Some(file) }))
+                Ok(reclaim_if_unowned(&lock_path).map(|file| GenerationLock {
+                    lock_path,
+                    file: Some(file),
+                }))
             }
             Err(e) => Err(e.into()),
         }
     }
 
-    let needs_fallback = default_files.iter().any(|p| p.exists() && !is_path_writable(p));
+    let needs_fallback = default_files
+        .iter()
+        .any(|p| p.exists() && !is_path_writable(p));
     if !needs_fallback {
         // 既存の同名ファイルが混じっていても、すべて書込可なら"" のまま上書きを許す
         // （既存の仕様。ロック確保にだけ失敗した場合は _n フォールバックへ進む）。
@@ -631,7 +715,10 @@ pub fn resolve_generation_suffix(
     }
     for n in 1..=max {
         let suffix = format!("_{n}");
-        if !default_files.iter().all(|p| !with_suffix(p, &suffix).exists()) {
+        if !default_files
+            .iter()
+            .all(|p| !with_suffix(p, &suffix).exists())
+        {
             continue;
         }
         if let Some(guard) = try_claim(lock_dir, &suffix)? {
@@ -655,7 +742,9 @@ struct BgmSegment {
 
 /// WAV ファイルの再生時間 (秒)。読み込み失敗時は 0.0 (Python版 `_get_file_duration_s` 相当)
 fn wav_duration_s(path: &Path) -> f64 {
-    let Ok(reader) = hound::WavReader::open(path) else { return 0.0 };
+    let Ok(reader) = hound::WavReader::open(path) else {
+        return 0.0;
+    };
     let spec = reader.spec();
     if spec.sample_rate == 0 {
         return 0.0;
@@ -691,7 +780,10 @@ fn read_stereo_float(path: &Path, target_sr: u32) -> anyhow::Result<Vec<[f32; 2]
     let raw: Vec<f32> = match spec.sample_format {
         hound::SampleFormat::Int => {
             let max = (1i64 << (spec.bits_per_sample - 1)) as f32;
-            reader.samples::<i32>().map(|s| s.unwrap() as f32 / max).collect()
+            reader
+                .samples::<i32>()
+                .map(|s| s.unwrap() as f32 / max)
+                .collect()
         }
         hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.unwrap()).collect(),
     };
@@ -700,16 +792,20 @@ fn read_stereo_float(path: &Path, target_sr: u32) -> anyhow::Result<Vec<[f32; 2]
     } else if spec.channels == 2 {
         raw.chunks(2).map(|c| [c[0], c[1]]).collect()
     } else {
-        raw.chunks(spec.channels as usize).map(|c| [c[0], c[1]]).collect()
+        raw.chunks(spec.channels as usize)
+            .map(|c| [c[0], c[1]])
+            .collect()
     };
     // 簡易リサンプリング (同レートの場合はそのまま)
     if spec.sample_rate != target_sr {
         let ratio = target_sr as f64 / spec.sample_rate as f64;
         let new_len = (stereo.len() as f64 * ratio) as usize;
-        Ok((0..new_len).map(|i| {
-            let src_idx = (i as f64 / ratio) as usize;
-            stereo[src_idx.min(stereo.len() - 1)]
-        }).collect())
+        Ok((0..new_len)
+            .map(|i| {
+                let src_idx = (i as f64 / ratio) as usize;
+                stereo[src_idx.min(stereo.len() - 1)]
+            })
+            .collect())
     } else {
         Ok(stereo)
     }
@@ -718,10 +814,15 @@ fn read_stereo_float(path: &Path, target_sr: u32) -> anyhow::Result<Vec<[f32; 2]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use s2v_core::EventType;
+    use std::path::PathBuf;
 
-    fn make_audio_event(start_ms: f64, duration_ms: f64, text: &str, path: Option<PathBuf>) -> TimelineEvent {
+    fn make_audio_event(
+        start_ms: f64,
+        duration_ms: f64,
+        text: &str,
+        path: Option<PathBuf>,
+    ) -> TimelineEvent {
         TimelineEvent {
             event_type: EventType::Audio,
             start_ms,
@@ -761,12 +862,17 @@ mod tests {
     }
 
     fn default_bgm() -> BgmConfig {
-        BgmConfig { crossfade_s: 3.0, se_fade_out_s: 0.05 }
+        BgmConfig {
+            crossfade_s: 3.0,
+            se_fade_out_s: 0.05,
+        }
     }
 
     fn write_wav(path: &Path, sr: u32, seconds: f32) {
         let spec = hound::WavSpec {
-            channels: 2, sample_rate: sr, bits_per_sample: 16,
+            channels: 2,
+            sample_rate: sr,
+            bits_per_sample: 16,
             sample_format: hound::SampleFormat::Int,
         };
         let n = (sr as f32 * seconds) as usize;
@@ -826,7 +932,10 @@ mod tests {
             .generate_srt("")
             .unwrap();
         let content = std::fs::read_to_string(dir.path().join("timeline/subtitles.srt")).unwrap();
-        assert!(content.contains("[PARAGRAPH オープニング]"), "実際の内容: {content}");
+        assert!(
+            content.contains("[PARAGRAPH オープニング]"),
+            "実際の内容: {content}"
+        );
     }
 
     #[test]
@@ -839,9 +948,7 @@ mod tests {
 
     #[test]
     fn fcpxml_generates_valid_structure() {
-        let events = vec![
-            make_audio_event(0.0, 2000.0, "テスト", None),
-        ];
+        let events = vec![make_audio_event(0.0, 2000.0, "テスト", None)];
         let dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, dir.path(), 48000, default_bgm());
         exp.generate_fcpxml("").unwrap();
@@ -864,9 +971,18 @@ mod tests {
         exp.generate_fcpxml("").unwrap();
 
         let content = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
-        assert!(content.contains(r#"name="FFVideoFormat1080p30""#), "既定は30fpsのフォーマット名であるべき: {content}");
-        assert!(content.contains(r#"frameDuration="1000/30000s""#), "既定は正確な30fps(1000/30000s)であるべき: {content}");
-        assert!(!content.contains("2997"), "既定では29.97fpsを名乗ってはいけない: {content}");
+        assert!(
+            content.contains(r#"name="FFVideoFormat1080p30""#),
+            "既定は30fpsのフォーマット名であるべき: {content}"
+        );
+        assert!(
+            content.contains(r#"frameDuration="1000/30000s""#),
+            "既定は正確な30fps(1000/30000s)であるべき: {content}"
+        );
+        assert!(
+            !content.contains("2997"),
+            "既定では29.97fpsを名乗ってはいけない: {content}"
+        );
     }
 
     #[test]
@@ -912,9 +1028,7 @@ mod tests {
         let wav = dir.path().join("a.wav");
         write_wav(&wav, 48000, 0.2);
 
-        let events = vec![
-            make_audio_event(500.0, 200.0, "A", Some(wav)),
-        ];
+        let events = vec![make_audio_event(500.0, 200.0, "A", Some(wav))];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
         exp.generate_combined_audio("").unwrap();
@@ -924,9 +1038,17 @@ mod tests {
         let all: Vec<i16> = reader.samples().map(|s| s.unwrap()).collect();
 
         let silence_end = (0.5 * 48000.0 * 2.0) as usize; // 0.5s offset
-        let silence_max = all[..silence_end].iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
+        let silence_max = all[..silence_end]
+            .iter()
+            .map(|&s| s.unsigned_abs())
+            .max()
+            .unwrap_or(0);
         let sound_start = silence_end;
-        let sound_max = all[sound_start..].iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
+        let sound_max = all[sound_start..]
+            .iter()
+            .map(|&s| s.unsigned_abs())
+            .max()
+            .unwrap_or(0);
         assert!(silence_max == 0, "silence section should be zero");
         assert!(sound_max > 0, "sound section should be non-zero");
     }
@@ -978,10 +1100,7 @@ mod tests {
         let bgm = dir.path().join("bgm.wav");
         write_wav(&bgm, 48000, 0.5);
 
-        let events = vec![
-            make_bgm_start(0.0, bgm.clone()),
-            make_bgm_stop(1000.0),
-        ];
+        let events = vec![make_bgm_start(0.0, bgm.clone()), make_bgm_stop(1000.0)];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
         exp.generate_combined_audio("").unwrap();
@@ -991,7 +1110,10 @@ mod tests {
         let mut reader = hound::WavReader::open(&out).unwrap();
         let all: Vec<i16> = reader.samples().map(|s| s.unwrap()).collect();
         let max = all.iter().map(|&s| s.unsigned_abs()).max().unwrap_or(0);
-        assert!(max > 0, "BGMがミックス出力に含まれているはず (Python版は0.3倍でミックスする)");
+        assert!(
+            max > 0,
+            "BGMがミックス出力に含まれているはず (Python版は0.3倍でミックスする)"
+        );
     }
 
     #[test]
@@ -1001,9 +1123,7 @@ mod tests {
         let se = dir.path().join("se.wav");
         write_wav(&se, 48000, 0.2);
 
-        let events = vec![
-            make_se(100.0, se.clone()),
-        ];
+        let events = vec![make_se(100.0, se.clone())];
         let out_dir = dir.path().join("out");
         let exp = Exporter::new(&events, &out_dir, 48000, default_bgm());
         exp.generate_combined_audio("").unwrap();
@@ -1032,7 +1152,8 @@ mod tests {
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
         exp.generate_fcpxml("").unwrap();
-        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        let content =
+            std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         assert!(
             content.contains(r#"duration="150000/30000s" role="music""#),
@@ -1052,7 +1173,8 @@ mod tests {
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
         exp.generate_fcpxml("").unwrap();
-        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        let content =
+            std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         assert!(
             content.contains(r#"duration="12000/30000s" role="effects""#),
@@ -1073,16 +1195,21 @@ mod tests {
 
         let events = vec![
             make_audio_event(0.0, 500.0, "短いセリフ", None), // 0.5sで終わる
-            make_se(1000.0, se.clone()),                       // 1.0s開始、5秒再生 -> 6.0sまで
+            make_se(1000.0, se.clone()),                      // 1.0s開始、5秒再生 -> 6.0sまで
         ];
         let out_dir = tempfile::tempdir().unwrap();
         let exp = Exporter::new(&events, out_dir.path(), 48000, default_bgm());
         exp.generate_fcpxml("").unwrap();
-        let content = std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        let content =
+            std::fs::read_to_string(out_dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         let dur_str = content
-            .split(r#"sequence format="r1" duration=""#).nth(1).unwrap()
-            .split("/30000s").next().unwrap();
+            .split(r#"sequence format="r1" duration=""#)
+            .nth(1)
+            .unwrap()
+            .split("/30000s")
+            .next()
+            .unwrap();
         let total_ticks: u64 = dur_str.parse().unwrap();
         assert!(
             total_ticks >= 180_000,
@@ -1104,9 +1231,18 @@ mod tests {
 
     #[test]
     fn with_suffix_inserts_before_extension() {
-        assert_eq!(with_suffix(Path::new("a/voice_0001.wav"), "_3"), PathBuf::from("a/voice_0001_3.wav"));
-        assert_eq!(with_suffix(Path::new("subtitles.srt"), "_2"), PathBuf::from("subtitles_2.srt"));
-        assert_eq!(with_suffix(Path::new("noext"), "_1"), PathBuf::from("noext_1"));
+        assert_eq!(
+            with_suffix(Path::new("a/voice_0001.wav"), "_3"),
+            PathBuf::from("a/voice_0001_3.wav")
+        );
+        assert_eq!(
+            with_suffix(Path::new("subtitles.srt"), "_2"),
+            PathBuf::from("subtitles_2.srt")
+        );
+        assert_eq!(
+            with_suffix(Path::new("noext"), "_1"),
+            PathBuf::from("noext_1")
+        );
         assert_eq!(with_suffix(Path::new("x.wav"), ""), PathBuf::from("x.wav"));
     }
 
@@ -1132,12 +1268,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // 非存在のみ → 書込可扱い → ""
         let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
-        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "");
+        assert_eq!(
+            resolve_generation_suffix(&files, dir.path(), 100)
+                .unwrap()
+                .0,
+            ""
+        );
         // 既存かつ書込可のファイルが混じっていても fallback しない（exists()&&writable のパスを検証）
         let existing = dir.path().join("a.wav");
         std::fs::write(&existing, b"x").unwrap();
         let files2 = vec![existing, dir.path().join("b.srt")];
-        assert_eq!(resolve_generation_suffix(&files2, dir.path(), 100).unwrap().0, "");
+        assert_eq!(
+            resolve_generation_suffix(&files2, dir.path(), 100)
+                .unwrap()
+                .0,
+            ""
+        );
     }
 
     #[test]
@@ -1147,7 +1293,12 @@ mod tests {
         std::fs::create_dir(&a).unwrap(); // a.wav をディレクトリにして書込不可(=ロック相当)
         let b = dir.path().join("b.srt");
         let files = vec![a, b];
-        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "_1");
+        assert_eq!(
+            resolve_generation_suffix(&files, dir.path(), 100)
+                .unwrap()
+                .0,
+            "_1"
+        );
     }
 
     #[test]
@@ -1159,7 +1310,12 @@ mod tests {
         std::fs::write(&b, b"x").unwrap();
         std::fs::write(dir.path().join("a_1.wav"), b"x").unwrap(); // _1 スロットを一部埋める
         let files = vec![a, b];
-        assert_eq!(resolve_generation_suffix(&files, dir.path(), 100).unwrap().0, "_2");
+        assert_eq!(
+            resolve_generation_suffix(&files, dir.path(), 100)
+                .unwrap()
+                .0,
+            "_2"
+        );
     }
 
     /// TOCTOU再現: 1回目の呼び出しでガードを保持したまま(=まだ生成完了・cleanup前)
@@ -1171,16 +1327,22 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let files = vec![dir.path().join("a.wav"), dir.path().join("b.srt")];
 
-        let (first_suffix, first_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        let (first_suffix, first_guard) =
+            resolve_generation_suffix(&files, dir.path(), 100).unwrap();
         assert_eq!(first_suffix, "");
 
         // 1回目のガードをまだ保持している間に2回目を呼ぶ = 並行実行のシミュレーション。
         // 出力ファイル自体はまだ1つも書かれていない(existsチェックだけなら両方""を返すはず)。
-        let (second_suffix, second_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
-        assert_eq!(second_suffix, "_1", "1回目がロックを保持している間は同じsuffixを使わせてはいけない");
+        let (second_suffix, second_guard) =
+            resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        assert_eq!(
+            second_suffix, "_1",
+            "1回目がロックを保持している間は同じsuffixを使わせてはいけない"
+        );
 
         drop(first_guard);
-        let (third_suffix, _third_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
+        let (third_suffix, _third_guard) =
+            resolve_generation_suffix(&files, dir.path(), 100).unwrap();
         assert_eq!(third_suffix, "", "ロック解放後は再び\"\"が使えるべき");
 
         drop(second_guard);
@@ -1218,7 +1380,10 @@ mod tests {
         std::fs::write(dir.path().join(".s2v_generation_1.lock"), b"").unwrap();
 
         let (second, second_guard) = resolve_generation_suffix(&files, dir.path(), 100).unwrap();
-        assert_eq!(second, "_1", "保持中のロックは奪わず、残骸のある _1 を使うべき");
+        assert_eq!(
+            second, "_1",
+            "保持中のロックは奪わず、残骸のある _1 を使うべき"
+        );
 
         drop(second_guard);
         drop(first_guard);
@@ -1250,7 +1415,10 @@ mod tests {
         let exp = Exporter::new(&events, out_dir, 48000, default_bgm());
         exp.generate_fcpxml("_2").unwrap();
         let xml = std::fs::read_to_string(out_dir.join("timeline/timeline_2.fcpxml")).unwrap();
-        assert!(xml.contains("voice_0001_2.wav"), "FCPXMLは連番付き音声を参照すること: {xml}");
+        assert!(
+            xml.contains("voice_0001_2.wav"),
+            "FCPXMLは連番付き音声を参照すること: {xml}"
+        );
     }
 
     /// `C:\work\A&B\voice.wav` のようなパスをそのままXML属性へ埋め込むと不正なXMLになる
@@ -1270,9 +1438,18 @@ mod tests {
         let xml = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
 
         // 生のまま(未エスケープ)の "&1.wav" のような不正な並びが出てはいけない
-        assert!(!xml.contains("voice&1.wav"), "&はエスケープされているべき: {xml}");
-        assert!(xml.contains("voice&amp;1.wav"), "ファイル名の&はエスケープされているべき: {xml}");
-        assert!(xml.contains("A&amp;B"), "ディレクトリ名の&もエスケープされているべき: {xml}");
+        assert!(
+            !xml.contains("voice&1.wav"),
+            "&はエスケープされているべき: {xml}"
+        );
+        assert!(
+            xml.contains("voice&amp;1.wav"),
+            "ファイル名の&はエスケープされているべき: {xml}"
+        );
+        assert!(
+            xml.contains("A&amp;B"),
+            "ディレクトリ名の&もエスケープされているべき: {xml}"
+        );
     }
 
     #[test]

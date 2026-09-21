@@ -96,7 +96,10 @@ impl LabTab {
             }
             if matches!(self.source, LabSource::WavFile) {
                 if ui.button("選択...").clicked() {
-                    if let Some(p) = rfd::FileDialog::new().add_filter("WAV", &["wav"]).pick_file() {
+                    if let Some(p) = rfd::FileDialog::new()
+                        .add_filter("WAV", &["wav"])
+                        .pick_file()
+                    {
                         self.source_wav = Some(p);
                     }
                 }
@@ -127,9 +130,12 @@ impl LabTab {
                 });
                 ui.label(format!(
                     "{}×{}×{} m ／ RT60 {} ／ 聴取者 dx{:+.1} dy{:+.1}（図をドラッグ）",
-                    self.params.room_w, self.params.room_d, self.params.room_h,
+                    self.params.room_w,
+                    self.params.room_d,
+                    self.params.room_h,
                     rt60.map_or("—".into(), |v| format!("{v:.2}s")),
-                    self.params.listener_dx, self.params.listener_dy,
+                    self.params.listener_dx,
+                    self.params.listener_dy,
                 ));
             });
 
@@ -157,23 +163,34 @@ impl LabTab {
                 let mut dims_changed = false;
                 egui::Grid::new("lab_params").num_columns(3).show(ui, |ui| {
                     let row = |ui: &mut egui::Ui,
-                                   label: &str,
-                                   v: &mut f64,
-                                   range: std::ops::RangeInclusive<f64>,
-                                   suffix: &str|
+                               label: &str,
+                               v: &mut f64,
+                               range: std::ops::RangeInclusive<f64>,
+                               suffix: &str|
                      -> bool {
                         ui.label(label);
                         let s = ui.add(egui::Slider::new(v, range.clone()).show_value(false));
                         let d = ui.add(
-                            egui::DragValue::new(v).range(range).speed(0.1).suffix(suffix),
+                            egui::DragValue::new(v)
+                                .range(range)
+                                .speed(0.1)
+                                .suffix(suffix),
                         );
                         ui.end_row();
                         s.changed() || d.changed()
                     };
                     dims_changed |= row(ui, "部屋 幅 W", &mut self.params.room_w, 2.0..=60.0, " m");
-                    dims_changed |= row(ui, "部屋 奥行 D", &mut self.params.room_d, 2.0..=80.0, " m");
-                    dims_changed |= row(ui, "部屋 高さ H", &mut self.params.room_h, 2.0..=30.0, " m");
-                    row(ui, "聴取 高さ z", &mut self.params.listener_z, 0.2..=5.0, " m");
+                    dims_changed |=
+                        row(ui, "部屋 奥行 D", &mut self.params.room_d, 2.0..=80.0, " m");
+                    dims_changed |=
+                        row(ui, "部屋 高さ H", &mut self.params.room_h, 2.0..=30.0, " m");
+                    row(
+                        ui,
+                        "聴取 高さ z",
+                        &mut self.params.listener_z,
+                        0.2..=5.0,
+                        " m",
+                    );
                     row(ui, "話者 高さ", &mut self.params.height, 0.0..=5.0, " m");
                     row(ui, "残響倍率", &mut self.params.reverb_wet, 0.0..=3.0, "");
                 });
@@ -204,7 +221,10 @@ impl LabTab {
                 ui.horizontal(|ui| {
                     let input = self.input(preview_raw);
                     if ui
-                        .add_enabled(!busy && input.is_some(), egui::Button::new("▶ 処理して試聴"))
+                        .add_enabled(
+                            !busy && input.is_some(),
+                            egui::Button::new("▶ 処理して試聴"),
+                        )
                         .clicked()
                     {
                         self.error = None;
@@ -236,49 +256,61 @@ impl LabTab {
                 let mut play: Option<std::path::PathBuf> = None;
                 let mut toggle: Option<usize> = None;
                 let mut export_error: Option<String> = None;
-                egui::ScrollArea::vertical().max_height(180.0).show(ui, |ui| {
-                    egui::Grid::new("history").striped(true).num_columns(5).show(ui, |ui| {
-                        for e in self.history.entries() {
-                            let mark = if self.history.sel_a == Some(e.id) {
-                                "A"
-                            } else if self.history.sel_b == Some(e.id) {
-                                "B"
-                            } else {
-                                ""
-                            };
-                            if ui
-                                .selectable_label(!mark.is_empty(), format!("#{} {}", e.id, mark))
-                                .clicked()
-                            {
-                                toggle = Some(e.id);
-                            }
-                            ui.label(format!(
-                                "部屋{}x{}x{} wet{} pan{:.0} 距離{:.1}",
-                                e.params.room_w, e.params.room_d, e.params.room_h,
-                                e.params.reverb_wet, e.params.pan, e.params.distance,
-                            ));
-                            if ui.button("▶").clicked() {
-                                play = Some(e.wav.clone());
-                            }
-                            if ui.button("呼び戻す").clicked() {
-                                recall = Some(e.params.clone());
-                            }
-                            if ui.button("💾 書き出し").clicked() {
-                                if let Some(dest) = rfd::FileDialog::new()
-                                    .add_filter("WAV", &["wav"])
-                                    .set_file_name(format!("lab_{:04}.wav", e.id))
-                                    .save_file()
-                                {
-                                    if let Err(err) = std::fs::copy(&e.wav, &dest) {
-                                        tracing::warn!("書き出し失敗: {err}");
-                                        export_error = Some(format!("書き出し失敗: {err}"));
+                egui::ScrollArea::vertical()
+                    .max_height(180.0)
+                    .show(ui, |ui| {
+                        egui::Grid::new("history")
+                            .striped(true)
+                            .num_columns(5)
+                            .show(ui, |ui| {
+                                for e in self.history.entries() {
+                                    let mark = if self.history.sel_a == Some(e.id) {
+                                        "A"
+                                    } else if self.history.sel_b == Some(e.id) {
+                                        "B"
+                                    } else {
+                                        ""
+                                    };
+                                    if ui
+                                        .selectable_label(
+                                            !mark.is_empty(),
+                                            format!("#{} {}", e.id, mark),
+                                        )
+                                        .clicked()
+                                    {
+                                        toggle = Some(e.id);
                                     }
+                                    ui.label(format!(
+                                        "部屋{}x{}x{} wet{} pan{:.0} 距離{:.1}",
+                                        e.params.room_w,
+                                        e.params.room_d,
+                                        e.params.room_h,
+                                        e.params.reverb_wet,
+                                        e.params.pan,
+                                        e.params.distance,
+                                    ));
+                                    if ui.button("▶").clicked() {
+                                        play = Some(e.wav.clone());
+                                    }
+                                    if ui.button("呼び戻す").clicked() {
+                                        recall = Some(e.params.clone());
+                                    }
+                                    if ui.button("💾 書き出し").clicked() {
+                                        if let Some(dest) = rfd::FileDialog::new()
+                                            .add_filter("WAV", &["wav"])
+                                            .set_file_name(format!("lab_{:04}.wav", e.id))
+                                            .save_file()
+                                        {
+                                            if let Err(err) = std::fs::copy(&e.wav, &dest) {
+                                                tracing::warn!("書き出し失敗: {err}");
+                                                export_error = Some(format!("書き出し失敗: {err}"));
+                                            }
+                                        }
+                                    }
+                                    ui.end_row();
                                 }
-                            }
-                            ui.end_row();
-                        }
+                            });
                     });
-                });
                 if let Some(id) = toggle {
                     self.history.toggle_select(id);
                 }

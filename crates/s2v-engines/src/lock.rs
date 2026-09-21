@@ -59,7 +59,10 @@ pub(crate) async fn acquire(key: &str, timeout: Duration) -> Option<EngineStartu
             Ok(None) => {}
             Err(e) => {
                 // ロックファイルを開けない環境（権限等）では排他をあきらめて続行する。
-                warn!("起動ロック {} を開けませんでした: {e}", lock_path(key).display());
+                warn!(
+                    "起動ロック {} を開けませんでした: {e}",
+                    lock_path(key).display()
+                );
                 return None;
             }
         }
@@ -77,7 +80,12 @@ mod tests {
     fn unique_key(tag: &str) -> String {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static SEQ: AtomicUsize = AtomicUsize::new(0);
-        format!("locktest_{}_{}_{}", tag, std::process::id(), SEQ.fetch_add(1, Ordering::SeqCst))
+        format!(
+            "locktest_{}_{}_{}",
+            tag,
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        )
     }
 
     #[test]
@@ -85,7 +93,10 @@ mod tests {
         let key = unique_key("held");
         let first = try_acquire(&key).unwrap();
         assert!(first.is_some(), "1回目は取得できること");
-        assert!(try_acquire(&key).unwrap().is_none(), "保持中は取得できないこと");
+        assert!(
+            try_acquire(&key).unwrap().is_none(),
+            "保持中は取得できないこと"
+        );
     }
 
     #[test]
@@ -95,7 +106,10 @@ mod tests {
         let key = unique_key("release");
         let first = try_acquire(&key).unwrap().unwrap();
         drop(first);
-        assert!(try_acquire(&key).unwrap().is_some(), "drop で解放されること");
+        assert!(
+            try_acquire(&key).unwrap().is_some(),
+            "drop で解放されること"
+        );
     }
 
     #[tokio::test]
@@ -105,7 +119,10 @@ mod tests {
 
         let start = Instant::now();
         assert!(acquire(&key, Duration::from_millis(300)).await.is_none());
-        assert!(start.elapsed() >= Duration::from_millis(300), "タイムアウトまで待つこと");
+        assert!(
+            start.elapsed() >= Duration::from_millis(300),
+            "タイムアウトまで待つこと"
+        );
     }
 
     #[tokio::test]
@@ -114,8 +131,11 @@ mod tests {
         let held = try_acquire(&key).unwrap().unwrap();
 
         let key_for_task = key.clone();
-        let waiter =
-            tokio::spawn(async move { acquire(&key_for_task, Duration::from_secs(5)).await.is_some() });
+        let waiter = tokio::spawn(async move {
+            acquire(&key_for_task, Duration::from_secs(5))
+                .await
+                .is_some()
+        });
 
         tokio::time::sleep(Duration::from_millis(300)).await;
         drop(held);
