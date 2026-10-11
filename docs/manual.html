@@ -303,9 +303,11 @@ cargo build --release</code></pre>
   <code>config.toml</code> の各エンジンの設定に <code>exe_path</code>
   （実行ファイルのパス）を指定しておくと、Script2Voice は処理開始時に
   接続確認を行い、応答がない場合は自動的にそのプロセスを起動して、
-  起動完了まで待機します（最大約30秒）。<br>
+  起動完了まで待機します（既定で最大60秒。各エンジンの <code>startup_timeout_s</code> で変更できます）。<br>
   また、処理が終了する際（成功・失敗を問わず）には、Script2Voice 自身が
-  起動したエンジンプロセスを自動的に停止します。<br>
+  起動したエンジンプロセスを自動的に停止します。VOICEVOX / AivisSpeech の <code>run.exe</code> のように
+  エンジン本体を別プロセスとして起動するランチャーでも、本体まで含めて停止します。
+  複数の Script2Voice を同時に実行して同じエンジンを使っている場合は、最後の1つが終了した時点で停止します。<br>
   もともと起動済みだったエンジン（<code>exe_path</code> を介さずに
   手動で起動していたエンジン）は停止されません。<br>
   この機能を使わない場合は、これまで通り Script2Voice を実行する前に
@@ -844,9 +846,10 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
 <h3 id="video-errors">5.7 うまくいかないときは</h3>
 <table>
   <tr><th>症状</th><th>主な原因と対処</th></tr>
-  <tr><td>「ffprobe の起動に失敗しました」「ffmpeg の起動に失敗しました」</td><td>ffmpeg / ffprobe がインストールされていないか、PATH が通っていません。<code>ffmpeg -version</code> がコマンドプロンプトで通ることを確認してください</td></tr>
+  <tr><td>「ffprobe の実行に失敗しました」の原因に「30 秒でタイムアウトしました」と表示される</td><td>音声・動画ファイルの長さを調べる ffprobe が応答しませんでした。ファイルが壊れていないか、ネットワークドライブ上で読み込みが止まっていないかを確認してください</td></tr>
+  <tr><td>「ffprobe の実行に失敗しました」「ffmpeg の起動に失敗しました」</td><td>ffmpeg / ffprobe がインストールされていないか、PATH が通っていません。<code>ffmpeg -version</code> がコマンドプロンプトで通ることを確認してください</td></tr>
   <tr><td>「字幕を読めません」</td><td>指定したフォルダが Script2Voice の出力フォルダではありません（<code>timeline/subtitles.srt</code> が必要です）。台本ファイルではなく、<strong>生成されたプロジェクトフォルダ</strong>を指定してください</td></tr>
-  <tr><td>「full_dialogue.wav / full_dialogue.mp3 が見つかりません」</td><td>音声のミックスまで完了していません。先に通常の生成を成功させてください</td></tr>
+  <tr><td>「full_dialogue.wav / full_dialogue.mp3 が見つかりません」</td><td>音声のミックスまで完了していません。先に通常の生成を成功させてください。生成時に出力ファイルが使用中で連番 <code>_N</code> の一式（<code>full_dialogue_1.wav</code> など）に保存された場合は、<code>--generation N</code> を指定してください</td></tr>
   <tr><td>「段落番号 N に対応するアセットが無く、default_image も設定されていません」</td><td>段落数（<code>#paragraph</code> の数 + 1）ぶんのエントリが <code>scene_map.json</code> にありません。<code>default_image</code> を設定するか、不足分を追加してください</td></tr>
   <tr><td>画像が切り替わらない／全編が1枚のまま</td><td>台本に <code>#paragraph</code> が1つも入っていません。切り替えたい位置に <code>#paragraph</code> を追加して、通常の生成からやり直してください</td></tr>
   <tr><td>字幕が動画に出ない</td><td><code>--burn-subtitle</code> を付けていません。付けない場合、字幕は動画に含まれず <code>subtitles.srt</code> のまま残ります（プレイヤー側で外部字幕として読み込むこともできます）</td></tr>
@@ -908,7 +911,7 @@ script2voice compose .\scripts\episode01 --scene-map .\assets\episode01_scenes.j
 <table class="kv-table">
   <tr><td>開始位置</td><td><code>@scene</code> 宣言行の次の行から</td></tr>
   <tr><td>終了位置</td><td>次のセクション（<code>@pause</code>/<code>@asset</code>/<code>@cast</code>/<code>@script</code>）の行の直前まで</td></tr>
-  <tr><td>空行の扱い</td><td><strong>区切りにならない</strong>。次のセクションが現れるまで、途中の空行も含めてすべて自由記述として蓄積される（<a href="#sec-cast">@cast の外見描写</a>とは扱いが異なる点に注意）</td></tr>
+  <tr><td>空行の扱い</td><td><strong>区切りにならない</strong>。次のセクションが現れるまでの行がすべて自由記述として蓄積される（<a href="#sec-cast">@cast の外見描写</a>とは扱いが異なる点に注意）。ただし空行そのものは読み飛ばされ、自由記述には含まれない（空行をはさんだ前後の行は、改行1つでつながる）</td></tr>
   <tr><td>禁止事項</td><td>自由記述の行を <code>@</code> で始めてはならない（行頭の <code>@</code> はセクション区切りとして解釈されるため）</td></tr>
 </table>
 
@@ -937,9 +940,15 @@ paragraph 1000</code></pre>
 bgm_dir = ./assets/bgm
 se_dir = ./assets/se</code></pre>
 <table class="kv-table">
-  <tr><td><code>bgm_dir</code></td><td>BGM 音源フォルダのパス（絶対パス・相対パスとも可。空白を含むパスも指定できます）</td></tr>
-  <tr><td><code>se_dir</code></td><td>効果音 (SE) 音源フォルダのパス</td></tr>
+  <tr><td><code>bgm_dir</code></td><td>BGM 音源フォルダのパス（絶対パス・相対パスとも可。相対パスは実行時の作業フォルダ（カレントディレクトリ）が基準。空白を含むパスも指定できます）</td></tr>
+  <tr><td><code>se_dir</code></td><td>効果音 (SE) 音源フォルダのパス（書き方は <code>bgm_dir</code> と同じ）</td></tr>
 </table>
+<div class="note">
+  <code>#bgm_start</code> / <code>#se</code> にファイル名（相対パス）を書くと、それぞれ <code>bgm_dir</code> / <code>se_dir</code> のフォルダから探します。
+  絶対パスで書いた場合や、<code>@asset</code> でフォルダを指定していない場合は、書いたパスをそのまま使います。
+  ファイルが見つからないと<strong>パース警告</strong>になり、CLI では既定でその台本が失敗扱いになります（<a href="#cli">3.1</a> の <code>--no-strict</code> を参照）。
+  BGM/SE は 44.1kHz など出力と異なるサンプリングレートでも使えます（出力のレートへ自動で変換します）。
+</div>
 
 <h3 id="sec-cast">6.4 @cast セクション — キャスト（登場人物）の定義</h3>
 <p>台本中で発声する役（キャスト）ごとに、話者・音声合成エンジン・各種パラメータを定義します。</p>
@@ -967,6 +976,12 @@ se_dir = ./assets/se</code></pre>
   <tr><td><code>volume</code></td><td>音量の倍率（既定 1.0）</td></tr>
   <tr><td>その他のパラメータ</td><td>各エンジン固有のパラメータ（<code>speedScale</code>, <code>pitchScale</code> など）をそのまま <code>名前=値</code> の形式で指定可能</td></tr>
 </table>
+<div class="note">
+  パラメータの値は、数値として読めれば数値、読めなければ文字列（<code>language=en</code> など）として扱います。
+  <code>pan</code> / <code>distance</code> / <code>height</code> / <code>volume</code> は数値でなければならず、数値でない場合は警告を出して既定値を使います。
+  <code>nan</code> や <code>inf</code> のような有限でない値は、どのパラメータでも警告を出して無視します（<code>@scene</code> 行・<code>@pause</code>・行内臨時パラメータも同様）。
+  <code>役名:話者名:スタイル,...</code> の形になっていない定義行（コロンが足りない行）も、行番号つきで警告されます。
+</div>
 <div class="note">
   <code>pan</code>（方向）・<code>distance</code>（距離）・<code>height</code>（高さ）は、外開き（ORTF 的）に配置した
   仮想ステレオマイク（マイク間隔は config.toml の <code>microphone_spacing</code>、既定 0.2m）でとらえた音として、
@@ -1381,8 +1396,24 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
     <td>渡した台本ファイル／フォルダのパスが間違っています。コマンドに渡したパスと存在を確認してください。フォルダを指定した場合は、その直下に <code>.txt</code> ファイルがあるか（サブフォルダ内の台本は対象外）も確認してください。</td>
   </tr>
   <tr>
-    <td>「キャスト '○○' が未定義です。スキップします。」と表示される</td>
-    <td><code>@script</code> 内で使用している役名が <code>@cast</code> セクションで定義されていません。表記揺れ（全角/半角、空白等）がないか確認してください。</td>
+    <td>「キャスト「○○」が未定義です（この行は無視されます）」と表示される</td>
+    <td><code>@script</code> 内で使用している役名が <code>@cast</code> セクションで定義されていません。表記揺れ（全角/半角、空白等）がないか、<code>@cast</code> の定義行どうしの間に空行があるかを確認してください。</td>
+  </tr>
+  <tr>
+    <td>「パース警告があるため失敗として扱います（警告を承知で続行するには --no-strict）」と表示され、その台本だけ生成されない</td>
+    <td>CLI は既定で、パース警告が1件でもある台本を失敗として扱います（台詞や効果音が気づかないうちに欠けるのを防ぐため）。同じ行に表示される警告の内容を見て台本を直してください。警告を承知で生成したい場合は <code>--no-strict</code> を付けて実行します（<a href="#cli">3.1</a>）。</td>
+  </tr>
+  <tr>
+    <td>「BGMファイルが見つかりません」「SEファイルが見つかりません」と表示される</td>
+    <td><code>#bgm_start</code> / <code>#se</code> のファイルが、<code>@asset</code> の <code>bgm_dir</code> / <code>se_dir</code> の中にありません。ファイル名とフォルダの指定を確認してください（<a href="#sec-asset">6.3 @asset セクション</a>）。</td>
+  </tr>
+  <tr>
+    <td>「キャスト定義行の書式（役名:話者名:style,エンジン名,...）になっていません」と表示される</td>
+    <td><code>@cast</code> の定義行のコロンが足りません。<code>役名:話者名:スタイル,エンジン名,...</code> の形に直してください。定義行を書かずに外見描写だけを書いた場合も、この警告になります。</td>
+  </tr>
+  <tr>
+    <td>「パラメータ「○○」の値が数値ではありません」「有限の数値ではありません」と表示される</td>
+    <td><code>pan</code> などの数値パラメータに数値以外（または <code>nan</code> / <code>inf</code>）が書かれています。そのパラメータは既定値になる（または無視される）ので、正しい数値に直してください。</td>
   </tr>
   <tr>
     <td>「engine '...' not registered」「合成失敗」と表示される</td>
