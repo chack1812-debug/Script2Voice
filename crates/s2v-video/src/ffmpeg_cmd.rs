@@ -15,12 +15,31 @@ fn scale_pad_filter(label_in: &str, label_out: &str) -> String {
 }
 
 /// ffmpeg subtitles フィルタ用にパスをエスケープする(Windowsのドライブレターのコロン対策)。
+///
+/// 通常は単一引用符で包み、オプション層の区切りになる `:` だけをエスケープする。
+/// パスに `'` を含む場合は引用の内側に `'` を置けないため、引用なしでフィルタグラフ層と
+/// オプション層の二重エスケープにする（`:` `=` → `\\X`、`'` → `\\\'`、`, ; [ ]` → `\X`）。
 fn escape_subtitles_path(path: &Path) -> String {
-    let escaped = path
-        .to_string_lossy()
-        .replace('\\', "/")
-        .replace(':', "\\:");
-    format!("'{escaped}'")
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    if !normalized.contains('\'') {
+        return format!("'{}'", normalized.replace(':', "\\:"));
+    }
+    let mut out = String::with_capacity(normalized.len() * 2);
+    for c in normalized.chars() {
+        match c {
+            ':' | '=' => {
+                out.push_str("\\\\");
+                out.push(c);
+            }
+            '\'' => out.push_str("\\\\\\'"),
+            ',' | ';' | '[' | ']' => {
+                out.push('\\');
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// ffmpeg コマンドを引数リストとして構築する。
@@ -360,6 +379,14 @@ mod tests {
             f.contains(r"subtitles='C\:/proj/timeline/subtitles.srt'"),
             "escaped subtitles path が不正: {f}"
         );
+    }
+
+    /// s2v-18b.7: パスに `'` を含むと単一引用符で包む方式は引用が途中で閉じて壊れる。
+    /// その場合は引用なしで、フィルタグラフ層とオプション層の二重エスケープにする。
+    #[test]
+    fn escapes_single_quote_in_subtitle_path_without_quoting() {
+        let escaped = escape_subtitles_path(Path::new(r"C:\p\O'Brien, x=1 [a];b\subtitles.srt"));
+        assert_eq!(escaped, r"C\\:/p/O\\\'Brien\, x\\=1 \[a\]\;b/subtitles.srt");
     }
 
     #[test]

@@ -423,7 +423,8 @@ args = ["-m", "xtts_api_server", "--port", "8020"]</pre>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
   <tr><td><code>&lt;台本ファイル/フォルダ&gt;</code>（1個以上必須）</td><td>処理対象の台本テキストファイル、または台本（<code>.txt</code>）を格納したフォルダのパス。複数指定・混在可</td></tr>
   <tr><td><code>-c, --config &lt;パス&gt;</code></td><td>設定ファイル (config.toml) のパス。<strong>省略時は実行ファイルと同じフォルダの <code>config.toml</code></strong> が使用される</td></tr>
-  <tr><td><code>--strict</code></td><td>パース警告（未定義キャストの台詞や、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）が1件でもある台本を、その場で失敗として扱う。省略時は警告を画面と <code>run.log</code> に出力したうえで処理を続行する（台詞が静かに欠落する事態を避けたい場合に指定する）</td></tr>
+  <tr><td><code>--no-strict</code></td><td>パース警告（未定義キャストの台詞、空行なしで連続した <code>@cast</code> 定義の飲み込み、見つからない BGM/SE ファイルなど）があっても失敗にせず、警告を画面と <code>run.log</code> に出力したうえで処理を続行する。<strong>省略時は、パース警告が1件でもある台本をその場で失敗として扱う</strong>（台詞や効果音が静かに欠落する事態を防ぐため）</td></tr>
+  <tr><td><code>--strict</code></td><td>パース警告のある台本を失敗として扱う。現在は既定の動作なので指定不要（以前の呼び出し方との互換のために受け付ける）。<code>--no-strict</code> と両方指定した場合は後に書いたほうが有効</td></tr>
   <tr><td><code>-v, --verbose</code></td><td>画面に出すログを詳しくする。<code>-v</code> で進捗（各フェーズの経過）まで、<code>-vv</code> でデバッグログまで表示する。<strong>省略時は警告・エラー・最終サマリだけ</strong>を表示する（詳細は常にログファイルに残るため、通常は指定不要）</td></tr>
 </table>
 <p>実行例:</p>
@@ -568,8 +569,8 @@ cargo build --release -p s2v-gui
 </div>
 <p>
   台本にパース上の警告（未定義キャストの台詞、空行なしで連続した <code>@cast</code> 定義の飲み込みなど）があると、
-  <strong>「⚠ ○行目: …」</strong>という橙色の行が画面上部に一覧表示されます。CLI の <code>--strict</code> に相当する
-  「警告を失敗として扱う」設定は GUI にはないため、警告は自分で確認してください。
+  <strong>「⚠ ○行目: …」</strong>という橙色の行が画面上部に一覧表示されます。CLI は既定で警告のある台本を失敗として扱いますが、
+  GUI にはこの設定がなく警告があっても実行できるため、警告は自分で確認してください。
 </p>
 
 <h4>行リストと詳細</h4>
@@ -616,7 +617,7 @@ cargo build --release -p s2v-gui
 <div class="note">
   <strong>GUI と CLI の機能差</strong><br>
   GUI で一括実行できるのは<strong>開いている台本 1 本だけ</strong>です。
-  複数台本のバッチ処理（<a href="#cli">3.1</a>）、<code>--strict</code>、
+  複数台本のバッチ処理（<a href="#cli">3.1</a>）、パース警告による失敗判定（<code>--no-strict</code> で無効化）、
   動画への書き出し（<a href="#video">第5章 compose</a>）は CLI から実行してください。
 </div>
 
@@ -763,13 +764,14 @@ reverb_wet = 0.6
 </div>
 
 <h3 id="compose">5.3 コマンドと引数</h3>
-<pre><code>script2voice compose &lt;プロジェクトフォルダ&gt; [--scene-map &lt;scene_map.jsonのパス&gt;] [--burn-subtitle] [-o &lt;出力ファイル.mp4&gt;]</code></pre>
+<pre><code>script2voice compose &lt;プロジェクトフォルダ&gt; [--scene-map &lt;scene_map.jsonのパス&gt;] [--burn-subtitle] [-o &lt;出力ファイル.mp4&gt;] [--generation &lt;N&gt;]</code></pre>
 <table>
   <tr><th>引数 / オプション</th><th>説明</th></tr>
   <tr><td><code>&lt;プロジェクトフォルダ&gt;</code>（必須）</td><td>3章で生成した出力フォルダ（<code>audio/</code>・<code>timeline/</code>・<code>full_dialogue.wav</code> 等が入っているフォルダ）</td></tr>
   <tr><td><code>--scene-map &lt;パス&gt;</code></td><td><code>scene_map.json</code> のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/scene_map.json</code></strong> を使用する</td></tr>
   <tr><td><code>--burn-subtitle</code></td><td>字幕（<code>timeline/subtitles.srt</code>）を映像に焼き込む（ハードサブ）</td></tr>
-  <tr><td><code>-o, --output &lt;パス&gt;</code></td><td>出力する MP4 のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/output.mp4</code></strong></td></tr>
+  <tr><td><code>-o, --output &lt;パス&gt;</code></td><td>出力する MP4 のパス。<strong>省略時は <code>&lt;プロジェクトフォルダ&gt;/output.mp4</code></strong>（<code>--generation N</code> 指定時は <code>output_N.mp4</code>）。既存のファイルは警告を表示したうえで上書きする</td></tr>
+  <tr><td><code>--generation &lt;N&gt;</code></td><td>出力ロックで連番 <code>_N</code> に退避された生成一式（<code>full_dialogue_N.wav</code> と <code>timeline/subtitles_N.srt</code>）から動画を作る。N は 1 以上。省略時は連番なしの <code>full_dialogue.wav</code> / <code>timeline/subtitles.srt</code> を使う</td></tr>
 </table>
 <p>実行例:</p>
 <pre><code># プロジェクトフォルダ直下の scene_map.json を使って動画化
@@ -1025,9 +1027,9 @@ se_dir = ./assets/se</code></pre>
 <table>
   <tr><th>コマンド</th><th>書式</th><th>説明</th></tr>
   <tr><td>コメント</td><td><code># コメント文</code>（<code>#</code> の直後に空白）</td><td>その行は無視されます</td></tr>
-  <tr><td>BGM 再生開始</td><td><code>#bgm_start ファイル名.wav</code></td><td>指定した BGM を再生開始します。ファイルは <code>@asset</code> の <code>bgm_dir</code> から検索されます</td></tr>
+  <tr><td>BGM 再生開始</td><td><code>#bgm_start ファイル名.wav</code></td><td>指定した BGM を再生開始します。ファイルは <code>@asset</code> の <code>bgm_dir</code> から検索されます（絶対パスで書いた場合はそのまま使用。見つからない場合はパース警告）</td></tr>
   <tr><td>BGM 停止</td><td><code>#bgm_stop</code></td><td>再生中の BGM を停止します（クロスフェードあり）</td></tr>
-  <tr><td>効果音 (SE)</td><td><code>#se ファイル名.wav</code></td><td>指定した効果音を挿入します。ファイルは <code>@asset</code> の <code>se_dir</code> から検索されます</td></tr>
+  <tr><td>効果音 (SE)</td><td><code>#se ファイル名.wav</code></td><td>指定した効果音を挿入します。ファイルは <code>@asset</code> の <code>se_dir</code> から検索されます（絶対パスで書いた場合はそのまま使用。見つからない場合はパース警告）</td></tr>
   <tr><td>無音の挿入</td><td><code>#pause ****</code></td><td>その位置に ****ms の無音を挿入します</td></tr>
   <tr><td>段落区切り</td><td><code>#paragraph</code> または <code>#paragraph 名称</code></td><td>段落の切れ目を示し、<code>@pause</code> の <code>paragraph</code> 設定の無音を挿入します。名称を付けると字幕に <code>[PARAGRAPH 名称]</code> として出力されます（動画合成でカット名・素材ファイル名として使う機能は今後追加予定。<a href="#video-paragraph">5.2</a>）</td></tr>
   <tr><td>同時発声</td><td><code>#数字</code>（例: <code>#2</code>）</td><td>続く指定数の台詞を同時刻から同時に発声させます（複数キャラが同時に話す演出など）</td></tr>
@@ -1404,7 +1406,7 @@ config.toml の <code>[audio.early_reflections]</code> は<strong>全体の既�
   </tr>
   <tr>
     <td>「出力ファイルのいずれかが使用中のため、今回の生成一式を連番 _N で保存します」と表示される</td>
-    <td>前回の出力（<code>full_dialogue.wav</code> / <code>timeline/*.srt・*.fcpxml</code> / <code>audio/voice_*.wav</code>）を動画編集ソフト等で<strong>開いたまま再実行</strong>すると、ファイルが使用中で上書きできません。この場合プログラムは異常終了せず、<strong>今回の生成一式すべてを共通の連番 <code>_N</code></strong>（例 <code>full_dialogue_1.wav</code>, <code>audio/voice_0001_1.wav</code>, <code>timeline/timeline_1.fcpxml</code>, <code>timeline/subtitles_1.srt</code>）で保存します。FCPXML は同じ <code>_N</code> の音声を参照するので整合性は保たれます。既定名の前世代ファイルはそのまま残ります。元の名前で出力したい場合は、開いているアプリを閉じてから再実行してください。</td>
+    <td>前回の出力（<code>full_dialogue.wav</code> / <code>timeline/*.srt・*.fcpxml</code> / <code>audio/voice_*.wav</code>）を動画編集ソフト等で<strong>開いたまま再実行</strong>すると、ファイルが使用中で上書きできません。この場合プログラムは異常終了せず、<strong>今回の生成一式すべてを共通の連番 <code>_N</code></strong>（例 <code>full_dialogue_1.wav</code>, <code>audio/voice_0001_1.wav</code>, <code>timeline/timeline_1.fcpxml</code>, <code>timeline/subtitles_1.srt</code>）で保存します。FCPXML は同じ <code>_N</code> の音声を参照するので整合性は保たれます。既定名の前世代ファイルはそのまま残ります。元の名前で出力したい場合は、開いているアプリを閉じてから再実行してください。連番の一式から動画を作るときは <code>compose --generation N</code> を指定します。</td>
   </tr>
   <tr>
     <td>GUI で「▶試聴」を押しても音が出ない・反応がないように見える</td>

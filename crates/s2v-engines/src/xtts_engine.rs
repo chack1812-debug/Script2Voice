@@ -277,6 +277,51 @@ mod tests {
         assert!(std::fs::metadata(&out_path).unwrap().len() > 0);
     }
 
+    /// 台本の `@cast` で `language=en` を指定したら、tts_to_audio に language="en" が渡ること
+    /// （s2v-18b.2: 以前はパーサが文字列値を捨て、常に "ja" で合成されていた）。
+    #[tokio::test]
+    async fn synthesize_sends_language_from_script_cast_definition() {
+        let server = MockServer::start().await;
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let out_path = tmp.path().to_path_buf();
+
+        Mock::given(method("GET"))
+            .and(path("/speakers"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(speakers_response()))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/get_tts_settings"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({})))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/set_tts_settings"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/tts_to_audio/"))
+            .and(wiremock::matchers::body_partial_json(
+                json!({"language": "en"}),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(b"RIFF....".to_vec()))
+            .mount(&server)
+            .await;
+
+        let scenes = s2v_core::ScriptParser::new()
+            .parse_str("@scene s\n@cast\nE:en-us-1:default,xtts,language=en\n@script\nE:Hello\n")
+            .unwrap();
+        let cast = scenes[0].casts["E"].clone();
+
+        let engine = make_engine(&server.uri());
+        engine.activate().await.unwrap();
+        engine
+            .synthesize("Hello", &cast, &out_path)
+            .await
+            .expect("language=en が tts_to_audio に渡ること");
+    }
+
     #[tokio::test]
     async fn synthesize_fails_on_tts_error() {
         let server = MockServer::start().await;

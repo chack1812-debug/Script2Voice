@@ -409,7 +409,7 @@ impl<'a> Exporter<'a> {
             .filter_map(|(i, e)| {
                 let p = e.path.as_ref()?;
                 let abs = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-                let uri = format!("file://{}", abs.display()).replace('\\', "/");
+                let uri = file_uri(&abs);
                 let name = p.file_name()?.to_string_lossy();
                 Some(format!(
                     r#"<asset id="a{i}" name="{}" src="{}"/>"#,
@@ -774,6 +774,29 @@ fn format_srt_time(seconds: f64) -> String {
     format!("{h:02}:{m:02}:{s:02},{ms:03}")
 }
 
+/// 絶対パスを `file://` URI にする。
+///
+/// Windows の `canonicalize` は `\\?\D:\...`（UNC なら `\\?\UNC\server\share\...`）という
+/// verbatim パスを返すので、接頭辞を外してから `file:///D:/...` / `file://server/share/...` にする。
+fn file_uri(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let s = if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{rest}")
+    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+        rest.to_string()
+    } else {
+        s.into_owned()
+    };
+    let s = s.replace('\\', "/");
+    if let Some(unc) = s.strip_prefix("//") {
+        format!("file://{unc}")
+    } else if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
 fn read_stereo_float(path: &Path, target_sr: u32) -> anyhow::Result<Vec<[f32; 2]>> {
     let mut reader = hound::WavReader::open(path)?;
     let spec = reader.spec();
@@ -796,16 +819,14 @@ fn read_stereo_float(path: &Path, target_sr: u32) -> anyhow::Result<Vec<[f32; 2]
             .map(|c| [c[0], c[1]])
             .collect()
     };
-    // 簡易リサンプリング (同レートの場合はそのまま)
+    // 市販の BGM/SE は 44.1kHz が多い。最近傍法だとエイリアシングが出るため、
+    // 台詞と同じ帯域制限付きリサンプラで左右別々に変換する。
     if spec.sample_rate != target_sr {
-        let ratio = target_sr as f64 / spec.sample_rate as f64;
-        let new_len = (stereo.len() as f64 * ratio) as usize;
-        Ok((0..new_len)
-            .map(|i| {
-                let src_idx = (i as f64 / ratio) as usize;
-                stereo[src_idx.min(stereo.len() - 1)]
-            })
-            .collect())
+        let left: Vec<f32> = stereo.iter().map(|s| s[0]).collect();
+        let right: Vec<f32> = stereo.iter().map(|s| s[1]).collect();
+        let left = s2v_audio::resample_mono(&left, spec.sample_rate, target_sr)?;
+        let right = s2v_audio::resample_mono(&right, spec.sample_rate, target_sr)?;
+        Ok(left.into_iter().zip(right).map(|(l, r)| [l, r]).collect())
     } else {
         Ok(stereo)
     }
@@ -1498,5 +1519,78 @@ mod tests {
             .generate_timeline_json("_2")
             .unwrap();
         assert!(dir.path().join("timeline/timeline_2.json").exists());
+    }
+
+    // ---- s2v-18b.5: FCPXML のファイル URI ----
+
+    #[test]
+    fn file_uri_strips_windows_verbatim_prefix() {
+        assert_eq!(
+            file_uri(Path::new(r"\\?\D:\UDS\out\audio\voice_0001.wav")),
+            "file:///D:/UDS/out/audio/voice_0001.wav"
+        );
+        assert_eq!(
+            file_uri(Path::new(r"\\?\UNC\server\share\a.wav")),
+            "file://server/share/a.wav"
+        );
+        assert_eq!(file_uri(Path::new(r"D:\a\b.wav")), "file:///D:/a/b.wav");
+    }
+
+    #[test]
+    fn fcpxml_asset_src_is_a_valid_file_uri() {
+        let dir = tempfile::tempdir().unwrap();
+        let wav = dir.path().join("voice_0001.wav");
+        write_wav(&wav, 48000, 0.1);
+        let events = vec![make_audio_event(0.0, 100.0, "テスト", Some(wav))];
+        Exporter::new(&events, dir.path(), 48000, default_bgm())
+            .generate_fcpxml("")
+            .unwrap();
+        let content = std::fs::read_to_string(dir.path().join("timeline/timeline.fcpxml")).unwrap();
+        assert!(content.contains(r#"src="file:///"#), "{content}");
+        assert!(
+            !content.contains("?/"),
+            "verbatim 接頭辞が残ってはいけない: {content}"
+        );
+    }
+
+    // ---- s2v-18b.6: BGM/SE のサンプルレート変換 ----
+
+    /// 44.1kHz の 1kHz 正弦波を 48kHz で読み込んだとき、理想的な 48kHz 正弦波との誤差が小さいこと。
+    /// 最近傍法（以前の実装）だと誤差 RMS が 0.05 前後になる。
+    #[test]
+    fn read_stereo_float_resamples_with_band_limited_interpolation() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("bgm44k.wav");
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44100,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        let f = 1000.0_f64;
+        for i in 0..44100 {
+            let v = (2.0 * std::f64::consts::PI * f * i as f64 / 44100.0).sin() as f32 * 0.5;
+            w.write_sample(v).unwrap();
+            w.write_sample(-v).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let out = read_stereo_float(&path, 48000).unwrap();
+        assert_eq!(out.len(), 48000);
+        // 端の過渡応答を除いた中央部で比較する
+        let (mut err_l, mut err_r, mut n) = (0.0_f64, 0.0_f64, 0usize);
+        for (i, s) in out.iter().enumerate().take(44000).skip(4000) {
+            let ideal = (2.0 * std::f64::consts::PI * f * i as f64 / 48000.0).sin() * 0.5;
+            err_l += (s[0] as f64 - ideal).powi(2);
+            err_r += (s[1] as f64 + ideal).powi(2);
+            n += 1;
+        }
+        let rms_l = (err_l / n as f64).sqrt();
+        let rms_r = (err_r / n as f64).sqrt();
+        assert!(
+            rms_l < 0.005 && rms_r < 0.005,
+            "rms_l={rms_l} rms_r={rms_r}"
+        );
     }
 }

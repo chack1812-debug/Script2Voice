@@ -16,22 +16,33 @@ pub fn resample_mono(samples: &[f32], from_rate: u32, to_rate: u32) -> anyhow::R
     let mut resampler =
         FftFixedIn::<f32>::new(from_rate as usize, to_rate as usize, chunk_size, 2, 1)?;
 
-    let mut input_frames = samples.to_vec();
-    // 最後のチャンクに必要なパディングを追加
-    let needed = chunk_size * ((input_frames.len() + chunk_size - 1) / chunk_size);
-    input_frames.resize(needed, 0.0);
+    // FFT リサンプラは出力が output_delay() サンプル遅れる（24k→48k・チャンク1024で512）。
+    // 遅延分を先頭から捨て、入力が尽きた後は空入力の process_partial で残りを吐き出させる
+    // （rubato の推奨手順）。これを怠ると全体が遅れ、末尾の遅延分が切り捨てられる。
+    let delay = resampler.output_delay();
+    let expected = (samples.len() as f64 * ratio).round() as usize;
+    let mut output = Vec::with_capacity(delay + expected + chunk_size * 2);
 
-    let mut output = Vec::with_capacity((samples.len() as f64 * ratio) as usize + chunk_size);
-
-    for chunk in input_frames.chunks(chunk_size) {
-        let wave_in = vec![chunk.to_vec()];
-        let wave_out = resampler.process(&wave_in, None)?;
+    let mut chunks = samples.chunks_exact(chunk_size);
+    for chunk in &mut chunks {
+        let wave_out = resampler.process(&[chunk], None)?;
+        output.extend_from_slice(&wave_out[0]);
+    }
+    let rest = chunks.remainder();
+    if !rest.is_empty() {
+        let wave_out = resampler.process_partial(Some(&[rest]), None)?;
+        output.extend_from_slice(&wave_out[0]);
+    }
+    while output.len() < delay + expected {
+        let wave_out = resampler.process_partial::<&[f32]>(None, None)?;
+        if wave_out[0].is_empty() {
+            break;
+        }
         output.extend_from_slice(&wave_out[0]);
     }
 
-    // 期待出力サンプル数に切り詰め
-    let expected = (samples.len() as f64 * ratio).round() as usize;
-    output.truncate(expected);
+    let mut output = output.split_off(delay.min(output.len()));
+    output.resize(expected, 0.0);
     Ok(output)
 }
 
@@ -77,6 +88,65 @@ mod tests {
         let out = resample_mono(&samples, 48000, 24000).unwrap();
         let expected = (samples.len() as f64 * 0.5).round() as usize;
         assert!((out.len() as isize - expected as isize).unsigned_abs() <= 1024);
+    }
+
+    /// s2v-18b.3: rubato の出力遅延(output_delay)を補正し、時間位置がずれないこと。
+    /// 以前は 24kHz→48kHz で常に 512 サンプル遅れていた。
+    #[test]
+    fn upsample_preserves_impulse_position() {
+        let mut samples = vec![0.0_f32; 4800];
+        samples[1000] = 1.0;
+        let out = resample_mono(&samples, 24000, 48000).unwrap();
+        let peak = out
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .unwrap()
+            .0;
+        assert!(
+            (peak as isize - 2000).abs() <= 1,
+            "インパルスは 2000 付近にあるべき: {peak}"
+        );
+    }
+
+    #[test]
+    fn downsample_preserves_impulse_position() {
+        let mut samples = vec![0.0_f32; 9600];
+        samples[3000] = 1.0;
+        let out = resample_mono(&samples, 48000, 24000).unwrap();
+        let peak = out
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.abs().total_cmp(&b.1.abs()))
+            .unwrap()
+            .0;
+        assert!(
+            (peak as isize - 1500).abs() <= 1,
+            "インパルスは 1500 付近にあるべき: {peak}"
+        );
+    }
+
+    /// 出力長は round(n·to/from) ちょうどで、末尾まで信号が残ること（遅延分が切り捨てられない）。
+    #[test]
+    fn output_has_exact_length_and_keeps_tail() {
+        for &(n, from, to) in &[
+            (2048usize, 24000u32, 48000u32),
+            (12345, 24000, 48000),
+            (10000, 22050, 48000),
+            (9999, 48000, 24000),
+        ] {
+            let samples = sine_wave(440.0, from, n as f32 / from as f32);
+            let samples = &samples[..n.min(samples.len())];
+            let out = resample_mono(samples, from, to).unwrap();
+            let expected = (samples.len() as f64 * to as f64 / from as f64).round() as usize;
+            assert_eq!(out.len(), expected, "n={n} {from}->{to}");
+            let tail = &out[out.len() - 256..];
+            let rms = (tail.iter().map(|s| s * s).sum::<f32>() / tail.len() as f32).sqrt();
+            assert!(
+                rms > 0.5,
+                "末尾256サンプルにも正弦波が残ること: rms={rms} n={n}"
+            );
+        }
     }
 
     #[test]

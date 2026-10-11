@@ -73,7 +73,7 @@ impl ScriptParser {
                         scenes.push(s);
                     }
                     let scene_raw = line["@scene".len()..].trim();
-                    let scene = self.parse_scene_header(scene_raw);
+                    let scene = self.parse_scene_header(scene_raw, line_no);
                     let mut s = Scene::new(scene);
                     s.pause_config = self.pause_config.clone();
                     current_scene = Some(s);
@@ -94,7 +94,7 @@ impl ScriptParser {
             }
 
             match section {
-                "@pause" => self.parse_pause_line(line),
+                "@pause" => self.parse_pause_line(line, line_no),
                 "@asset" => self.parse_asset_line(line),
                 "@cast" => {
                     if self.pending_cast_name.is_some() {
@@ -109,7 +109,7 @@ impl ScriptParser {
                         }
                         self.pending_cast_appearance.push(line.to_string());
                     } else {
-                        self.parse_cast_line(line);
+                        self.parse_cast_line(line, line_no);
                     }
                 }
                 "@scene" => {
@@ -174,7 +174,19 @@ impl ScriptParser {
         self.parse_str(&text)
     }
 
-    fn parse_scene_header(&self, raw: &str) -> SceneConfig {
+    /// 数値パラメータとして書かれたが有限値でない（`nan` / `inf` など）キーを警告に積む。
+    fn warn_non_finite(&mut self, line_no: usize, rejected: &[String]) {
+        for key in rejected {
+            self.warnings.push(ParseWarning {
+                line_no,
+                message: format!(
+                    "パラメータ「{key}」の値が有限の数値ではありません（このパラメータは無視されます）"
+                ),
+            });
+        }
+    }
+
+    fn parse_scene_header(&mut self, raw: &str, line_no: usize) -> SceneConfig {
         let tokens: Vec<&str> = raw.split_whitespace().collect();
         let mut name_tokens = Vec::new();
         let mut param_tokens = Vec::new();
@@ -186,7 +198,8 @@ impl ScriptParser {
             }
         }
         let name = name_tokens.join(" ");
-        let params = extract_kv_params(&param_tokens.join(","));
+        let (params, rejected) = extract_kv_params(&param_tokens.join(","));
+        self.warn_non_finite(line_no, &rejected);
         SceneConfig {
             room_size: params.get("room_size").copied(),
             reverb_wet: params.get("reverb_wet").copied(),
@@ -200,7 +213,7 @@ impl ScriptParser {
         }
     }
 
-    fn parse_pause_line(&mut self, line: &str) {
+    fn parse_pause_line(&mut self, line: &str, line_no: usize) {
         let parts: Vec<&str> = line.splitn(2, char::is_whitespace).collect();
         if parts.len() != 2 {
             return;
@@ -209,6 +222,10 @@ impl ScriptParser {
         let Ok(val) = parts[1].trim().parse::<f64>() else {
             return;
         };
+        if !val.is_finite() {
+            self.warn_non_finite(line_no, &[key.to_string()]);
+            return;
+        }
         match key {
             "sentence" | "sentens" => self.pause_config.sentence_ms = val,
             "cast" => self.pause_config.cast_ms = val,
@@ -234,9 +251,15 @@ impl ScriptParser {
         parts.len() == 3 && parts[2].contains(',')
     }
 
-    fn parse_cast_line(&mut self, line: &str) {
+    fn parse_cast_line(&mut self, line: &str, line_no: usize) {
         let parts: Vec<&str> = line.splitn(3, ':').collect();
         if parts.len() < 3 {
+            self.warnings.push(ParseWarning {
+                line_no,
+                message: format!(
+                    "キャスト定義行の書式（役名:話者名:style,エンジン名,...）になっていません（この行は無視されます）: {line}"
+                ),
+            });
             return;
         }
         let name = parts[0].trim().to_string();
@@ -248,14 +271,28 @@ impl ScriptParser {
         let engine_type = sub.get(1).map(|s| s.trim()).unwrap_or("").to_string();
         let params_str = sub.get(2).copied().unwrap_or("");
 
-        let mut raw = extract_kv_params(params_str);
-        let pan = raw.remove("pan").unwrap_or(0.0);
-        let distance = raw.remove("distance").unwrap_or(1.0);
-        let volume = raw.remove("volume").unwrap_or(1.0);
-        let height = raw.remove("height");
-
-        let mut params: HashMap<String, Value> =
-            raw.into_iter().map(|(k, v)| (k, Value::from(v))).collect();
+        let (mut params, rejected) = extract_cast_params(params_str);
+        self.warn_non_finite(line_no, &rejected);
+        // 音響パラメータは数値でなければ意味をなさない。文字列なら警告して既定値を使う。
+        let mut take_number = |key: &str| -> Option<f64> {
+            let v = params.remove(key)?;
+            match v.as_f64() {
+                Some(f) => Some(f),
+                None => {
+                    self.warnings.push(ParseWarning {
+                        line_no,
+                        message: format!(
+                            "パラメータ「{key}」の値が数値ではありません（既定値を使います）: {v}"
+                        ),
+                    });
+                    None
+                }
+            }
+        };
+        let pan = take_number("pan").unwrap_or(0.0);
+        let distance = take_number("distance").unwrap_or(1.0);
+        let volume = take_number("volume").unwrap_or(1.0);
+        let height = take_number("height");
         params.insert("style".to_string(), Value::String(style));
 
         let cast_key = name.clone();
@@ -275,6 +312,36 @@ impl ScriptParser {
             },
         );
         self.pending_cast_name = Some(cast_key);
+    }
+
+    /// `#bgm_start` / `#se` のファイル名を、台本仕様どおり `@asset` の `bgm_dir` / `se_dir` から探す。
+    /// 絶対パス、または該当ディレクトリが未指定なら書かれたまま使う。
+    /// 解決後のファイルが存在しなければ警告する（存在しない BGM/SE はミックスにも FCPXML にも入らない）。
+    fn resolve_asset_path(
+        &mut self,
+        dir_key: &str,
+        label: &str,
+        arg: &str,
+        line_no: usize,
+    ) -> String {
+        if arg.is_empty() {
+            return String::new();
+        }
+        let path = std::path::Path::new(arg);
+        let resolved = match self.asset_config.get(dir_key) {
+            Some(dir) if !path.is_absolute() => std::path::Path::new(dir).join(path),
+            _ => path.to_path_buf(),
+        };
+        if !resolved.is_file() {
+            self.warnings.push(ParseWarning {
+                line_no,
+                message: format!(
+                    "{label}ファイルが見つかりません（音声に含まれません）: {}",
+                    resolved.display()
+                ),
+            });
+        }
+        resolved.to_string_lossy().into_owned()
     }
 
     fn parse_script_line(&mut self, line: &str, line_no: usize) -> Option<ScriptItem> {
@@ -327,10 +394,12 @@ impl ScriptParser {
                     Some(ScriptItem::Command(ScriptCommand::Paragraph(name)))
                 }
                 "bgm_start" => Some(ScriptItem::Command(ScriptCommand::BgmStart(
-                    arg.to_string(),
+                    self.resolve_asset_path("bgm_dir", "BGM", arg, line_no),
                 ))),
                 "bgm_stop" => Some(ScriptItem::Command(ScriptCommand::BgmStop)),
-                "se" => Some(ScriptItem::Command(ScriptCommand::Se(arg.to_string()))),
+                "se" => Some(ScriptItem::Command(ScriptCommand::Se(
+                    self.resolve_asset_path("se_dir", "SE", arg, line_no),
+                ))),
                 _ => None,
             };
         }
@@ -377,7 +446,8 @@ impl ScriptParser {
         }
 
         let (text, display_text) = expand_ruby(raw_text);
-        let offset_params = extract_kv_params(params_str);
+        let (offset_params, rejected) = extract_kv_params(params_str);
+        self.warn_non_finite(line_no, &rejected);
 
         Some(ScriptItem::Speech {
             cast_name: role.to_string(),
@@ -416,17 +486,49 @@ fn expand_ruby(text: &str) -> (String, String) {
     (synthesis, display)
 }
 
-/// カンマ区切り `key=value` 文字列から HashMap<String, f64> を抽出
-fn extract_kv_params(s: &str) -> HashMap<String, f64> {
+/// カンマ区切り `key=value` 文字列から数値パラメータを抽出する。
+///
+/// 数値として読めない値は捨てる。`nan` / `inf` のように数値としては読めるが有限でない値も捨て、
+/// そのキーを2つ目の戻り値で返す（呼び出し側で警告にする）。
+fn extract_kv_params(s: &str) -> (HashMap<String, f64>, Vec<String>) {
     let mut map = HashMap::new();
+    let mut rejected = Vec::new();
     for part in s.split(',') {
         if let Some((k, v)) = part.split_once('=') {
             if let Ok(val) = v.trim().parse::<f64>() {
-                map.insert(k.trim().to_string(), val);
+                if val.is_finite() {
+                    map.insert(k.trim().to_string(), val);
+                } else {
+                    rejected.push(k.trim().to_string());
+                }
             }
         }
     }
-    map
+    (map, rejected)
+}
+
+/// `@cast` 定義行用のパラメータ抽出。`extract_kv_params` と違い、数値として読めない値は
+/// 文字列として保持する（`language=en` など。台本仕様の「使用言語」）。
+/// 有限でない数値の扱いは `extract_kv_params` と同じ。
+fn extract_cast_params(s: &str) -> (HashMap<String, Value>, Vec<String>) {
+    let mut map = HashMap::new();
+    let mut rejected = Vec::new();
+    for part in s.split(',') {
+        if let Some((k, v)) = part.split_once('=') {
+            let (k, v) = (k.trim(), v.trim());
+            match v.parse::<f64>() {
+                Ok(val) if val.is_finite() => {
+                    map.insert(k.to_string(), Value::from(val));
+                }
+                Ok(_) => rejected.push(k.to_string()),
+                Err(_) if !v.is_empty() => {
+                    map.insert(k.to_string(), Value::String(v.to_string()));
+                }
+                Err(_) => {}
+            }
+        }
+    }
+    (map, rejected)
 }
 
 #[cfg(test)]
@@ -840,9 +942,10 @@ A(pan=15,distance=2):セリフ
 
     #[test]
     fn scene_header_parses_room_dims_and_listener() {
-        let p = ScriptParser::new();
+        let mut p = ScriptParser::new();
         let sc = p.parse_scene_header(
             "ホール room_w=25 room_d=45 room_h=18 listener_dx=0 listener_dy=-15",
+            1,
         );
         assert_eq!(sc.name, "ホール");
         assert_eq!(sc.room_w, Some(25.0));
@@ -854,8 +957,8 @@ A(pan=15,distance=2):セリフ
 
     #[test]
     fn scene_header_room_dims_default_none() {
-        let p = ScriptParser::new();
-        let sc = p.parse_scene_header("小部屋 room_size=0.1");
+        let mut p = ScriptParser::new();
+        let sc = p.parse_scene_header("小部屋 room_size=0.1", 1);
         assert_eq!(sc.room_w, None);
         assert_eq!(sc.room_d, None);
         assert_eq!(sc.room_h, None);
@@ -866,10 +969,10 @@ A(pan=15,distance=2):セリフ
 
     #[test]
     fn scene_header_parses_listener_z() {
-        let p = ScriptParser::new();
-        let sc = p.parse_scene_header("舞台 room_w=20 room_d=30 room_h=12 listener_z=1.1");
+        let mut p = ScriptParser::new();
+        let sc = p.parse_scene_header("舞台 room_w=20 room_d=30 room_h=12 listener_z=1.1", 1);
         assert_eq!(sc.listener_z, Some(1.1));
-        let sc2 = p.parse_scene_header("小部屋 room_size=0.1");
+        let sc2 = p.parse_scene_header("小部屋 room_size=0.1", 1);
         assert_eq!(sc2.listener_z, None);
     }
 
@@ -1137,5 +1240,192 @@ A:開始は'13:00|じゅうさんじ'です
         } else {
             panic!("expected speech");
         }
+    }
+
+    // ---- s2v-18b.2: @cast の文字列パラメータ ----
+
+    #[test]
+    fn cast_string_param_is_kept_as_string() {
+        let src = "@scene s\n@cast\nE:Ana:default,xtts,language=en,pan=10\n@script\nE:Hello\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        let c = &scenes[0].casts["E"];
+        assert_eq!(c.params["language"].as_str(), Some("en"));
+        assert!((c.pan - 10.0).abs() < 1e-9);
+        assert!(parser.warnings().is_empty(), "{:?}", parser.warnings());
+    }
+
+    #[test]
+    fn cast_numeric_param_stays_numeric() {
+        let src = "@scene s\n@cast\nA:A:ノーマル,voicevox,speedScale=1.2\n@script\nA:x\n";
+        let scenes = ScriptParser::new().parse_str(src).unwrap();
+        assert_eq!(
+            scenes[0].casts["A"].params["speedScale"].as_f64(),
+            Some(1.2)
+        );
+    }
+
+    #[test]
+    fn cast_non_numeric_acoustic_param_warns_and_uses_default() {
+        let src = "@scene s\n@cast\nA:A:ノーマル,voicevox,pan=left\n@script\nA:x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        let c = &scenes[0].casts["A"];
+        assert_eq!(c.pan, 0.0);
+        assert!(!c.params.contains_key("pan"));
+        let w = parser.warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].line_no, 3);
+        assert!(w[0].message.contains("pan"), "{}", w[0].message);
+    }
+
+    // ---- s2v-18b.11: @cast 定義行の書式不正 ----
+
+    #[test]
+    fn malformed_cast_definition_line_warns_with_line_number() {
+        let src = "@scene s\n@cast\nA:話者のみ\n@script\nA:x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        assert!(scenes[0].casts.is_empty());
+        let w = parser.warnings();
+        assert!(
+            w.iter()
+                .any(|w| w.line_no == 3 && w.message.contains("書式")),
+            "{w:?}"
+        );
+    }
+
+    // ---- s2v-18b.12: 非有限の数値 ----
+
+    #[test]
+    fn non_finite_cast_param_is_rejected_with_warning() {
+        let src = "@scene s\n@cast\nA:A:ノーマル,voicevox,pan=nan,volume=inf,speedScale=-infinity\n@script\nA:x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        let c = &scenes[0].casts["A"];
+        assert_eq!(c.pan, 0.0);
+        assert_eq!(c.volume, 1.0);
+        assert!(!c.params.contains_key("speedScale"));
+        assert_eq!(parser.warnings().len(), 3, "{:?}", parser.warnings());
+        assert!(parser.warnings().iter().all(|w| w.line_no == 3));
+    }
+
+    #[test]
+    fn non_finite_inline_param_is_rejected_with_warning() {
+        let src = "@scene s\n@cast\nA:A:ノーマル,voicevox\n@script\nA(pan=inf,volume=0.1):x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        let ScriptItem::Speech { offset_params, .. } = &scenes[0].items[0] else {
+            panic!("expected speech");
+        };
+        assert!(!offset_params.contains_key("pan"));
+        assert_eq!(offset_params.get("volume"), Some(&0.1));
+        let w = parser.warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].line_no, 5);
+    }
+
+    #[test]
+    fn non_finite_scene_param_is_rejected_with_warning() {
+        let src =
+            "@scene s room_size=NaN reverb_wet=0.5\n@cast\nA:A:ノーマル,voicevox\n@script\nA:x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        assert_eq!(scenes[0].config.room_size, None);
+        assert_eq!(scenes[0].config.reverb_wet, Some(0.5));
+        let w = parser.warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].line_no, 1);
+    }
+
+    #[test]
+    fn non_finite_pause_value_is_ignored_with_warning() {
+        let src = "@pause\nsentence inf\ncast 300\n@scene s\n@cast\nA:A:ノーマル,voicevox\n@script\nA:x\n";
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(src).unwrap();
+        assert_eq!(
+            scenes[0].pause_config.sentence_ms,
+            PauseConfig::default().sentence_ms
+        );
+        assert_eq!(scenes[0].pause_config.cast_ms, 300.0);
+        let w = parser.warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(w[0].line_no, 2);
+    }
+
+    // ---- s2v-18b.4: @asset の bgm_dir / se_dir ----
+
+    fn asset_commands(scene: &Scene) -> (Vec<String>, Vec<String>) {
+        let mut bgm = Vec::new();
+        let mut se = Vec::new();
+        for item in &scene.items {
+            match item {
+                ScriptItem::Command(ScriptCommand::BgmStart(p)) => bgm.push(p.clone()),
+                ScriptItem::Command(ScriptCommand::Se(p)) => se.push(p.clone()),
+                _ => {}
+            }
+        }
+        (bgm, se)
+    }
+
+    #[test]
+    fn relative_bgm_and_se_are_resolved_against_asset_dirs() {
+        let dir = tempfile::tempdir().unwrap();
+        let bgm_dir = dir.path().join("BGM 音源");
+        let se_dir = dir.path().join("se");
+        std::fs::create_dir_all(&bgm_dir).unwrap();
+        std::fs::create_dir_all(&se_dir).unwrap();
+        std::fs::write(bgm_dir.join("a.wav"), b"").unwrap();
+        std::fs::write(se_dir.join("b.wav"), b"").unwrap();
+
+        let src = format!(
+            "@scene s\n@asset\nbgm_dir = {}\nse_dir = {}\n@cast\nA:A:ノーマル,voicevox\n@script\n#bgm_start a.wav\n#se b.wav\nA:x\n",
+            bgm_dir.display(),
+            se_dir.display()
+        );
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(&src).unwrap();
+        let (bgm, se) = asset_commands(&scenes[0]);
+        assert_eq!(
+            bgm,
+            vec![bgm_dir.join("a.wav").to_string_lossy().into_owned()]
+        );
+        assert_eq!(
+            se,
+            vec![se_dir.join("b.wav").to_string_lossy().into_owned()]
+        );
+        assert!(parser.warnings().is_empty(), "{:?}", parser.warnings());
+    }
+
+    #[test]
+    fn absolute_bgm_path_is_used_as_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let abs = dir.path().join("abs.wav");
+        std::fs::write(&abs, b"").unwrap();
+        let src = format!(
+            "@scene s\n@asset\nbgm_dir = D:\\no\\such\\dir\n@cast\nA:A:ノーマル,voicevox\n@script\n#bgm_start {}\nA:x\n",
+            abs.display()
+        );
+        let mut parser = ScriptParser::new();
+        let scenes = parser.parse_str(&src).unwrap();
+        let (bgm, _) = asset_commands(&scenes[0]);
+        assert_eq!(bgm, vec![abs.to_string_lossy().into_owned()]);
+        assert!(parser.warnings().is_empty(), "{:?}", parser.warnings());
+    }
+
+    #[test]
+    fn missing_bgm_or_se_file_produces_warning() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = format!(
+            "@scene s\n@asset\nbgm_dir = {0}\nse_dir = {0}\n@cast\nA:A:ノーマル,voicevox\n@script\n#bgm_start none.wav\n#se none2.wav\nA:x\n",
+            dir.path().display()
+        );
+        let mut parser = ScriptParser::new();
+        parser.parse_str(&src).unwrap();
+        let w = parser.warnings();
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert_eq!(w[0].line_no, 8);
+        assert!(w[0].message.contains("none.wav"), "{}", w[0].message);
+        assert_eq!(w[1].line_no, 9);
     }
 }

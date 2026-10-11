@@ -1,11 +1,12 @@
 use std::future::Future;
+use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use tracing::{info, warn};
 
-use crate::job::EngineJob;
+use crate::job::{resume_suspended_process, EngineJob};
 use crate::lock;
 
 /// 起動待機のポーリング間隔。Python 版の `await sleep(1)` に合わせて 1 秒固定。
@@ -28,6 +29,9 @@ pub const DEFAULT_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 pub(crate) struct EngineProcess {
     child: Option<Child>,
     job: EngineJob,
+    /// `child` を Job に割り当てられたか。割当に失敗した子は `KILL_ON_JOB_CLOSE` の対象外なので、
+    /// 解放時に明示的に終了させる（`Child` は drop しても子を終了させない）。
+    assigned: bool,
 }
 
 /// 接続確認を行い、失敗時は `exe_path` が設定されていればプロセスを起動して
@@ -61,7 +65,11 @@ where
         // 自分が起動していなくても Job ハンドルは保持する。
         // これを保持しないと、エンジンを起動したプロセスが先に終了した時点で
         // 使用中のエンジンが終了してしまう。
-        *process.lock().unwrap() = Some(EngineProcess { child: None, job });
+        *process.lock().unwrap() = Some(EngineProcess {
+            child: None,
+            job,
+            assigned: true,
+        });
         return Ok(());
     }
 
@@ -73,30 +81,12 @@ where
         "[{name}] 起動を確認できません。プロセスを起動します: {path} {}",
         args.join(" ")
     );
-    // `path` は絶対パス（実行ファイル）と PATH 上のコマンド名（例: "python"）の両方を許容する。
-    // 事前の存在チェックはせず、OS の解決結果を spawn() のエラーでそのまま扱う。
-    let child = Command::new(path)
-        .args(args)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow::anyhow!("{name}: 実行ファイルが見つかりません: {path}")
-            } else {
-                anyhow::anyhow!("{name}: プロセスの起動に失敗しました: {e}")
-            }
-        })?;
-
-    if let Err(e) = job.assign(&child) {
-        warn!(
-            "[{name}] プロセスを Job Object に割り当てられませんでした(孫プロセスは終了対象外になる可能性があります): {e}"
-        );
-    }
+    let (child, assigned) = spawn_into_job(name, path, args, &job, || {})?;
 
     *process.lock().unwrap() = Some(EngineProcess {
         child: Some(child),
         job,
+        assigned,
     });
 
     let retries = timeout.as_secs().max(1);
@@ -110,6 +100,58 @@ where
     anyhow::bail!("{name}: 起動待機が {} 秒でタイムアウトしました", retries)
 }
 
+/// エンジンを起動して `job` に割り当てる。戻り値の `bool` は割当に成功したかどうか。
+///
+/// `CREATE_SUSPENDED` で起動し、Job に割り当ててからスレッドを再開する。VOICEVOX / AivisSpeech の
+/// `run.exe` のように起動直後に本体を孫プロセスとして起動するランチャーでは、通常どおり起動すると
+/// spawn から割当までの間に孫が生まれて Job の外に出てしまい、`KILL_ON_JOB_CLOSE` が効かない。
+///
+/// `before_assign` は spawn 直後・割当直前に呼ばれる（テストで割当を遅らせ、競合を再現するため）。
+fn spawn_into_job(
+    name: &str,
+    path: &str,
+    args: &[String],
+    job: &EngineJob,
+    before_assign: impl FnOnce(),
+) -> anyhow::Result<(Child, bool)> {
+    // `path` は絶対パス（実行ファイル）と PATH 上のコマンド名（例: "python"）の両方を許容する。
+    // 事前の存在チェックはせず、OS の解決結果を spawn() のエラーでそのまま扱う。
+    const CREATE_SUSPENDED: u32 = windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
+    let mut child = Command::new(path)
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .creation_flags(CREATE_SUSPENDED)
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow::anyhow!("{name}: 実行ファイルが見つかりません: {path}")
+            } else {
+                anyhow::anyhow!("{name}: プロセスの起動に失敗しました: {e}")
+            }
+        })?;
+
+    before_assign();
+
+    let assigned = match job.assign(&child) {
+        Ok(()) => true,
+        Err(e) => {
+            warn!(
+                "[{name}] プロセスを Job Object に割り当てられませんでした(孫プロセスは終了対象外になる可能性があります): {e}"
+            );
+            false
+        }
+    };
+
+    // 割当に失敗しても起動自体は続行する（解放時に child を kill する）。
+    if let Err(e) = resume_suspended_process(child.id()) {
+        let _ = child.kill();
+        let _ = child.wait();
+        anyhow::bail!("{name}: 起動したプロセスを再開できませんでした: {e}");
+    }
+    Ok((child, assigned))
+}
+
 /// エンジンへの参照（名前付き Job のハンドル）を解放する。
 ///
 /// 明示的にエンジンを終了させることはしない。自分が最後の保持者であれば、ハンドルが閉じた
@@ -117,8 +159,17 @@ where
 /// プロセスがまだ同じエンジンを使っている場合はエンジンが生き残る。
 pub(crate) fn terminate_process(name: &str, process: &Mutex<Option<EngineProcess>>) {
     let mut guard = process.lock().unwrap();
-    if let Some(entry) = guard.take() {
+    if let Some(mut entry) = guard.take() {
         info!("[{name}] エンジンへの参照を解放します（最後の利用者ならエンジンも終了します）。");
+        if !entry.assigned {
+            // Job 外の子は KILL_ON_JOB_CLOSE で終了しないので、自分で終了させる。
+            // （その子が既に起動した孫プロセスまでは終了させられない）
+            if let Some(child) = entry.child.as_mut() {
+                warn!("[{name}] Job Object 未割当のため、起動したプロセスを直接終了します。");
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
         drop(entry);
     }
 }
@@ -240,6 +291,114 @@ mod tests {
         assert_eq!(
             lines_after, lines_before,
             "Job Object経由でランチャーだけでなく孫プロセスも終了していること"
+        );
+    }
+
+    /// 孫プロセスのログ行数が増え続けているか（=孫が生きているか）を、2回の観測で判定する。
+    async fn grandchild_log_is_growing(log: &std::path::Path) -> bool {
+        let before = std::fs::read_to_string(log)
+            .map(|c| c.lines().count())
+            .unwrap_or(0);
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        let after = std::fs::read_to_string(log)
+            .map(|c| c.lines().count())
+            .unwrap_or(0);
+        after > before
+    }
+
+    /// s2v-18b.1: spawn から Job 割当までの間に孫プロセスが生まれても、孫が Job の外へ逃げないこと。
+    /// 割当前に意図的に待つことで競合を決定的に再現する（CREATE_SUSPENDED で起動していれば、
+    /// 割当・再開までランチャーは1命令も実行しないので孫は生まれない）。
+    #[test]
+    fn grandchild_spawned_before_job_assignment_does_not_escape_the_job() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher = write_launcher_with_grandchild(dir.path());
+        let log = dir.path().join("grandchild_log.txt");
+        let job = EngineJob::open_or_create(&format!(
+            "Local\\Script2Voice_Engine_{}",
+            unique_key("suspended")
+        ))
+        .unwrap();
+
+        let (child, assigned) =
+            spawn_into_job("test", launcher.to_str().unwrap(), &[], &job, || {
+                std::thread::sleep(Duration::from_secs(3))
+            })
+            .unwrap();
+        assert!(assigned, "Job に割り当てられていること");
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            // 孫プロセスがログを書き始めるまで待つ(最大15秒)
+            for _ in 0..30 {
+                if log.exists() {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            assert!(log.exists(), "孫プロセスが起動していること");
+
+            let process: Mutex<Option<EngineProcess>> = Mutex::new(Some(EngineProcess {
+                child: Some(child),
+                job,
+                assigned,
+            }));
+            terminate_process("test", &process);
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            assert!(
+                !grandchild_log_is_growing(&log).await,
+                "割当前に生まれうる孫プロセスも Job 経由で終了していること"
+            );
+        });
+    }
+
+    /// 長時間ログを書き続けるだけのスクリプト（子プロセス自身がループする）。
+    fn write_ticker_script(dir: &std::path::Path) -> std::path::PathBuf {
+        let script = dir.join("ticker.cmd");
+        std::fs::write(
+            &script,
+            "@echo off\r\n:loop\r\necho alive >> \"%~dp0grandchild_log.txt\"\r\nping -n 2 127.0.0.1 > nul\r\ngoto loop\r\n",
+        )
+        .unwrap();
+        script
+    }
+
+    /// s2v-18b.1: Job 割当に失敗した子プロセスは、解放時に明示的に終了させること
+    /// （std::process::Child は drop しても子を終了させないため、放置すると孤児化する）。
+    #[tokio::test]
+    async fn release_kills_child_when_job_assignment_failed() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = write_ticker_script(dir.path());
+        let log = dir.path().join("grandchild_log.txt");
+        let child = std::process::Command::new(&script)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let job = EngineJob::open_or_create(&format!(
+            "Local\\Script2Voice_Engine_{}",
+            unique_key("unassigned")
+        ))
+        .unwrap();
+
+        for _ in 0..30 {
+            if log.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        assert!(log.exists(), "子プロセスが起動していること");
+
+        let process: Mutex<Option<EngineProcess>> = Mutex::new(Some(EngineProcess {
+            child: Some(child),
+            job,
+            assigned: false,
+        }));
+        terminate_process("test", &process);
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        assert!(
+            !grandchild_log_is_growing(&log).await,
+            "Job 未割当の子プロセスは解放時に kill されること"
         );
     }
 
@@ -402,6 +561,7 @@ mod tests {
         let process: Mutex<Option<EngineProcess>> = Mutex::new(Some(EngineProcess {
             child: Some(child),
             job,
+            assigned: true,
         }));
         terminate_process("test", &process);
 

@@ -44,14 +44,25 @@ struct GenerateArgs {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
-    /// パース警告(未定義キャストの飲み込みなど)が1件でもある台本を失敗として扱う
-    #[arg(long)]
+    /// パース警告(未定義キャストの台詞欠落など)が1件でもある台本を失敗として扱う(既定。互換のため残している)
+    #[arg(long, overrides_with = "no_strict")]
     strict: bool,
+
+    /// パース警告があっても失敗にせず、警告を出して処理を続行する
+    #[arg(long, overrides_with = "strict")]
+    no_strict: bool,
 
     /// 画面(標準エラー出力)へのログを詳しくする。-v で進捗、-vv で詳細まで出す
     /// (既定は警告・エラー・最終サマリのみ。全ログは常にログファイルに残る)
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+}
+
+impl GenerateArgs {
+    /// パース警告を失敗として扱うか。既定は true で、`--no-strict` を（後に）指定したときだけ false。
+    fn is_strict(&self) -> bool {
+        !self.no_strict
+    }
 }
 
 #[derive(clap::Subcommand)]
@@ -74,9 +85,13 @@ struct ComposeArgs {
     #[arg(long)]
     burn_subtitle: bool,
 
-    /// 出力先 MP4 (省略時は <project_dir>/output.mp4)
+    /// 出力先 MP4 (省略時は <project_dir>/output.mp4、--generation N 指定時は output_N.mp4)
     #[arg(short, long)]
     output: Option<PathBuf>,
+
+    /// 出力ロックで連番退避された生成一式(full_dialogue_N.wav / timeline/subtitles_N.srt)を使う場合の N
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    generation: Option<u32>,
 }
 
 /// 現在処理中の台本の run.log を指す差し替え可能なファイルハンドル。
@@ -293,6 +308,7 @@ async fn main() -> anyhow::Result<()> {
             scene_map: args.scene_map,
             burn_subtitle: args.burn_subtitle,
             output: args.output,
+            generation: args.generation,
         });
     }
 
@@ -313,7 +329,7 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     // 事前パース（失敗は継続）
-    let (parsed, parse_failures) = parse_all(&scripts, cli.generate.strict);
+    let (parsed, parse_failures) = parse_all(&scripts, cli.generate.is_strict());
 
     // 必要エンジンを1回だけ起動（失敗は継続）
     let required = required_engines(&parsed);
@@ -466,8 +482,8 @@ fn required_engines(parsed: &[ParsedScript]) -> HashSet<String> {
 /// 各台本をパースする。失敗しても止めず、成功分と失敗分(パス, 理由)を分けて返す。
 /// （`parse_file` はファイル読み込み/UTF-8 エラー時のみ Err。書式の崩れは警告扱いで Ok。）
 ///
-/// `strict` が true の場合、パース警告(未定義キャストの飲み込みなど)が1件でもあれば
-/// その台本を成功扱いにせず失敗へ回す（既定は警告を出すだけで処理を続行する）。
+/// `strict` が true の場合（CLI の既定）、パース警告(未定義キャストの台詞欠落など)が1件でもあれば
+/// その台本を成功扱いにせず失敗へ回す。false（`--no-strict`）なら警告を出すだけで処理を続行する。
 fn parse_all(scripts: &[PathBuf], strict: bool) -> (Vec<ParsedScript>, Vec<ScriptFailure>) {
     let mut parsed = Vec::new();
     let mut failures = Vec::new();
@@ -483,7 +499,7 @@ fn parse_all(scripts: &[PathBuf], strict: bool) -> (Vec<ParsedScript>, Vec<Scrip
                         .collect::<Vec<_>>()
                         .join(" / ");
                     tracing::error!(
-                        "strictモードのためパース警告を失敗として扱います {}: {detail}",
+                        "パース警告があるため失敗として扱います（警告を承知で続行するには --no-strict） {}: {detail}",
                         path.display()
                     );
                     failures.push((path.clone(), format!("strict: パース警告あり ({detail})")));
@@ -916,12 +932,20 @@ mod tests {
         );
     }
 
+    /// s2v-18b.9: パース警告（台詞の欠落など）は既定で失敗扱い。`--no-strict` で従来の続行に戻せる。
+    /// `--strict` は既存の呼び出しを壊さないよう引き続き受理する。
     #[test]
-    fn strict_flag_defaults_to_false_and_can_be_set() {
+    fn strict_is_default_and_can_be_disabled_with_no_strict() {
         let cli = Cli::try_parse_from(["script2voice", "a.txt"]).unwrap();
-        assert!(!cli.generate.strict);
+        assert!(cli.generate.is_strict());
         let cli = Cli::try_parse_from(["script2voice", "a.txt", "--strict"]).unwrap();
-        assert!(cli.generate.strict);
+        assert!(cli.generate.is_strict());
+        let cli = Cli::try_parse_from(["script2voice", "a.txt", "--no-strict"]).unwrap();
+        assert!(!cli.generate.is_strict());
+        // 両方指定した場合は後勝ち
+        let cli =
+            Cli::try_parse_from(["script2voice", "a.txt", "--no-strict", "--strict"]).unwrap();
+        assert!(cli.generate.is_strict());
     }
 
     #[test]
@@ -959,6 +983,27 @@ mod tests {
             }
             _ => panic!("compose サブコマンドとして解釈されるべき"),
         }
+    }
+
+    #[test]
+    fn compose_generation_defaults_to_none_and_accepts_positive_number() {
+        let cli = Cli::try_parse_from(["script2voice", "compose", "p"]).unwrap();
+        let Some(Command::Compose(a)) = cli.command else {
+            panic!("compose サブコマンドとして解釈されるべき");
+        };
+        assert_eq!(a.generation, None);
+
+        let cli =
+            Cli::try_parse_from(["script2voice", "compose", "p", "--generation", "2"]).unwrap();
+        let Some(Command::Compose(a)) = cli.command else {
+            panic!("compose サブコマンドとして解釈されるべき");
+        };
+        assert_eq!(a.generation, Some(2));
+
+        assert!(
+            Cli::try_parse_from(["script2voice", "compose", "p", "--generation", "0"]).is_err(),
+            "世代番号は1以上"
+        );
     }
 
     #[test]

@@ -9,12 +9,18 @@ use std::io;
 use std::os::windows::io::AsRawHandle;
 use std::process::Child;
 
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE};
+use windows_sys::Win32::Foundation::{
+    CloseHandle, GetLastError, ERROR_ALREADY_EXISTS, HANDLE, INVALID_HANDLE_VALUE,
+};
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+};
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
+use windows_sys::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
 
 pub(crate) struct EngineJob {
     handle: HANDLE,
@@ -75,6 +81,53 @@ impl EngineJob {
         }
         Ok(())
     }
+}
+
+/// `CREATE_SUSPENDED` で起動したプロセスのスレッドを再開させる。
+///
+/// std の `Child` はメインスレッドのハンドルを公開しないため、Toolhelp のスレッド一覧から
+/// 対象プロセスに属するスレッドを探して `ResumeThread` する。サスペンド起動直後のプロセスは
+/// メインスレッドしか持たない。1つも再開できなければエラーを返す。
+pub(crate) fn resume_suspended_process(pid: u32) -> io::Result<()> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+
+    let mut entry = THREADENTRY32 {
+        dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+        ..Default::default()
+    };
+    let mut resumed = 0usize;
+    let mut last_err: Option<io::Error> = None;
+    let mut ok = unsafe { Thread32First(snapshot, &mut entry) };
+    while ok != 0 {
+        if entry.th32OwnerProcessID == pid {
+            let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+            if thread.is_null() {
+                last_err = Some(io::Error::last_os_error());
+            } else {
+                if unsafe { ResumeThread(thread) } == u32::MAX {
+                    last_err = Some(io::Error::last_os_error());
+                } else {
+                    resumed += 1;
+                }
+                unsafe { CloseHandle(thread) };
+            }
+        }
+        ok = unsafe { Thread32Next(snapshot, &mut entry) };
+    }
+    unsafe { CloseHandle(snapshot) };
+
+    if resumed == 0 {
+        return Err(last_err.unwrap_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("プロセス {pid} のスレッドが見つかりません"),
+            )
+        }));
+    }
+    Ok(())
 }
 
 impl Drop for EngineJob {
